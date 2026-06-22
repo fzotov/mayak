@@ -41,7 +41,7 @@ export function InvoiceDetailPage({ invoice, onBack }: { invoice: any; onBack: (
       table{border-collapse:collapse}
       .req{width:100%;margin-bottom:12pt}
       .req td{border:1px solid #000;padding:4px 6px;font-size:8.5pt;vertical-align:top}
-      .req .qr-cell{width:100px;text-align:center;vertical-align:middle;padding:3px}
+      .req .qr-cell{width:100px;text-align:center;vertical-align:middle;padding:3px;height:90px}
       .req .bank-name{font-weight:bold;font-size:9pt}
       .req .label{color:#555;font-size:7.5pt}
       h1{font-size:13pt;font-weight:bold;margin:10pt 0 2pt}
@@ -70,9 +70,9 @@ export function InvoiceDetailPage({ invoice, onBack }: { invoice: any; onBack: (
 
     <table class="req">
       <tr>
-        <td class="qr-cell" rowspan="3">
-<img src="${qrDataUrl}" style="display:block;width:100%;height:auto"/>
-          <div style="font-size:7pt;margin-top:3px;color:#333;text-align:center">Оплатите, отсканировав<br>код в банковском приложении</div>
+        <td class="qr-cell" rowspan="2">
+<img src="${qrDataUrl}" style="display:block;width:88px;height:88px"/>
+          
         </td>
         <td style="width:42%">
           <div class="bank-name">ПАО СБЕРБАНК Г. МОСКВА</div>
