@@ -177,7 +177,7 @@ function Tenants() {
         <tbody>
           {mockTenants.map(t => (
             <tr key={t.id} style={{ borderBottom: '1px solid #f0f2f8' }}>
-              <td style={{ padding: '9px 12px', fontWeight: 500, color: '#1a2240' }}>{t.fullName}</td>
+              <td style={{ padding: '9px 12px', fontWeight: 500, color: '#4f6ef7', cursor: 'pointer', textDecoration: 'underline' }} onClick={() => setPage('tenant-card')}>{t.fullName}</td>
               <td style={{ padding: '9px 12px', color: '#6b7280' }}>{TYPE_LABEL[t.type]}</td>
               <td style={{ padding: '9px 12px', fontFamily: 'monospace', color: '#8596b4', fontSize: 11 }}>{t.inn ?? '—'}</td>
               <td style={{ padding: '9px 12px', color: '#374151' }}>{t.unitNumber}</td>
