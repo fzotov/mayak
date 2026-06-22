@@ -87,20 +87,20 @@ export function SettingsReferencePage() {
   const uniqueKeys = [...new Set(settings.map(s => s.key))]
   const s = {
     card: { background: '#fff', border: '1px solid #e8ebf3', borderRadius: 9, marginBottom: 12, overflow: 'hidden' } as React.CSSProperties,
-    inp: { padding: '7px 10px', border: '1px solid #e8ebf3', borderRadius: 6, fontSize: 13, fontFamily: 'inherit', outline: 'none' } as React.CSSProperties,
+    inp: { padding: '7px 10px', border: '1px solid #e8ebf3', borderRadius: 6, fontSize: 14, fontFamily: 'inherit', outline: 'none' } as React.CSSProperties,
   }
 
   return (
     <div style={{ maxWidth: 800 }}>
-      <div style={{ fontSize: 12, color: '#8596b4', marginBottom: 20 }}>Тарифы и коэффициенты. История изменений сохраняется — старые счета пересчитываться не будут.</div>
+      <div style={{ fontSize: 14, color: '#8596b4', marginBottom: 20 }}>Тарифы и коэффициенты. История изменений сохраняется — старые счета пересчитываться не будут.</div>
 
       {success && (
-        <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontSize: 12, color: '#16a34a', display: 'flex', gap: 8 }}>
+        <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontSize: 14, color: '#16a34a', display: 'flex', gap: 8 }}>
           ✓ {success}
         </div>
       )}
 
-      {loading && <div style={{ color: '#8596b4', fontSize: 13 }}>Загрузка...</div>}
+      {loading && <div style={{ color: '#8596b4', fontSize: 14 }}>Загрузка...</div>}
 
       {uniqueKeys.map(key => {
         const current = getCurrentValue(key)
@@ -111,21 +111,21 @@ export function SettingsReferencePage() {
           <div key={key} style={s.card}>
             <div style={{ padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f0f2f8' }}>
               <div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: '#1a2240' }}>{KEY_LABELS[key] || key}</div>
-                <div style={{ fontSize: 11, color: '#8596b4', marginTop: 2 }}>Действует с {current?.valid_from}</div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: '#1a2240' }}>{KEY_LABELS[key] || key}</div>
+                <div style={{ fontSize: 13, color: '#8596b4', marginTop: 2 }}>Действует с {current?.valid_from}</div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 <div style={{ fontSize: 20, fontWeight: 600, color: '#1a2240' }}>
-                  {current?.value} <span style={{ fontSize: 12, color: '#8596b4', fontWeight: 400 }}>{KEY_UNITS[key]}</span>
+                  {current?.value} <span style={{ fontSize: 14, color: '#8596b4', fontWeight: 400 }}>{KEY_UNITS[key]}</span>
                 </div>
                 {isEditing ? (
                   <button onClick={() => setEditing(null)}
-                    style={{ padding: '5px 12px', border: '1px solid #e8ebf3', borderRadius: 6, background: '#fff', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', color: '#6b7280' }}>
+                    style={{ padding: '5px 12px', border: '1px solid #e8ebf3', borderRadius: 6, background: '#fff', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit', color: '#6b7280' }}>
                     Отмена
                   </button>
                 ) : (
                   <button onClick={() => { setEditing(key); setNewValue(String(current?.value || '')) }}
-                    style={{ padding: '5px 12px', border: 'none', borderRadius: 6, background: '#4f6ef7', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', color: '#fff', fontWeight: 500 }}>
+                    style={{ padding: '5px 12px', border: 'none', borderRadius: 6, background: '#4f6ef7', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit', color: '#fff', fontWeight: 500 }}>
                     Изменить
                   </button>
                 )}
@@ -134,20 +134,20 @@ export function SettingsReferencePage() {
 
             {isEditing && (
               <div style={{ padding: '14px 16px', background: '#fffbeb', borderBottom: '1px solid #f0f2f8' }}>
-                <div style={{ fontSize: 12, color: '#92400e', marginBottom: 12 }}>
+                <div style={{ fontSize: 14, color: '#92400e', marginBottom: 12 }}>
                   ⚠️ Новое значение применится только к новым счетам. Старые счета останутся неизменными.
                 </div>
                 <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
                   <div>
-                    <div style={{ fontSize: 11, color: '#8596b4', marginBottom: 4, fontWeight: 500 }}>Новое значение ({KEY_UNITS[key]})</div>
+                    <div style={{ fontSize: 13, color: '#8596b4', marginBottom: 4, fontWeight: 500 }}>Новое значение ({KEY_UNITS[key]})</div>
                     <input style={{ ...s.inp, width: 140 }} type="number" step="0.01" value={newValue} onChange={e => setNewValue(e.target.value)} />
                   </div>
                   <div>
-                    <div style={{ fontSize: 11, color: '#8596b4', marginBottom: 4, fontWeight: 500 }}>Действует с</div>
+                    <div style={{ fontSize: 13, color: '#8596b4', marginBottom: 4, fontWeight: 500 }}>Действует с</div>
                     <input style={{ ...s.inp, width: 150 }} type="date" value={validFrom} onChange={e => setValidFrom(e.target.value)} />
                   </div>
                   <button onClick={() => saveNewValue(key)} disabled={saving}
-                    style={{ padding: '7px 16px', border: 'none', borderRadius: 6, background: '#16a34a', color: '#fff', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500 }}>
+                    style={{ padding: '7px 16px', border: 'none', borderRadius: 6, background: '#16a34a', color: '#fff', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500 }}>
                     {saving ? 'Сохранение...' : 'Сохранить'}
                   </button>
                 </div>
@@ -155,12 +155,12 @@ export function SettingsReferencePage() {
             )}
 
             <div style={{ padding: '10px 16px' }}>
-              <div style={{ fontSize: 11, color: '#8596b4', marginBottom: 8, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.4px' }}>История изменений</div>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+              <div style={{ fontSize: 13, color: '#8596b4', marginBottom: 8, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.4px' }}>История изменений</div>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
                 <thead>
                   <tr>
                     {['Дата начала', 'Значение', 'Кто изменил', 'Дата записи'].map(h => (
-                      <th key={h} style={{ padding: '4px 8px', textAlign: 'left', color: '#9ca3af', fontWeight: 500, fontSize: 11 }}>{h}</th>
+                      <th key={h} style={{ padding: '4px 8px', textAlign: 'left', color: '#9ca3af', fontWeight: 500, fontSize: 13 }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
