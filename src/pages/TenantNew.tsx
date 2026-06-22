@@ -83,7 +83,7 @@ export function TenantNewPage({ onBack, onSaved }: { onBack: () => void; onSaved
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button onClick={() => printDoc('act')} style={{ padding: '7px 14px', border: '1px solid #e8ebf3', borderRadius: 8, background: '#fff', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', color: '#374151' }}>📋 Акт приёма-передачи</button>
-          <button style={{ padding: '7px 14px', border: '1px solid #10b981', borderRadius: 8, background: '#f0fdf4', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', color: '#10b981', fontWeight: 500 }}>🗺 Показать на плане</button>
+          <button style={{ padding: '4px 10px', border: '1px solid #10b981', borderRadius: 20, background: '#f0fdf4', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', color: '#10b981', fontWeight: 500, display: 'flex', alignItems: 'center', gap: 4 }}>🏢 план</button>
           <button onClick={() => printDoc('contract')} style={{ padding: '7px 14px', border: '1px solid #4f6ef7', borderRadius: 8, background: '#eff3ff', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', color: '#4f6ef7', fontWeight: 500 }}>📄 Распечатать договор</button>
         </div>
       </div>
