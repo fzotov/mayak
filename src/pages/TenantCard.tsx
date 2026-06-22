@@ -109,7 +109,7 @@ export function TenantCardPage({ onBack }: { onBack: () => void }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
         <button onClick={onBack} style={{ padding: '6px 12px', border: '1px solid #e8ebf3', borderRadius: 7, background: '#fff', cursor: 'pointer', fontSize: 12, fontFamily: 'inherit', color: '#6b7280' }}>← Назад</button>
         <div>
-, fontWeight: 600, color: '#1a2240' }}>{saved.fullName}</div>
+<div style={{ fontSize: 16, fontWeight: 600, color: '#1a2240' }}>{saved.fullName}</div>
           <div style={{ fontSize: 12, color: '#8596b4' }}>{TYPE_LABELS[saved.type]} · ИНН {saved.inn}</div>
         </div>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
