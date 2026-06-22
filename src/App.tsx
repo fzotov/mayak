@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from './lib/supabase'
 import { AuthPage } from './pages/Auth'
 import { AIAssistantPage } from './pages/AIAssistant'
+import { SettingsPage } from './pages/Settings'
 import { KnowledgeBasePage } from './pages/KnowledgeBase'
 import { TenantCardPage } from './pages/TenantCard'
 import { InvoiceDetailPage } from './pages/InvoiceDetail'
@@ -9,7 +10,7 @@ import { SettingsReferencePage } from './pages/Settings2'
 import { BillingPage } from './pages/Billing'
 import { mockStats, mockTasks, mockOverdue, mockEvents, mockInvoices, mockTenants } from './lib/mockData'
 
-type Page = 'dashboard' | 'tenants' | 'invoices' | 'tasks' | 'ai' | 'kb' | 'tenant-card' | 'reference' | 'billing' | 'invoice-detail'
+type Page = 'dashboard' | 'tenants' | 'invoices' | 'tasks' | 'ai' | 'kb' | 'tenant-card' | 'reference' | 'billing' | 'invoice-detail' | 'settings'
 
 const NAV = [
   { id: 'dashboard', label: 'Сводка дня', icon: '⊞' },
@@ -296,6 +297,7 @@ export default function App() {
           {page === 'reference' && <SettingsReferencePage />}
           {page === 'billing' && <BillingPage />}
           {page === 'invoice-detail' && selectedInvoice && <InvoiceDetailPage invoice={selectedInvoice} onBack={() => setPage('invoices')} />}
+          {page === 'settings' && <SettingsPage onLogout={() => setUser(null)} />}
         </main>
       </div>
     </div>
