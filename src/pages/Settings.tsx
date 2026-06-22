@@ -51,8 +51,8 @@ export function SettingsModal({ onClose, onLogout }: { onClose: () => void; onLo
             {TABS.map((t, i) => (
               <button key={i} onClick={() => setTab(i)} style={{
                 width: '100%', padding: '10px 12px', border: 'none', borderRadius: 8,
-                background: tab === i ? '#fff5f0' : 'transparent',
-                color: tab === i ? '#ea580c' : '#374151',
+                background: tab === i ? '#eff3ff' : 'transparent',
+                color: tab === i ? '#4f6ef7' : '#374151',
                 fontSize: 14, fontFamily: 'inherit', cursor: 'pointer',
                 textAlign: 'left', fontWeight: tab === i ? 500 : 400,
                 display: 'flex', alignItems: 'center', gap: 10, marginBottom: 2
@@ -77,7 +77,7 @@ export function SettingsModal({ onClose, onLogout }: { onClose: () => void; onLo
             {tab === 0 && (
               <>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 24 }}>
-                  <div style={{ width: 72, height: 72, borderRadius: '50%', background: '#ea580c', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, fontWeight: 600, color: '#fff', flexShrink: 0 }}>
+                  <div style={{ width: 72, height: 72, borderRadius: '50%', background: '#4f6ef7', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, fontWeight: 600, color: '#fff', flexShrink: 0 }}>
                     {initials}
                   </div>
                   <button style={{ padding: '10px 16px', border: '1px solid #e5e7eb', borderRadius: 10, background: '#fff', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', color: '#374151', display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -116,7 +116,7 @@ export function SettingsModal({ onClose, onLogout }: { onClose: () => void; onLo
 
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
                   <button onClick={onClose} style={{ padding: '10px 20px', border: '1px solid #e5e7eb', borderRadius: 10, background: '#fff', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit', color: '#374151' }}>Отмена</button>
-                  <button onClick={saveProfile} style={{ padding: '10px 20px', border: 'none', borderRadius: 10, background: '#ea580c', fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <button onClick={saveProfile} style={{ padding: '10px 20px', border: 'none', borderRadius: 10, background: '#4f6ef7', fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}>
                     ✓ Сохранить изменения
                   </button>
                 </div>
@@ -140,7 +140,7 @@ export function SettingsModal({ onClose, onLogout }: { onClose: () => void; onLo
                   </div>
                 </div>
                 {pwMsg && <div style={{ fontSize: 12, color: pwMsg.includes('Ошибка') || pwMsg.includes('не') ? '#ef4444' : '#16a34a', marginBottom: 12, padding: '8px 12px', background: pwMsg.includes('Ошибка') || pwMsg.includes('не') ? '#fef2f2' : '#f0fdf4', borderRadius: 8 }}>{pwMsg}</div>}
-                <button onClick={changePassword} style={{ padding: '10px 20px', border: 'none', borderRadius: 10, background: '#ea580c', fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', color: '#fff', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 16 }}>
+                <button onClick={changePassword} style={{ padding: '10px 20px', border: 'none', borderRadius: 10, background: '#4f6ef7', fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', color: '#fff', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 16 }}>
                   🔒 Обновить пароль
                 </button>
 
@@ -196,7 +196,7 @@ export function SettingsModal({ onClose, onLogout }: { onClose: () => void; onLo
                 ].map((item, i) => (
                   <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', border: '1px solid #e5e7eb', borderRadius: 10, marginBottom: 8 }}>
                     <div style={{ fontSize: 14, color: '#1a2240' }}>{item.label}</div>
-                    <div style={{ width: 44, height: 24, borderRadius: 12, background: item.on ? '#ea580c' : '#e5e7eb', cursor: 'pointer', position: 'relative', flexShrink: 0 }}>
+                    <div style={{ width: 44, height: 24, borderRadius: 12, background: item.on ? '#4f6ef7' : '#e5e7eb', cursor: 'pointer', position: 'relative', flexShrink: 0 }}>
                       <div style={{ position: 'absolute', top: 3, left: item.on ? 23 : 3, width: 18, height: 18, background: '#fff', borderRadius: '50%', transition: 'left .2s' }} />
                     </div>
                   </div>
@@ -204,7 +204,7 @@ export function SettingsModal({ onClose, onLogout }: { onClose: () => void; onLo
 
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16 }}>
                   <button onClick={onClose} style={{ padding: '10px 20px', border: '1px solid #e5e7eb', borderRadius: 10, background: '#fff', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit', color: '#374151' }}>Отмена</button>
-                  <button style={{ padding: '10px 20px', border: 'none', borderRadius: 10, background: '#ea580c', fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <button style={{ padding: '10px 20px', border: 'none', borderRadius: 10, background: '#4f6ef7', fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}>
                     ✓ Сохранить изменения
                   </button>
                 </div>
