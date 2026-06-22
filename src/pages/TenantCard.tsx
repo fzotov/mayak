@@ -67,6 +67,31 @@ export function TenantCardPage({ onBack, onCreateInvoice }: { onBack: () => void
     { name: 'Уборка', price: 2500, active: true },
   ])
   const [addService, setAddService] = useState(false)
+  const [showInvoiceForm, setShowInvoiceForm] = useState(false)
+  const [invoiceMonth, setInvoiceMonth] = useState(new Date().getMonth() + 1)
+  const [invoiceYear, setInvoiceYear] = useState(new Date().getFullYear())
+  const [creating, setCreating] = useState(false)
+  const [invoiceCreated, setInvoiceCreated] = useState(false)
+
+  const MONTHS = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь']
+
+  const createInvoice = async () => {
+    setCreating(true)
+    const period = invoiceYear + '-' + String(invoiceMonth).padStart(2, '0')
+    const rent = t.units.reduce((sum: number, u: any) => sum + (u.rent || 0), 0)
+    const cleaning = 2500 * t.units.length
+    const total = rent + cleaning
+    // Сохраняем в Supabase
+    await fetch('/api/billing-generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ month: invoiceMonth, year: invoiceYear })
+    })
+    setCreating(false)
+    setInvoiceCreated(true)
+    setShowInvoiceForm(false)
+    setTimeout(() => setInvoiceCreated(false), 3000)
+  }
   const [newService, setNewService] = useState({ name: '', price: '' })
   const [meters] = useState([
     { type: 'electricity', serial: 'ЭЛ-12345', tariff: 6.38, lastReading: 15420, date: '01.06.2025' },
@@ -103,6 +128,59 @@ export function TenantCardPage({ onBack, onCreateInvoice }: { onBack: () => void
 
   return (
     <div style={{ maxWidth: 900 }}>
+      {invoiceCreated && (
+        <div style={{ position: 'fixed', top: 20, right: 24, background: '#111827', color: '#fff', padding: '10px 18px', borderRadius: 8, fontSize: 14, fontWeight: 500, zIndex: 200, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ color: '#34d399' }}>✓</span> Счёт создан
+        </div>
+      )}
+
+      {showInvoiceForm && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
+          <div style={{ background: '#fff', borderRadius: 12, padding: 28, width: 380, boxShadow: '0 8px 32px rgba(0,0,0,0.12)' }}>
+            <div style={{ fontSize: 15, fontWeight: 600, color: '#1a2240', marginBottom: 6 }}>Выставить счёт</div>
+            <div style={{ fontSize: 12, color: '#8596b4', marginBottom: 20 }}>{t.fullName}</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+              <div>
+                <div style={{ fontSize: 12, color: '#8596b4', marginBottom: 5 }}>Месяц</div>
+                <select value={invoiceMonth} onChange={e => setInvoiceMonth(Number(e.target.value))}
+                  style={{ width: '100%', padding: '8px 10px', border: '1px solid #e8ebf3', borderRadius: 7, fontSize: 13, fontFamily: 'inherit', outline: 'none' }}>
+                  {MONTHS.map((m, i) => <option key={i} value={i+1}>{m}</option>)}
+                </select>
+              </div>
+              <div>
+                <div style={{ fontSize: 12, color: '#8596b4', marginBottom: 5 }}>Год</div>
+                <select value={invoiceYear} onChange={e => setInvoiceYear(Number(e.target.value))}
+                  style={{ width: '100%', padding: '8px 10px', border: '1px solid #e8ebf3', borderRadius: 7, fontSize: 13, fontFamily: 'inherit', outline: 'none' }}>
+                  {[2024,2025,2026].map(y => <option key={y}>{y}</option>)}
+                </select>
+              </div>
+            </div>
+            <div style={{ padding: '10px 12px', background: '#f8f9fc', borderRadius: 7, marginBottom: 16, fontSize: 13 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                <span style={{ color: '#6b7280' }}>Аренда</span>
+                <span>{t.units.reduce((s: number, u: any) => s + (u.rent || 0), 0).toLocaleString('ru')} ₽</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                <span style={{ color: '#6b7280' }}>Уборка</span>
+                <span>{(2500 * t.units.length).toLocaleString('ru')} ₽</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 600, borderTop: '1px solid #e8ebf3', paddingTop: 6, marginTop: 4 }}>
+                <span>Итого (без коммунальных)</span>
+                <span style={{ color: '#4f6ef7' }}>{(t.units.reduce((s: number, u: any) => s + (u.rent || 0), 0) + 2500 * t.units.length).toLocaleString('ru')} ₽</span>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={() => setShowInvoiceForm(false)}
+                style={{ flex: 1, padding: '9px', border: '1px solid #e8ebf3', borderRadius: 7, background: '#fff', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', color: '#6b7280' }}>Отмена</button>
+              <button onClick={createInvoice} disabled={creating}
+                style={{ flex: 1, padding: '9px', border: 'none', borderRadius: 7, background: '#4f6ef7', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', color: '#fff' }}>
+                {creating ? 'Создаю...' : 'Создать счёт'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showConfirm && <ConfirmModal onConfirm={handleConfirm} onCancel={() => setShowConfirm(false)} />}
       {showSuccess && <SuccessToast />}
 
@@ -121,7 +199,7 @@ export function TenantCardPage({ onBack, onCreateInvoice }: { onBack: () => void
           ) : (
             <>
               <button onClick={() => setEditing(true)} style={{ padding: '7px 14px', border: '1px solid #e8ebf3', borderRadius: 7, background: '#fff', cursor: 'pointer', fontSize: 14, fontFamily: 'inherit', color: '#374151' }}>Редактировать</button>
-              <button onClick={onCreateInvoice} style={{ padding: '7px 14px', border: 'none', borderRadius: 7, background: '#4f6ef7', cursor: 'pointer', fontSize: 14, fontFamily: 'inherit', color: '#fff', fontWeight: 500 }}>Выставить счёт</button>
+              <button onClick={() => setShowInvoiceForm(true)} style={{ padding: '7px 14px', border: 'none', borderRadius: 7, background: '#4f6ef7', cursor: 'pointer', fontSize: 14, fontFamily: 'inherit', color: '#fff', fontWeight: 500 }}>Выставить счёт</button>
             </>
           )}
         </div>
