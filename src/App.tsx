@@ -200,7 +200,7 @@ function Tenants({ onOpenTenant }: { onOpenTenant: () => void }) {
               <td style={{ padding: '9px 12px', fontWeight: 500, color: '#4f6ef7', cursor: 'pointer', textDecoration: 'underline' }} onClick={() => onOpenTenant()}>{t.full_name}</td>
               <td style={{ padding: '9px 12px', color: '#6b7280' }}>{TYPE_LABEL[t.type]}</td>
               <td style={{ padding: '9px 12px', fontFamily: 'monospace', color: '#8596b4', fontSize: 13 }}>{t.inn ?? '—'}</td>
-              <td style={{ padding: '9px 12px', color: '#374151' }}>{t.units?.[0]?.number || '—'Number}</td>
+              <td style={{ padding: '9px 12px', color: '#374151' }}>{t.units?.[0]?.number || '—'}</td>
               <td style={{ padding: '9px 12px', color: t.status === 'DEBT' ? '#ef4444' : t.status === 'EXPIRING' ? '#d97706' : '#6b7280' }}>{t.leaseEnd}</td>
               <td style={{ padding: '9px 12px' }}><Badge s={t.status} /></td>
             <td style={{ padding: '9px 12px' }}><button onClick={() => onOpenTenant()} style={{ padding: '3px 10px', fontSize: 13, borderRadius: 5, border: '1px solid #e8ebf3', color: '#374151', background: '#f9fafb', cursor: 'pointer', marginRight: 4 }}>Открыть</button><button onClick={() => sendWelcomeEmail(t)} style={{ padding: '3px 10px', fontSize: 13, borderRadius: 5, border: '1px solid #4f6ef7', color: '#4f6ef7', background: '#eff3ff', cursor: 'pointer' }}>Email</button></td>
