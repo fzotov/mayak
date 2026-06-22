@@ -138,7 +138,7 @@ export function TenantCardPage({ onBack, onCreateInvoice }: { onBack: () => void
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
           <div style={{ background: '#fff', borderRadius: 12, padding: 28, width: 380, boxShadow: '0 8px 32px rgba(0,0,0,0.12)' }}>
             <div style={{ fontSize: 15, fontWeight: 600, color: '#1a2240', marginBottom: 6 }}>Выставить счёт</div>
-            <div style={{ fontSize: 12, color: '#8596b4', marginBottom: 20 }}>{t.fullName}</div>
+            <div style={{ fontSize: 12, color: '#8596b4', marginBottom: 20 }}>{mockTenant.fullName}</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
               <div>
                 <div style={{ fontSize: 12, color: '#8596b4', marginBottom: 5 }}>Месяц</div>
@@ -158,15 +158,15 @@ export function TenantCardPage({ onBack, onCreateInvoice }: { onBack: () => void
             <div style={{ padding: '10px 12px', background: '#f8f9fc', borderRadius: 7, marginBottom: 16, fontSize: 13 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                 <span style={{ color: '#6b7280' }}>Аренда</span>
-                <span>{t.units.reduce((s: number, u: any) => s + (u.rent || 0), 0).toLocaleString('ru')} ₽</span>
+                <span>{(mockTenant.units || []).reduce((s: number, u: any) => s + (u.rent || 0), 0).toLocaleString('ru')} ₽</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                 <span style={{ color: '#6b7280' }}>Уборка</span>
-                <span>{(2500 * t.units.length).toLocaleString('ru')} ₽</span>
+                <span>{(2500 * (mockTenant.units || []).length).toLocaleString('ru')} ₽</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 600, borderTop: '1px solid #e8ebf3', paddingTop: 6, marginTop: 4 }}>
                 <span>Итого (без коммунальных)</span>
-                <span style={{ color: '#4f6ef7' }}>{(t.units.reduce((s: number, u: any) => s + (u.rent || 0), 0) + 2500 * t.units.length).toLocaleString('ru')} ₽</span>
+                <span style={{ color: '#4f6ef7' }}>{((mockTenant.units || []).reduce((s: number, u: any) => s + (u.rent || 0), 0) + 2500 * (mockTenant.units || []).length).toLocaleString('ru')} ₽</span>
               </div>
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
