@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { supabase } from './lib/supabase'
+import { supabase, getTenants, getInvoices } from './lib/supabase'
 import { AuthPage } from './pages/Auth'
 import { AIAssistantPage } from './pages/AIAssistant'
 import { SettingsModal } from './pages/Settings'
@@ -84,7 +84,7 @@ function Dashboard() {
           {mockOverdue.map(inv => (
             <div key={inv.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid #f0f2f8' }}>
               <div>
-                <div style={{ fontSize: 14, fontWeight: 500, color: '#1a2240' }}>{inv.lease.tenant.fullName}</div>
+                <div style={{ fontSize: 14, fontWeight: 500, color: '#1a2240' }}>{inv.lease.tenant.full_name}</div>
                 <div style={{ fontSize: 12, color: '#8596b4' }}>Офис {inv.lease.unit.number} · №{inv.number}</div>
               </div>
               <div style={{ textAlign: 'right' }}>
@@ -145,7 +145,7 @@ function Invoices({ onOpenInvoice }: { onOpenInvoice: (inv: any) => void }) {
             {filtered.map(inv => (
               <tr key={inv.id} onClick={() => onOpenInvoice(inv)} style={{ borderBottom: '1px solid #f0f2f8', cursor: 'pointer' }}>
                 <td style={{ padding: '9px 12px', fontWeight: 500, color: '#1a2240' }}>№{inv.number}</td>
-                <td style={{ padding: '9px 12px', color: '#374151' }}>{inv.lease.tenant.fullName}</td>
+                <td style={{ padding: '9px 12px', color: '#374151' }}>{inv.lease.tenant.full_name}</td>
                 <td style={{ padding: '9px 12px', color: '#374151' }}>{inv.lease.unit.number}</td>
                 <td style={{ padding: '9px 12px', color: '#8596b4' }}>{inv.periodStart?.slice(0, 7)}</td>
                 <td style={{ padding: '9px 12px', fontWeight: 600, color: inv.status === 'OVERDUE' ? '#ef4444' : '#1a2240' }}>{inv.total.toLocaleString('ru')} ₽</td>
@@ -164,12 +164,18 @@ async function sendWelcomeEmail(tenant: any) {
   const res = await fetch('/api/send-welcome', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: tenant.email, name: tenant.fullName, password: 'temp123' })
+    body: JSON.stringify({ email: tenant.email, name: tenant.full_name, password: 'temp123' })
   })
   const data = await res.json()
   alert(data.ok ? 'Email sent!' : 'Error: ' + data.error)
 }
 function Tenants({ onOpenTenant }: { onOpenTenant: () => void }) {
+  const [tenants, setTenants] = useState<any[]>([])
+  const [loadingT, setLoadingT] = useState(true)
+
+  useEffect(() => {
+    getTenants().then(data => { setTenants(data); setLoadingT(false) })
+  }, [])
   return (
     <div style={{ background: '#fff', border: '1px solid #e8ebf3', borderRadius: 9, overflow: 'hidden' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
@@ -181,14 +187,14 @@ function Tenants({ onOpenTenant }: { onOpenTenant: () => void }) {
           </tr>
         </thead>
         <tbody>
-          {mockTenants.map(t => (
+          {loadingT ? <tr><td colSpan={6} style={{padding:20,textAlign:'center',color:'#8596b4'}}>Загрузка...</td></tr> : tenants.map(t => (
             <tr key={t.id} style={{ borderBottom: '1px solid #f0f2f8' }}>
-              <td style={{ padding: '9px 12px', fontWeight: 500, color: '#4f6ef7', cursor: 'pointer', textDecoration: 'underline' }} onClick={() => onOpenTenant()}>{t.fullName}</td>
+              <td style={{ padding: '9px 12px', fontWeight: 500, color: '#4f6ef7', cursor: 'pointer', textDecoration: 'underline' }} onClick={() => onOpenTenant()}>{t.full_name}</td>
               <td style={{ padding: '9px 12px', color: '#6b7280' }}>{TYPE_LABEL[t.type]}</td>
               <td style={{ padding: '9px 12px', fontFamily: 'monospace', color: '#8596b4', fontSize: 13 }}>{t.inn ?? '—'}</td>
-              <td style={{ padding: '9px 12px', color: '#374151' }}>{t.unitNumber}</td>
-              <td style={{ padding: '9px 12px', color: t.leaseStatus === 'DEBT' ? '#ef4444' : t.leaseStatus === 'EXPIRING' ? '#d97706' : '#6b7280' }}>{t.leaseEnd}</td>
-              <td style={{ padding: '9px 12px' }}><Badge s={t.leaseStatus} /></td>
+              <td style={{ padding: '9px 12px', color: '#374151' }}>{t.units?.[0]?.number || '—'Number}</td>
+              <td style={{ padding: '9px 12px', color: t.status === 'DEBT' ? '#ef4444' : t.status === 'EXPIRING' ? '#d97706' : '#6b7280' }}>{t.leaseEnd}</td>
+              <td style={{ padding: '9px 12px' }}><Badge s={t.status} /></td>
             <td style={{ padding: '9px 12px' }}><button onClick={() => onOpenTenant()} style={{ padding: '3px 10px', fontSize: 13, borderRadius: 5, border: '1px solid #e8ebf3', color: '#374151', background: '#f9fafb', cursor: 'pointer', marginRight: 4 }}>Открыть</button><button onClick={() => sendWelcomeEmail(t)} style={{ padding: '3px 10px', fontSize: 13, borderRadius: 5, border: '1px solid #4f6ef7', color: '#4f6ef7', background: '#eff3ff', cursor: 'pointer' }}>Email</button></td>
             </tr>
           ))}
