@@ -4,11 +4,12 @@ import { AuthPage } from './pages/Auth'
 import { AIAssistantPage } from './pages/AIAssistant'
 import { KnowledgeBasePage } from './pages/KnowledgeBase'
 import { TenantCardPage } from './pages/TenantCard'
+import { InvoiceDetailPage } from './pages/InvoiceDetail'
 import { SettingsReferencePage } from './pages/Settings2'
 import { BillingPage } from './pages/Billing'
 import { mockStats, mockTasks, mockOverdue, mockEvents, mockInvoices, mockTenants } from './lib/mockData'
 
-type Page = 'dashboard' | 'tenants' | 'invoices' | 'tasks' | 'ai' | 'kb' | 'tenant-card' | 'reference' | 'billing'
+type Page = 'dashboard' | 'tenants' | 'invoices' | 'tasks' | 'ai' | 'kb' | 'tenant-card' | 'reference' | 'billing' | 'invoice-detail'
 
 const NAV = [
   { id: 'dashboard', label: 'Сводка дня', icon: '⊞' },
@@ -114,7 +115,7 @@ function Dashboard() {
   )
 }
 
-function Invoices() {
+function Invoices({ onOpenInvoice }: { onOpenInvoice: (inv: any) => void }) {
   const [filter, setFilter] = useState('')
   const filtered = filter ? mockInvoices.filter(i => i.status === filter) : mockInvoices
   return (
@@ -216,6 +217,7 @@ function Tasks() {
 
 export default function App() {
   const [page, setPage] = useState<Page>('dashboard')
+  const [selectedInvoice, setSelectedInvoice] = useState<any>(null)
   const [user, setUser] = useState<any>(null)
   const [loading, setLoading] = useState(true)
 
@@ -293,6 +295,7 @@ export default function App() {
           {page === 'tenant-card' && <TenantCardPage onBack={() => setPage('tenants')} />}
           {page === 'reference' && <SettingsReferencePage />}
           {page === 'billing' && <BillingPage />}
+          {page === 'invoice-detail' && selectedInvoice && <InvoiceDetailPage invoice={selectedInvoice} onBack={() => setPage('invoices')} />}
         </main>
       </div>
     </div>
