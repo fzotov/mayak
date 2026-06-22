@@ -42,8 +42,7 @@ export function BillingPage() {
 
   return (
     <div style={{ maxWidth: 900 }}>
-      <div style={{ fontSize: 18, fontWeight: 600, color: '#1a2240', marginBottom: 6 }}>Биллинг</div>
-      <div style={{ fontSize: 12, color: '#8596b4', marginBottom: 20 }}>Генерация счетов для всех арендаторов за выбранный период</div>
+      <div style={{ fontSize: 12, color: '#8596b4', marginBottom: 16 }}>Генерация счетов для всех арендаторов за выбранный период</div>
 
       <div style={s.card}>
         <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 14, textTransform: 'uppercase', letterSpacing: '.4px' }}>Параметры выставления</div>
