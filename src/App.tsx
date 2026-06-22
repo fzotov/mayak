@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
 import { supabase } from './lib/supabase'
-import { useRealTenants, useRealInvoices } from './lib/useRealData'
 import { AuthPage } from './pages/Auth'
 import { AIAssistantPage } from './pages/AIAssistant'
 import { SettingsModal } from './pages/Settings'
@@ -182,7 +181,7 @@ function Tenants({ onOpenTenant }: { onOpenTenant: () => void }) {
           </tr>
         </thead>
         <tbody>
-          {allTenants.map(t => (
+          {mockTenants.map(t => (
             <tr key={t.id} style={{ borderBottom: '1px solid #f0f2f8' }}>
               <td style={{ padding: '9px 12px', fontWeight: 500, color: '#4f6ef7', cursor: 'pointer', textDecoration: 'underline' }} onClick={() => onOpenTenant()}>{t.fullName}</td>
               <td style={{ padding: '9px 12px', color: '#6b7280' }}>{TYPE_LABEL[t.type]}</td>
