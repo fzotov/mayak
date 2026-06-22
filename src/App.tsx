@@ -202,6 +202,7 @@ function Tenants({ onOpenTenant, onAddTenant }: { onOpenTenant: () => void; onAd
         </tbody>
       </table>
     </div>
+    </div>
   )
 }
 
