@@ -146,6 +146,16 @@ function Invoices() {
   )
 }
 
+
+async function sendWelcomeEmail(tenant: any) {
+  const res = await fetch('/api/send-welcome', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: tenant.email, name: tenant.fullName, password: 'temp123' })
+  })
+  const data = await res.json()
+  alert(data.ok ? 'Email sent!' : 'Error: ' + data.error)
+}
 function Tenants() {
   return (
     <div style={{ background: '#fff', border: '1px solid #e8ebf3', borderRadius: 9, overflow: 'hidden' }}>
@@ -166,6 +176,7 @@ function Tenants() {
               <td style={{ padding: '9px 12px', color: '#374151' }}>{t.unitNumber}</td>
               <td style={{ padding: '9px 12px', color: t.leaseStatus === 'DEBT' ? '#ef4444' : t.leaseStatus === 'EXPIRING' ? '#d97706' : '#6b7280' }}>{t.leaseEnd}</td>
               <td style={{ padding: '9px 12px' }}><Badge s={t.leaseStatus} /></td>
+            <td style={{ padding: '9px 12px' }}><button onClick={() => sendWelcomeEmail(t)} style={{ padding: '3px 10px', fontSize: 11, borderRadius: 5, border: '1px solid #4f6ef7', color: '#4f6ef7', background: '#eff3ff', cursor: 'pointer' }}>Email</button></td>
             </tr>
           ))}
         </tbody>
