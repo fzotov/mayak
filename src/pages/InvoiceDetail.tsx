@@ -68,30 +68,34 @@ export function InvoiceDetailPage({ invoice, onBack }: { invoice: any; onBack: (
       @media print{@page{size:A4;margin:0}body{padding:10mm 15mm 10mm 15mm}}
     </style></head><body>
 
-    <table class="req">
+    <table class="req" style="width:100%;border-collapse:collapse;margin-bottom:10pt">
       <tr>
-        <td rowspan="2" style="width:95px;border:1px solid #000;text-align:center;vertical-align:middle;padding:4px">
-          <img src="${qrDataUrl}" style="width:85px;height:85px;display:block;margin:0 auto"/>
+        <td rowspan="4" style="border:1px solid #000;width:95px;text-align:center;vertical-align:middle;padding:3px">
+          <img src="${qrDataUrl}" style="width:87px;height:87px;display:block;margin:0 auto"/>
         </td>
-        <td style="border:1px solid #000;padding:3px 6px;font-size:8.5pt">
-          <div style="font-weight:bold">ПАО СБЕРБАНК Г. МОСКВА</div>
-          <div style="color:#555;font-size:7.5pt">Банк получателя</div>
-        </td>
-        <td style="border:1px solid #000;padding:3px 6px;font-size:8pt;color:#555;width:55px">БИК</td>
+        <td style="border:1px solid #000;padding:3px 6px;font-size:8.5pt;font-weight:bold">ПАО СБЕРБАНК Г. МОСКВА</td>
+        <td style="border:1px solid #000;padding:3px 6px;font-size:8pt;width:55px">БИК</td>
         <td style="border:1px solid #000;padding:3px 6px;font-size:8.5pt;width:145px">044525225</td>
       </tr>
       <tr>
-        <td style="border:1px solid #000;padding:3px 6px;font-size:8pt">
-          <div>ИНН&nbsp;500705271772&nbsp;&nbsp;&nbsp;ОГРНИП&nbsp;315500700008401</div>
-          <div style="font-weight:bold">ИП Зотова Екатерина Викторовна</div>
-          <div style="color:#555;font-size:7.5pt">Получатель</div>
-        </td>
-        <td style="border:1px solid #000;padding:3px 6px;font-size:8pt;color:#555">Сч. №</td>
+        <td style="border:1px solid #000;padding:3px 6px;font-size:8pt;color:#555">Банк получателя</td>
+        <td style="border:1px solid #000;padding:3px 6px;font-size:8pt">Сч. №</td>
         <td style="border:1px solid #000;padding:3px 6px;font-size:7.5pt">30101810400000000225</td>
       </tr>
       <tr>
-        <td style="border:1px solid #000;padding:3px 6px;font-size:8pt;color:#555;text-align:right">Сч. №</td>
-        <td colspan="3" style="border:1px solid #000;padding:3px 6px;font-size:7.5pt">40802810340000024041</td>
+        <td style="border:1px solid #000;padding:3px 6px;font-size:8pt">
+          ИНН&nbsp;&nbsp;500705271772&nbsp;&nbsp;&nbsp;&nbsp;ОГРНИП&nbsp;315500700008401
+        </td>
+        <td style="border:1px solid #000;padding:3px 6px;font-size:8pt">Сч. №</td>
+        <td style="border:1px solid #000;padding:3px 6px;font-size:7.5pt">40802810340000024041</td>
+      </tr>
+      <tr>
+        <td style="border:1px solid #000;padding:3px 6px;font-size:8.5pt">
+          <div style="font-weight:bold">ИП Зотова Екатерина Викторовна</div>
+          <div style="font-size:7.5pt;color:#555;margin-top:2px">Получатель</div>
+        </td>
+        <td style="border:1px solid #000;padding:3px 6px"></td>
+        <td style="border:1px solid #000;padding:3px 6px"></td>
       </tr>
     </table>
 
