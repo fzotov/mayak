@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { supabase, getTenants, getInvoices } from './lib/supabase'
+import { supabase } from './lib/supabase'
 import { AuthPage } from './pages/Auth'
 import { AIAssistantPage } from './pages/AIAssistant'
 import { SettingsModal } from './pages/Settings'
@@ -84,7 +84,7 @@ function Dashboard() {
           {mockOverdue.map(inv => (
             <div key={inv.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid #f0f2f8' }}>
               <div>
-                <div style={{ fontSize: 14, fontWeight: 500, color: '#1a2240' }}>{inv.lease.tenan(t.full_name || t.fullName)}</div>
+                <div style={{ fontSize: 14, fontWeight: 500, color: '#1a2240' }}>{inv.lease.tenant.fullName}</div>
                 <div style={{ fontSize: 12, color: '#8596b4' }}>Офис {inv.lease.unit.number} · №{inv.number}</div>
               </div>
               <div style={{ textAlign: 'right' }}>
@@ -145,7 +145,7 @@ function Invoices({ onOpenInvoice }: { onOpenInvoice: (inv: any) => void }) {
             {filtered.map(inv => (
               <tr key={inv.id} onClick={() => onOpenInvoice(inv)} style={{ borderBottom: '1px solid #f0f2f8', cursor: 'pointer' }}>
                 <td style={{ padding: '9px 12px', fontWeight: 500, color: '#1a2240' }}>№{inv.number}</td>
-                <td style={{ padding: '9px 12px', color: '#374151' }}>{inv.lease.tenan(t.full_name || t.fullName)}</td>
+                <td style={{ padding: '9px 12px', color: '#374151' }}>{inv.lease.tenant.fullName}</td>
                 <td style={{ padding: '9px 12px', color: '#374151' }}>{inv.lease.unit.number}</td>
                 <td style={{ padding: '9px 12px', color: '#8596b4' }}>{inv.periodStart?.slice(0, 7)}</td>
                 <td style={{ padding: '9px 12px', fontWeight: 600, color: inv.status === 'OVERDUE' ? '#ef4444' : '#1a2240' }}>{inv.total.toLocaleString('ru')} ₽</td>
@@ -164,7 +164,7 @@ async function sendWelcomeEmail(tenant: any) {
   const res = await fetch('/api/send-welcome', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: tenant.email, name: tenan(t.full_name || t.fullName), password: 'temp123' })
+    body: JSON.stringify({ email: tenant.email, name: tenant.fullName, password: 'temp123' })
   })
   const data = await res.json()
   alert(data.ok ? 'Email sent!' : 'Error: ' + data.error)
@@ -181,9 +181,9 @@ function Tenants({ onOpenTenant }: { onOpenTenant: () => void }) {
           </tr>
         </thead>
         <tbody>
-          {(dbTenants.length > 0 ? dbTenants : mockTenants).map(t => (
+          {mockTenants.map(t => (
             <tr key={t.id} style={{ borderBottom: '1px solid #f0f2f8' }}>
-              <td style={{ padding: '9px 12px', fontWeight: 500, color: '#4f6ef7', cursor: 'pointer', textDecoration: 'underline' }} onClick={() => onOpenTenant()}>{(t.full_name || t.fullName)}</td>
+              <td style={{ padding: '9px 12px', fontWeight: 500, color: '#4f6ef7', cursor: 'pointer', textDecoration: 'underline' }} onClick={() => onOpenTenant()}>{t.fullName}</td>
               <td style={{ padding: '9px 12px', color: '#6b7280' }}>{TYPE_LABEL[t.type]}</td>
               <td style={{ padding: '9px 12px', fontFamily: 'monospace', color: '#8596b4', fontSize: 13 }}>{t.inn ?? '—'}</td>
               <td style={{ padding: '9px 12px', color: '#374151' }}>{t.unitNumber}</td>
