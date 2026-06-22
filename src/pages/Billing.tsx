@@ -86,15 +86,15 @@ export function BillingPage() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 12 }}>
             <div style={{ ...s.card, marginBottom: 0 }}>
               <div style={{ fontSize: 11, color: '#8596b4', marginBottom: 4 }}>Арендаторов</div>
-              <div style={{ fontSize: 22, fontWeight: 600, color: '#1a2240' }}>{invoices.length}</div>
+              <div style={{ fontSize: 
             </div>
             <div style={{ ...s.card, marginBottom: 0 }}>
               <div style={{ fontSize: 11, color: '#8596b4', marginBottom: 4 }}>Итого к выставлению</div>
-              <div style={{ fontSize: 20, fontWeight: 600, color: '#1a2240' }}>{totalSum.toLocaleString('ru')} ₽</div>
+              <div style={{ fontSize: 
             </div>
             <div style={{ ...s.card, marginBottom: 0 }}>
               <div style={{ fontSize: 11, color: '#8596b4', marginBottom: 4 }}>Срок оплаты</div>
-              <div style={{ fontSize: 16, fontWeight: 600, color: '#1a2240' }}>до 25 {MONTHS[month-1]}</div>
+, fontWeight: 600, color: '#1a2240' }}>до 25 {MONTHS[month-1]}</div>
             </div>
           </div>
 

@@ -92,7 +92,7 @@ export function SettingsReferencePage() {
 
   return (
     <div style={{ maxWidth: 800 }}>
-      <div style={{ fontSize: 18, fontWeight: 600, color: '#1a2240', marginBottom: 6 }}>Справочники</div>
+, fontWeight: 600, color: '#1a2240', marginBottom: 6 }}>Справочники</div>
       <div style={{ fontSize: 12, color: '#8596b4', marginBottom: 20 }}>Тарифы и коэффициенты. История изменений сохраняется — старые счета пересчитываться не будут.</div>
 
       {success && (

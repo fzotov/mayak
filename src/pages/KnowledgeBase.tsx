@@ -40,7 +40,7 @@ export function KnowledgeBasePage() {
 
   return (
     <div style={{ maxWidth: 900 }}>
-      <div style={{ fontSize: 18, fontWeight: 600, color: '#1a2240', marginBottom: 20 }}>База знаний</div>
+, fontWeight: 600, color: '#1a2240', marginBottom: 20 }}>База знаний</div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
         <div style={{ background: '#fff', border: '1px solid #e8ebf3', borderRadius: 9, padding: 16 }}>
