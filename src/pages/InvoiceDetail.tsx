@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import jsPDF from 'jspdf'
 
 const STATUS_LABEL: Record<string, string> = { OVERDUE: 'Просрочен', SENT: 'Выставлен', DRAFT: 'Черновик', PAID: 'Оплачен' }
 const STATUS_COLOR: Record<string, string> = { OVERDUE: '#ef4444', SENT: '#2563eb', DRAFT: '#6b7280', PAID: '#16a34a' }
@@ -6,6 +7,112 @@ const STATUS_BG: Record<string, string> = { OVERDUE: '#fef2f2', SENT: '#eff6ff',
 
 export function InvoiceDetailPage({ invoice, onBack }: { invoice: any; onBack: () => void }) {
   const [showQR, setShowQR] = useState(false)
+
+  const generatePDF = () => {
+    const doc = new jsPDF()
+    const tenant = invoice.lease.tenant.fullName
+    const unit = invoice.lease.unit.number
+    const num = invoice.number
+    const total = invoice.total
+
+    doc.setFont('helvetica')
+    doc.setFontSize(10)
+
+    // Реквизиты банка вверху
+    doc.rect(10, 10, 130, 28)
+    doc.rect(140, 10, 60, 28)
+    doc.text('Банк получателя', 12, 16)
+    doc.text('ПАО Сбербанк России', 12, 22)
+    doc.text('ИНН  500705271772', 12, 32)
+    doc.text('ИП Зотова Екатерина Викторовна', 12, 38)
+    doc.text('Получатель', 12, 44)
+    doc.text('БИК', 142, 16)
+    doc.text('044525225', 165, 16)
+    doc.text('Сч. №', 142, 22)
+    doc.text('30101810400000000225', 158, 22)
+    doc.text('Сч. №', 142, 32)
+    doc.text('40802810340000024041', 158, 32)
+
+    // Заголовок
+    doc.setFontSize(14)
+    doc.setFont('helvetica', 'bold')
+    doc.text('Счет на оплату № ' + num + ' от ' + new Date().toLocaleDateString('ru'), 10, 58)
+    doc.setFont('helvetica', 'normal')
+
+    doc.line(10, 62, 200, 62)
+    doc.line(10, 63, 200, 63)
+
+    // Стороны
+    doc.setFontSize(10)
+    doc.text('Поставщик', 10, 72)
+    doc.text('(Исполнитель):', 10, 77)
+    doc.text('ИП Зотова Екатерина Викторовна, ИНН 500705271772, ОГРНИП 315500700008401,', 45, 72)
+    doc.text('141801, МО, г. Дмитров, мкр. им. Владимира Махалина, д.20', 45, 77)
+
+    doc.text('Покупатель', 10, 87)
+    doc.text('(Заказчик):', 10, 92)
+    doc.text(tenant + ', Офис № ' + unit, 45, 87)
+
+    doc.text('Основание:', 10, 102)
+    doc.text('Договор аренды', 45, 102)
+
+    // Таблица
+    doc.line(10, 108, 200, 108)
+    doc.rect(10, 108, 10, 10)
+    doc.rect(20, 108, 100, 10)
+    doc.rect(120, 108, 20, 10)
+    doc.rect(140, 108, 20, 10)
+    doc.rect(160, 108, 20, 10)
+    doc.rect(180, 108, 20, 10)
+
+    doc.setFont('helvetica', 'bold')
+    doc.text('N', 14, 115)
+    doc.text('Товары (работы, услуги)', 22, 115)
+    doc.text('Кол.', 122, 115)
+    doc.text('Ед.', 142, 115)
+    doc.text('Цена', 162, 115)
+    doc.text('Сумма', 182, 115)
+    doc.setFont('helvetica', 'normal')
+
+    const lines = [
+      { name: 'Аренда помещения № ' + unit, amount: Math.round(total * 0.85) },
+      { name: 'Уборка помещения', amount: 2500 },
+      { name: 'Электроэнергия', amount: Math.round(total * 0.1) },
+    ]
+
+    let y = 118
+    lines.forEach((line, i) => {
+      doc.rect(10, y, 10, 10)
+      doc.rect(20, y, 100, 10)
+      doc.rect(120, y, 20, 10)
+      doc.rect(140, y, 20, 10)
+      doc.rect(160, y, 20, 10)
+      doc.rect(180, y, 20, 10)
+      doc.text(String(i + 1), 14, y + 7)
+      doc.text(line.name, 22, y + 7)
+      doc.text('1', 128, y + 7)
+      doc.text('мес', 142, y + 7)
+      doc.text(line.amount.toLocaleString('ru'), 162, y + 7)
+      doc.text(line.amount.toLocaleString('ru'), 182, y + 7)
+      y += 10
+    })
+
+    // Итого
+    doc.setFont('helvetica', 'bold')
+    doc.text('Итого:', 150, y + 10)
+    doc.text(total.toLocaleString('ru') + ' руб.', 175, y + 10)
+    doc.text('Всего к оплате:', 140, y + 20)
+    doc.text(total.toLocaleString('ru') + ' руб.', 175, y + 20)
+    doc.setFont('helvetica', 'normal')
+
+    doc.line(10, y + 28, 200, y + 28)
+    doc.line(10, y + 29, 200, y + 29)
+
+    doc.text('Руководитель _________________ Зотова Е.В.', 10, y + 40)
+    doc.text('Бухгалтер _________________ Зотова Е.В.', 120, y + 40)
+
+    doc.save('invoice-' + num + '.pdf')
+  }
   const s = {
     card: { background: '#fff', border: '1px solid #e8ebf3', borderRadius: 9, padding: 16, marginBottom: 12 } as React.CSSProperties,
     label: { fontSize: 11, color: '#8596b4', marginBottom: 3 } as React.CSSProperties,
@@ -29,7 +136,7 @@ export function InvoiceDetailPage({ invoice, onBack }: { invoice: any; onBack: (
         </div>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
           <button onClick={() => setShowQR(!showQR)} style={{ padding: '7px 14px', border: '1px solid #7c3aed', borderRadius: 7, background: '#f5f3ff', cursor: 'pointer', fontSize: 12, fontFamily: 'inherit', color: '#7c3aed', fontWeight: 500 }}>QR СБП</button>
-          <button style={{ padding: '7px 14px', border: 'none', borderRadius: 7, background: '#4f6ef7', cursor: 'pointer', fontSize: 12, fontFamily: 'inherit', color: '#fff', fontWeight: 500 }}>Скачать PDF</button>
+          <button onClick={generatePDF} style={{ padding: '7px 14px', border: 'none', borderRadius: 7, background: '#4f6ef7', cursor: 'pointer', fontSize: 12, fontFamily: 'inherit', color: '#fff', fontWeight: 500 }}>Скачать PDF</button>
         </div>
       </div>
 
