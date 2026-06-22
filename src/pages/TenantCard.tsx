@@ -96,7 +96,7 @@ export function TenantCardPage({ onBack }: { onBack: () => void }) {
     <div>
       <div style={s.label}>{label}</div>
       {editing
-        ? <input style={s.inp} type={type} value={String(form[k])} onChange={f(k)} />
+        ? <input style={s.inp} type={type} defaultValue={String(form[k])} onBlur={e => setForm(p => ({ ...p, [k]: e.target.value }))} key={k} />
         : <div style={s.value}>{String(saved[k]) || '—'}</div>}
     </div>
   )
