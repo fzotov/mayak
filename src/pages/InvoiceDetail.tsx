@@ -70,27 +70,28 @@ export function InvoiceDetailPage({ invoice, onBack }: { invoice: any; onBack: (
 
     <table class="req">
       <tr>
-        <td class="qr-cell" rowspan="3" style="width:95px;border:1px solid #000;text-align:center;vertical-align:middle;padding:4px">
+        <td rowspan="2" style="width:95px;border:1px solid #000;text-align:center;vertical-align:middle;padding:4px">
           <img src="${qrDataUrl}" style="width:85px;height:85px;display:block;margin:0 auto"/>
         </td>
-        <td style="border:1px solid #000;padding:3px 6px;font-size:8.5pt;font-weight:bold">ПАО СБЕРБАНК Г. МОСКВА</td>
-        <td style="border:1px solid #000;padding:3px 6px;font-size:8pt;color:#555;width:60px">БИК</td>
-        <td style="border:1px solid #000;padding:3px 6px;font-size:8.5pt;width:140px">044525225</td>
+        <td style="border:1px solid #000;padding:3px 6px;font-size:8.5pt">
+          <div style="font-weight:bold">ПАО СБЕРБАНК Г. МОСКВА</div>
+          <div style="color:#555;font-size:7.5pt">Банк получателя</div>
+        </td>
+        <td style="border:1px solid #000;padding:3px 6px;font-size:8pt;color:#555;width:55px">БИК</td>
+        <td style="border:1px solid #000;padding:3px 6px;font-size:8.5pt;width:145px">044525225</td>
       </tr>
       <tr>
         <td style="border:1px solid #000;padding:3px 6px;font-size:8pt">
-          <div style="color:#555;font-size:7.5pt">Банк получателя</div>
-          <div style="font-size:8pt">ИНН&nbsp;&nbsp;500705271772&nbsp;&nbsp;&nbsp;ОГРНИП&nbsp;315500700008401</div>
-          <div style="font-weight:bold;font-size:8.5pt">ИП Зотова Екатерина Викторовна</div>
+          <div>ИНН&nbsp;500705271772&nbsp;&nbsp;&nbsp;ОГРНИП&nbsp;315500700008401</div>
+          <div style="font-weight:bold">ИП Зотова Екатерина Викторовна</div>
           <div style="color:#555;font-size:7.5pt">Получатель</div>
         </td>
         <td style="border:1px solid #000;padding:3px 6px;font-size:8pt;color:#555">Сч. №</td>
-        <td style="border:1px solid #000;padding:3px 6px;font-size:8pt">30101810400000000225</td>
+        <td style="border:1px solid #000;padding:3px 6px;font-size:7.5pt">30101810400000000225</td>
       </tr>
       <tr>
-        <td style="border:1px solid #000;padding:3px 6px"></td>
-        <td style="border:1px solid #000;padding:3px 6px;font-size:8pt;color:#555">Сч. №</td>
-        <td style="border:1px solid #000;padding:3px 6px;font-size:8pt">40802810340000024041</td>
+        <td style="border:1px solid #000;padding:3px 6px;font-size:8pt;color:#555;text-align:right">Сч. №</td>
+        <td colspan="3" style="border:1px solid #000;padding:3px 6px;font-size:7.5pt">40802810340000024041</td>
       </tr>
     </table>
 
