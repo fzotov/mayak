@@ -142,7 +142,7 @@ function Invoices({ onOpenInvoice }: { onOpenInvoice: (inv: any) => void }) {
           </thead>
           <tbody>
             {filtered.map(inv => (
-              <tr key={inv.id} style={{ borderBottom: '1px solid #f0f2f8' }}>
+              <tr key={inv.id} onClick={() => onOpenInvoice(inv)} style={{ borderBottom: '1px solid #f0f2f8', cursor: 'pointer' }}>
                 <td style={{ padding: '9px 12px', fontWeight: 500, color: '#1a2240' }}>№{inv.number}</td>
                 <td style={{ padding: '9px 12px', color: '#374151' }}>{inv.lease.tenant.fullName}</td>
                 <td style={{ padding: '9px 12px', color: '#374151' }}>{inv.lease.unit.number}</td>
