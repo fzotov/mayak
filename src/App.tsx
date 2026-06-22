@@ -9,6 +9,7 @@ import { InvoiceDetailPage } from './pages/InvoiceDetail'
 import { SettingsReferencePage } from './pages/Settings2'
 import { BillingPage } from './pages/Billing'
 import { mockStats, mockTasks, mockOverdue, mockEvents, mockInvoices, mockTenants } from './lib/mockData'
+import { useRealTenants, useRealInvoices } from './lib/useRealData'
 
 type Page = 'dashboard' | 'tenants' | 'invoices' | 'tasks' | 'ai' | 'kb' | 'tenant-card' | 'reference' | 'billing' | 'invoice-detail' | 'settings'
 
@@ -118,7 +119,8 @@ function Dashboard() {
 
 function Invoices({ onOpenInvoice }: { onOpenInvoice: (inv: any) => void }) {
   const [filter, setFilter] = useState('')
-  const filtered = filter ? mockInvoices.filter(i => i.status === filter) : mockInvoices
+  const realInvoices = useRealInvoices()
+  const filtered = filter ? realInvoices.filter((i: any) => i.status === filter) : realInvoices
   return (
     <div>
       <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
@@ -181,7 +183,7 @@ function Tenants({ onOpenTenant }: { onOpenTenant: () => void }) {
           </tr>
         </thead>
         <tbody>
-          {mockTenants.map(t => (
+          {useRealTenants().map(t => (
             <tr key={t.id} style={{ borderBottom: '1px solid #f0f2f8' }}>
               <td style={{ padding: '9px 12px', fontWeight: 500, color: '#4f6ef7', cursor: 'pointer', textDecoration: 'underline' }} onClick={() => onOpenTenant()}>{t.fullName}</td>
               <td style={{ padding: '9px 12px', color: '#6b7280' }}>{TYPE_LABEL[t.type]}</td>
