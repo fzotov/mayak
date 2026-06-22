@@ -1,4 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { supabase } from './lib/supabase'
+import { AuthPage } from './pages/Auth'
 import { mockStats, mockTasks, mockOverdue, mockEvents, mockInvoices, mockTenants } from './lib/mockData'
 
 type Page = 'dashboard' | 'tenants' | 'invoices' | 'tasks'
@@ -205,6 +207,21 @@ function Tasks() {
 
 export default function App() {
   const [page, setPage] = useState<Page>('dashboard')
+  const [user, setUser] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      setUser(data.session?.user ?? null)
+      setLoading(false)
+    })
+    supabase.auth.onAuthStateChange((_e, session) => {
+      setUser(session?.user ?? null)
+    })
+  }, [])
+
+  if (loading) return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'sans-serif', color: '#8596b4' }}>Загрузка...</div>
+  if (!user) return <AuthPage onLogin={() => supabase.auth.getSession().then(({ data }) => setUser(data.session?.user ?? null))} />
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', background: '#f0f2f8', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif' }}>
