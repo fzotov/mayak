@@ -3,9 +3,10 @@ import { supabase } from './lib/supabase'
 import { AuthPage } from './pages/Auth'
 import { AIAssistantPage } from './pages/AIAssistant'
 import { KnowledgeBasePage } from './pages/KnowledgeBase'
+import { TenantCardPage } from './pages/TenantCard'
 import { mockStats, mockTasks, mockOverdue, mockEvents, mockInvoices, mockTenants } from './lib/mockData'
 
-type Page = 'dashboard' | 'tenants' | 'invoices' | 'tasks' | 'ai' | 'kb'
+type Page = 'dashboard' | 'tenants' | 'invoices' | 'tasks' | 'ai' | 'kb' | 'tenant-card'
 
 const NAV = [
   { id: 'dashboard', label: 'Сводка дня', icon: '⊞' },
@@ -182,7 +183,7 @@ function Tenants() {
               <td style={{ padding: '9px 12px', color: '#374151' }}>{t.unitNumber}</td>
               <td style={{ padding: '9px 12px', color: t.leaseStatus === 'DEBT' ? '#ef4444' : t.leaseStatus === 'EXPIRING' ? '#d97706' : '#6b7280' }}>{t.leaseEnd}</td>
               <td style={{ padding: '9px 12px' }}><Badge s={t.leaseStatus} /></td>
-            <td style={{ padding: '9px 12px' }}><button onClick={() => sendWelcomeEmail(t)} style={{ padding: '3px 10px', fontSize: 11, borderRadius: 5, border: '1px solid #4f6ef7', color: '#4f6ef7', background: '#eff3ff', cursor: 'pointer' }}>Email</button></td>
+            <td style={{ padding: '9px 12px' }}><button onClick={() => setPage('tenant-card')} style={{ padding: '3px 10px', fontSize: 11, borderRadius: 5, border: '1px solid #e8ebf3', color: '#374151', background: '#f9fafb', cursor: 'pointer', marginRight: 4 }}>Открыть</button><button onClick={() => sendWelcomeEmail(t)} style={{ padding: '3px 10px', fontSize: 11, borderRadius: 5, border: '1px solid #4f6ef7', color: '#4f6ef7', background: '#eff3ff', cursor: 'pointer' }}>Email</button></td>
             </tr>
           ))}
         </tbody>
@@ -275,6 +276,7 @@ export default function App() {
           {page === 'tasks' && <Tasks />}
           {page === 'ai' && <AIAssistantPage />}
           {page === 'kb' && <KnowledgeBasePage />}
+          {page === 'tenant-card' && <TenantCardPage onBack={() => setPage('tenants')} />}
         </main>
       </div>
     </div>
