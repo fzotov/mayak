@@ -287,7 +287,7 @@ export default function App() {
         </header>
         <main style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
           {page === 'dashboard' && <Dashboard />}
-          {page === 'invoices' && <Invoices />}
+          {page === 'invoices' && <Invoices onOpenInvoice={(inv) => { setSelectedInvoice(inv); setPage('invoice-detail') }} />}
           {page === 'tenants' && <Tenants onOpenTenant={() => setPage('tenant-card')} />}
           {page === 'tasks' && <Tasks />}
           {page === 'ai' && <AIAssistantPage />}
