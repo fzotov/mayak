@@ -4,9 +4,10 @@ import { AuthPage } from './pages/Auth'
 import { AIAssistantPage } from './pages/AIAssistant'
 import { KnowledgeBasePage } from './pages/KnowledgeBase'
 import { TenantCardPage } from './pages/TenantCard'
+import { SettingsReferencePage } from './pages/Settings2'
 import { mockStats, mockTasks, mockOverdue, mockEvents, mockInvoices, mockTenants } from './lib/mockData'
 
-type Page = 'dashboard' | 'tenants' | 'invoices' | 'tasks' | 'ai' | 'kb' | 'tenant-card'
+type Page = 'dashboard' | 'tenants' | 'invoices' | 'tasks' | 'ai' | 'kb' | 'tenant-card' | 'reference'
 
 const NAV = [
   { id: 'dashboard', label: 'Сводка дня', icon: '⊞' },
@@ -15,6 +16,7 @@ const NAV = [
   { id: 'tasks', label: 'Задачи', icon: '✓' },
   { id: 'ai', label: 'AI Ассистент', icon: '✦' },
   { id: 'kb', label: 'База знаний', icon: '◉' },
+  { id: 'reference', label: 'Справочники', icon: '⚙' },
 ] as const
 
 const SOURCE_COLOR: Record<string, string> = { OWNER: '#ef4444', SYSTEM: '#9ca3af', EMPLOYEE: '#3b82f6' }
@@ -277,6 +279,7 @@ export default function App() {
           {page === 'ai' && <AIAssistantPage />}
           {page === 'kb' && <KnowledgeBasePage />}
           {page === 'tenant-card' && <TenantCardPage onBack={() => setPage('tenants')} />}
+          {page === 'reference' && <SettingsReferencePage />}
         </main>
       </div>
     </div>
