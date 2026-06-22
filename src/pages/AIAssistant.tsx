@@ -47,7 +47,7 @@ export function AIAssistantPage() {
   return (
     <div style={{ maxWidth: 800 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-, fontWeight: 600, color: '#1a2240' }}>AI Ассистент</div>
+, fontWeight: 400, color: '#8596b4', display: 'none' }}>AI Ассистент</div>
         <div style={{ display: 'flex', background: '#f0f2f8', borderRadius: 8, padding: 3, gap: 2 }}>
           <button onClick={() => setModel('claude')}
             style={{ padding: '5px 14px', borderRadius: 6, border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, fontWeight: 500,
