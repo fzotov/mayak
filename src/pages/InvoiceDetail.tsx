@@ -22,106 +22,104 @@ export function InvoiceDetailPage({ invoice, onBack }: { invoice: any; onBack: (
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Счёт ${num}</title>
     <style>
       *{margin:0;padding:0;box-sizing:border-box}
-      body{font-family:Arial,sans-serif;font-size:9pt;color:#000;padding:12mm 12mm 10mm 20mm}
-      table.bank{width:100%;border-collapse:collapse;margin-bottom:10pt}
-      table.bank td{border:1px solid #000;padding:3px 5px;vertical-align:top;font-size:8.5pt}
-      .bik-label{color:#555;font-size:7.5pt}
-      h1{font-size:12pt;font-weight:bold;margin:8pt 0 3pt}
-      hr.thick{border:none;border-top:2px solid #000;margin:3pt 0}
-      hr.thin{border:none;border-top:1px solid #000;margin:5pt 0}
-      .parties{margin:5pt 0;font-size:8.5pt}
-      .party{display:grid;grid-template-columns:105px 1fr;gap:2px;margin-bottom:4pt;line-height:1.3}
-      .party-label{color:#000}
-      .party-label small{display:block;color:#555;font-size:7.5pt}
-      table.items{width:100%;border-collapse:collapse;margin:6pt 0;font-size:8.5pt}
-      table.items th{border:1px solid #000;padding:3px 5px;text-align:center;font-weight:bold;background:#ebebeb;font-size:8pt}
-      table.items td{border:1px solid #000;padding:2px 5px;font-size:8.5pt}
-      .totals{text-align:right;margin:3pt 0 6pt;font-size:8.5pt;line-height:1.6}
-      .total-bold{font-weight:bold;font-size:9.5pt}
-      .notice{font-size:7.5pt;color:#333;line-height:1.4;margin:4pt 0}
-      .signatures{display:grid;grid-template-columns:1fr 1fr;gap:30px;margin-top:14pt;font-size:8.5pt}
-      .sig-title{margin-bottom:12pt}
+      body{font-family:Arial,sans-serif;font-size:9pt;color:#000;padding:10mm 15mm 10mm 15mm}
+      table{border-collapse:collapse}
+      .req{width:100%;margin-bottom:12pt}
+      .req td{border:1px solid #000;padding:4px 6px;font-size:8.5pt;vertical-align:top}
+      .req .qr-cell{width:90px;text-align:center;vertical-align:middle;padding:4px}
+      .req .bank-name{font-weight:bold;font-size:9pt}
+      .req .label{color:#555;font-size:7.5pt}
+      h1{font-size:13pt;font-weight:bold;margin:10pt 0 2pt}
+      .line1{border-top:2px solid #000;margin:3pt 0 6pt}
+      .line2{border-top:1px solid #000;margin:5pt 0}
+      .parties{font-size:9pt;margin-bottom:6pt}
+      .party{display:flex;gap:0;margin-bottom:4pt}
+      .plabel{width:120px;min-width:120px;font-size:9pt}
+      .plabel small{display:block;font-size:8pt;color:#555}
+      .pval{font-size:9pt;line-height:1.35}
+      .items{width:100%;margin:4pt 0 6pt}
+      .items th{border:1px solid #000;padding:4px 5px;font-size:8.5pt;text-align:center;background:#f0f0f0;font-weight:bold}
+      .items td{border:1px solid #000;padding:3px 5px;font-size:8.5pt}
+      .totals{font-size:9pt;line-height:1.8;margin-bottom:4pt}
+      .totals table{float:right}
+      .totals td{padding:0 0 0 20px;font-size:9pt}
+      .totals .bold td{font-weight:bold;font-size:10pt}
+      .notice{font-size:8pt;color:#333;line-height:1.5;margin:4pt 0}
+      .sigs{display:flex;justify-content:space-between;margin-top:16pt;font-size:9pt}
+      .sig{width:45%}
+      .sig-title{margin-bottom:14pt}
       .sig-line{border-bottom:1px solid #000;margin-bottom:2px}
-      .sig-name{font-size:8pt;text-align:center}
-      @media print{@page{size:A4;margin:0}body{padding:12mm 12mm 10mm 20mm}}
+      .sig-name{font-size:8.5pt}
+      @media print{@page{size:A4;margin:0}body{padding:10mm 15mm 10mm 15mm}}
     </style></head><body>
 
-    <table class="bank">
+    <table class="req">
       <tr>
-        <td rowspan="4" style="width:55%">
-          <div class="bik-label">Банк получателя</div>
-          <div style="font-weight:bold;margin:1px 0">ПАО Сбербанк России</div>
-        </td>
-        <td style="width:18%" class="bik-label">БИК</td>
-        <td style="width:27%;font-weight:bold">044525225</td>
-        <td rowspan="4" style="width:80px;text-align:center;padding:4px">
-          <svg width="72" height="72" viewBox="0 0 72 72" xmlns="http://www.w3.org/2000/svg">
-            <rect width="72" height="72" fill="white"/>
+        <td class="qr-cell" rowspan="3">
+          <svg width="80" height="80" viewBox="0 0 80 80" xmlns="http://www.w3.org/2000/svg">
+            <rect width="80" height="80" fill="white"/>
             <g fill="black">
-              <rect x="3" y="3" width="20" height="20" rx="1" fill="none" stroke="black" stroke-width="2.5"/>
-              <rect x="7" y="7" width="12" height="12"/>
-              <rect x="49" y="3" width="20" height="20" rx="1" fill="none" stroke="black" stroke-width="2.5"/>
-              <rect x="53" y="7" width="12" height="12"/>
-              <rect x="3" y="49" width="20" height="20" rx="1" fill="none" stroke="black" stroke-width="2.5"/>
-              <rect x="7" y="53" width="12" height="12"/>
-              <rect x="27" y="3" width="4" height="4"/><rect x="33" y="3" width="4" height="4"/>
-              <rect x="27" y="9" width="4" height="4"/><rect x="39" y="9" width="4" height="4"/>
-              <rect x="27" y="27" width="4" height="4"/><rect x="33" y="27" width="4" height="4"/>
-              <rect x="39" y="27" width="4" height="4"/><rect x="45" y="27" width="4" height="4"/>
-              <rect x="27" y="33" width="4" height="4"/><rect x="39" y="33" width="4" height="4"/>
-              <rect x="27" y="39" width="4" height="4"/><rect x="33" y="39" width="4" height="4"/>
-              <rect x="45" y="39" width="4" height="4"/><rect x="51" y="39" width="4" height="4"/>
-              <rect x="57" y="27" width="4" height="4"/><rect x="63" y="33" width="4" height="4"/>
-              <rect x="57" y="39" width="4" height="4"/><rect x="63" y="45" width="4" height="4"/>
-              <rect x="27" y="51" width="4" height="4"/><rect x="33" y="51" width="4" height="4"/>
-              <rect x="45" y="57" width="4" height="4"/><rect x="57" y="51" width="4" height="4"/>
-              <rect x="63" y="57" width="4" height="4"/>
+              <rect x="3" y="3" width="22" height="22" fill="none" stroke="black" stroke-width="3"/>
+              <rect x="8" y="8" width="12" height="12"/>
+              <rect x="55" y="3" width="22" height="22" fill="none" stroke="black" stroke-width="3"/>
+              <rect x="60" y="8" width="12" height="12"/>
+              <rect x="3" y="55" width="22" height="22" fill="none" stroke="black" stroke-width="3"/>
+              <rect x="8" y="60" width="12" height="12"/>
+              <rect x="30" y="3" width="5" height="5"/><rect x="37" y="3" width="5" height="5"/>
+              <rect x="30" y="10" width="5" height="5"/><rect x="44" y="10" width="5" height="5"/>
+              <rect x="30" y="30" width="5" height="5"/><rect x="37" y="30" width="5" height="5"/>
+              <rect x="44" y="30" width="5" height="5"/><rect x="51" y="30" width="5" height="5"/>
+              <rect x="30" y="37" width="5" height="5"/><rect x="44" y="37" width="5" height="5"/>
+              <rect x="30" y="44" width="5" height="5"/><rect x="37" y="44" width="5" height="5"/>
+              <rect x="51" y="44" width="5" height="5"/><rect x="58" y="44" width="5" height="5"/>
+              <rect x="65" y="30" width="5" height="5"/><rect x="72" y="37" width="3" height="3"/>
+              <rect x="65" y="44" width="5" height="5"/><rect x="30" y="58" width="5" height="5"/>
+              <rect x="37" y="58" width="5" height="5"/><rect x="51" y="65" width="5" height="5"/>
+              <rect x="65" y="58" width="5" height="5"/><rect x="72" y="65" width="3" height="3"/>
             </g>
           </svg>
-          <div style="font-size:6.5pt;text-align:center;margin-top:3px;color:#333">СБП · ${total.toLocaleString('ru-RU')} руб.</div>
+          <div style="font-size:7pt;margin-top:3px;color:#333;text-align:center">Оплатите, отсканировав<br>код в банковском приложении</div>
         </td>
+        <td style="width:42%">
+          <div class="bank-name">ПАО СБЕРБАНК Г. МОСКВА</div>
+          <div class="label" style="margin-top:2px">Банк получателя</div>
+        </td>
+        <td class="label" style="width:8%">БИК</td>
+        <td style="width:22%">044525225</td>
       </tr>
       <tr>
-        <td class="bik-label">Сч. №</td>
-        <td style="font-size:7.5pt">30101810400000000225</td>
+        <td>
+          <div style="font-size:8pt">ИНН&nbsp;&nbsp;500705271772&nbsp;&nbsp;&nbsp;&nbsp;ОГРНИП&nbsp;315500700008401</div>
+          <div class="bank-name" style="margin-top:2px">ИП Зотова Екатерина Викторовна</div>
+          <div class="label" style="margin-top:2px">Получатель</div>
+        </td>
+        <td class="label">Сч. №</td>
+        <td style="font-size:8pt">30101810400000000225</td>
       </tr>
       <tr>
-        <td style="border-top:1px solid #000">
-          <span style="font-size:7.5pt">ИНН&nbsp;500705271772&nbsp;&nbsp;&nbsp;ОГРНИП&nbsp;315500700008401</span><br>
-          <span style="font-weight:bold">ИП Зотова Екатерина Викторовна</span><br>
-          <span class="bik-label">Получатель</span>
-        </td>
-        <td class="bik-label">Сч. №</td>
-        <td style="font-size:7.5pt">40802810340000024041</td>
+        <td></td>
+        <td class="label">Сч. №</td>
+        <td style="font-size:8pt">40802810340000024041</td>
       </tr>
     </table>
 
     <h1>Счёт на оплату № ${num} от ${date}</h1>
-    <hr class="thick">
+    <div class="line1"></div>
 
     <div class="parties">
-      <div class="party">
-        <div class="party-label">Поставщик<small>(Исполнитель):</small></div>
-        <div>ИП Зотова Екатерина Викторовна, ИНН 500705271772, ОГРНИП 315500700008401, 141801, МО, г. Дмитров, мкр. им. Владимира Махалина, д.20, тел.: +7 916 763-02-07</div>
-      </div>
-      <div class="party">
-        <div class="party-label">Покупатель<small>(Заказчик):</small></div>
-        <div>${tenant}, Офис № ${unit}</div>
-      </div>
-      <div class="party">
-        <div class="party-label">Основание:</div>
-        <div>Договор аренды нежилого помещения</div>
-      </div>
+      <div class="party"><div class="plabel">Поставщик<small>(Исполнитель):</small></div><div class="pval">ИП Зотова Екатерина Викторовна, ИНН 500705271772, ОГРНИП 315500700008401,<br>141801, МО, г. Дмитров, мкр. им. Владимира Махалина, д.20, тел.: +7 916 763-02-07</div></div>
+      <div class="party"><div class="plabel">Покупатель<small>(Заказчик):</small></div><div class="pval">${tenant}, Офис № ${unit}</div></div>
+      <div class="party"><div class="plabel">Основание:</div><div class="pval">Договор аренды нежилого помещения</div></div>
     </div>
 
     <table class="items">
       <thead><tr>
         <th style="width:24px">№</th>
         <th>Товары (работы, услуги)</th>
-        <th style="width:44px">Кол-во</th>
+        <th style="width:48px">Кол-во</th>
         <th style="width:36px">Ед.</th>
-        <th style="width:68px">Цена</th>
-        <th style="width:76px">Сумма</th>
+        <th style="width:72px">Цена</th>
+        <th style="width:80px">Сумма</th>
       </tr></thead>
       <tbody>
         ${lines.map((l,i) => `<tr><td style="text-align:center">${i+1}</td><td>${l.name}</td><td style="text-align:center">1</td><td style="text-align:center">мес</td><td style="text-align:right">${l.amount.toLocaleString('ru-RU')},00</td><td style="text-align:right">${l.amount.toLocaleString('ru-RU')},00</td></tr>`).join('')}
@@ -129,28 +127,32 @@ export function InvoiceDetailPage({ invoice, onBack }: { invoice: any; onBack: (
     </table>
 
     <div class="totals">
-      <div>Итого: ${total.toLocaleString('ru-RU')},00 руб.</div>
-      <div>Без налога (НДС): —</div>
-      <div class="total-bold">Всего к оплате: ${total.toLocaleString('ru-RU')},00 руб.</div>
+      <table style="float:right;margin-bottom:6pt">
+        <tr><td>Итого:</td><td style="text-align:right;font-weight:bold">${total.toLocaleString('ru-RU')},00</td></tr>
+        <tr><td>В том числе НДС:</td><td style="text-align:right">—</td></tr>
+        <tr><td style="font-weight:bold">Всего к оплате:</td><td style="text-align:right;font-weight:bold">${total.toLocaleString('ru-RU')},00</td></tr>
+      </table>
+      <div style="clear:both"></div>
     </div>
 
-    <hr class="thin">
     <div class="notice">
       Оплата данного счёта означает согласие с условиями договора аренды нежилого помещения.<br>
-      Уведомление об оплате обязательно — направьте копию платёжного поручения на Email: info@mayak-d.ru
+      Уведомление об оплате обязательно — направьте копию платёжного поручения на Email: info@mayak-d.ru<br>
+      Товар/услуга предоставляется по факту поступления денег на расчётный счёт Исполнителя.
     </div>
-    <hr class="thin">
 
-    <div class="signatures">
-      <div>
+    <div class="line2"></div>
+
+    <div class="sigs">
+      <div class="sig">
         <div class="sig-title">Руководитель</div>
         <div class="sig-line"></div>
-        <div class="sig-name">Зотова Е.В.</div>
+        <div class="sig-name">&nbsp;&nbsp;&nbsp;&nbsp;Зотова Е.В.</div>
       </div>
-      <div>
+      <div class="sig">
         <div class="sig-title">Бухгалтер</div>
         <div class="sig-line"></div>
-        <div class="sig-name">Зотова Е.В.</div>
+        <div class="sig-name">&nbsp;&nbsp;&nbsp;&nbsp;Зотова Е.В.</div>
       </div>
     </div>
 
