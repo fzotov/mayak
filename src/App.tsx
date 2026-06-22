@@ -163,7 +163,7 @@ async function sendWelcomeEmail(tenant: any) {
   const data = await res.json()
   alert(data.ok ? 'Email sent!' : 'Error: ' + data.error)
 }
-function Tenants() {
+function Tenants({ onOpenTenant }: { onOpenTenant: () => void }) {
   return (
     <div style={{ background: '#fff', border: '1px solid #e8ebf3', borderRadius: 9, overflow: 'hidden' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
@@ -177,13 +177,13 @@ function Tenants() {
         <tbody>
           {mockTenants.map(t => (
             <tr key={t.id} style={{ borderBottom: '1px solid #f0f2f8' }}>
-              <td style={{ padding: '9px 12px', fontWeight: 500, color: '#4f6ef7', cursor: 'pointer', textDecoration: 'underline' }} onClick={() => setPage('tenant-card')}>{t.fullName}</td>
+              <td style={{ padding: '9px 12px', fontWeight: 500, color: '#4f6ef7', cursor: 'pointer', textDecoration: 'underline' }} onClick={() => onOpenTenant()}>{t.fullName}</td>
               <td style={{ padding: '9px 12px', color: '#6b7280' }}>{TYPE_LABEL[t.type]}</td>
               <td style={{ padding: '9px 12px', fontFamily: 'monospace', color: '#8596b4', fontSize: 11 }}>{t.inn ?? '—'}</td>
               <td style={{ padding: '9px 12px', color: '#374151' }}>{t.unitNumber}</td>
               <td style={{ padding: '9px 12px', color: t.leaseStatus === 'DEBT' ? '#ef4444' : t.leaseStatus === 'EXPIRING' ? '#d97706' : '#6b7280' }}>{t.leaseEnd}</td>
               <td style={{ padding: '9px 12px' }}><Badge s={t.leaseStatus} /></td>
-            <td style={{ padding: '9px 12px' }}><button onClick={() => setPage('tenant-card')} style={{ padding: '3px 10px', fontSize: 11, borderRadius: 5, border: '1px solid #e8ebf3', color: '#374151', background: '#f9fafb', cursor: 'pointer', marginRight: 4 }}>Открыть</button><button onClick={() => sendWelcomeEmail(t)} style={{ padding: '3px 10px', fontSize: 11, borderRadius: 5, border: '1px solid #4f6ef7', color: '#4f6ef7', background: '#eff3ff', cursor: 'pointer' }}>Email</button></td>
+            <td style={{ padding: '9px 12px' }}><button onClick={() => onOpenTenant()} style={{ padding: '3px 10px', fontSize: 11, borderRadius: 5, border: '1px solid #e8ebf3', color: '#374151', background: '#f9fafb', cursor: 'pointer', marginRight: 4 }}>Открыть</button><button onClick={() => sendWelcomeEmail(t)} style={{ padding: '3px 10px', fontSize: 11, borderRadius: 5, border: '1px solid #4f6ef7', color: '#4f6ef7', background: '#eff3ff', cursor: 'pointer' }}>Email</button></td>
             </tr>
           ))}
         </tbody>
