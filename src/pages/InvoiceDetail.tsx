@@ -9,109 +9,83 @@ export function InvoiceDetailPage({ invoice, onBack }: { invoice: any; onBack: (
   const [showQR, setShowQR] = useState(false)
 
   const generatePDF = () => {
-    const doc = new jsPDF()
     const tenant = invoice.lease.tenant.fullName
     const unit = invoice.lease.unit.number
     const num = invoice.number
     const total = invoice.total
-
-    doc.setFont('helvetica')
-    doc.setFontSize(10)
-
-    // Реквизиты банка вверху
-    doc.rect(10, 10, 130, 28)
-    doc.rect(140, 10, 60, 28)
-    doc.text('Банк получателя', 12, 16)
-    doc.text('ПАО Сбербанк России', 12, 22)
-    doc.text('ИНН  500705271772', 12, 32)
-    doc.text('ИП Зотова Екатерина Викторовна', 12, 38)
-    doc.text('Получатель', 12, 44)
-    doc.text('БИК', 142, 16)
-    doc.text('044525225', 165, 16)
-    doc.text('Сч. №', 142, 22)
-    doc.text('30101810400000000225', 158, 22)
-    doc.text('Сч. №', 142, 32)
-    doc.text('40802810340000024041', 158, 32)
-
-    // Заголовок
-    doc.setFontSize(14)
-    doc.setFont('helvetica', 'bold')
-    doc.text('Счет на оплату № ' + num + ' от ' + new Date().toLocaleDateString('ru'), 10, 58)
-    doc.setFont('helvetica', 'normal')
-
-    doc.line(10, 62, 200, 62)
-    doc.line(10, 63, 200, 63)
-
-    // Стороны
-    doc.setFontSize(10)
-    doc.text('Поставщик', 10, 72)
-    doc.text('(Исполнитель):', 10, 77)
-    doc.text('ИП Зотова Екатерина Викторовна, ИНН 500705271772, ОГРНИП 315500700008401,', 45, 72)
-    doc.text('141801, МО, г. Дмитров, мкр. им. Владимира Махалина, д.20', 45, 77)
-
-    doc.text('Покупатель', 10, 87)
-    doc.text('(Заказчик):', 10, 92)
-    doc.text(tenant + ', Офис № ' + unit, 45, 87)
-
-    doc.text('Основание:', 10, 102)
-    doc.text('Договор аренды', 45, 102)
-
-    // Таблица
-    doc.line(10, 108, 200, 108)
-    doc.rect(10, 108, 10, 10)
-    doc.rect(20, 108, 100, 10)
-    doc.rect(120, 108, 20, 10)
-    doc.rect(140, 108, 20, 10)
-    doc.rect(160, 108, 20, 10)
-    doc.rect(180, 108, 20, 10)
-
-    doc.setFont('helvetica', 'bold')
-    doc.text('N', 14, 115)
-    doc.text('Товары (работы, услуги)', 22, 115)
-    doc.text('Кол.', 122, 115)
-    doc.text('Ед.', 142, 115)
-    doc.text('Цена', 162, 115)
-    doc.text('Сумма', 182, 115)
-    doc.setFont('helvetica', 'normal')
-
     const lines = [
       { name: 'Аренда помещения № ' + unit, amount: Math.round(total * 0.85) },
       { name: 'Уборка помещения', amount: 2500 },
       { name: 'Электроэнергия', amount: Math.round(total * 0.1) },
     ]
-
-    let y = 118
-    lines.forEach((line, i) => {
-      doc.rect(10, y, 10, 10)
-      doc.rect(20, y, 100, 10)
-      doc.rect(120, y, 20, 10)
-      doc.rect(140, y, 20, 10)
-      doc.rect(160, y, 20, 10)
-      doc.rect(180, y, 20, 10)
-      doc.text(String(i + 1), 14, y + 7)
-      doc.text(line.name, 22, y + 7)
-      doc.text('1', 128, y + 7)
-      doc.text('мес', 142, y + 7)
-      doc.text(line.amount.toLocaleString('ru'), 162, y + 7)
-      doc.text(line.amount.toLocaleString('ru'), 182, y + 7)
-      y += 10
-    })
-
-    // Итого
-    doc.setFont('helvetica', 'bold')
-    doc.text('Итого:', 150, y + 10)
-    doc.text(total.toLocaleString('ru') + ' руб.', 175, y + 10)
-    doc.text('Всего к оплате:', 140, y + 20)
-    doc.text(total.toLocaleString('ru') + ' руб.', 175, y + 20)
-    doc.setFont('helvetica', 'normal')
-
-    doc.line(10, y + 28, 200, y + 28)
-    doc.line(10, y + 29, 200, y + 29)
-
-    doc.text('Руководитель _________________ Зотова Е.В.', 10, y + 40)
-    doc.text('Бухгалтер _________________ Зотова Е.В.', 120, y + 40)
-
-    doc.save('invoice-' + num + '.pdf')
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+      body{font-family:Arial,sans-serif;font-size:11px;margin:20px;color:#000}
+      .bank-block{display:grid;grid-template-columns:1fr 120px;border:1px solid #000;margin-bottom:16px}
+      .bank-left{padding:6px;border-right:1px solid #000}
+      .bank-right{padding:6px}
+      .bank-row{display:flex;justify-content:space-between;margin-bottom:2px}
+      h2{font-size:14px;margin:12px 0 4px}
+      .line{border-top:2px solid #000;margin:8px 0}
+      .parties{margin:8px 0}
+      .party-row{display:flex;gap:8px;margin-bottom:6px}
+      .party-label{width:100px;flex-shrink:0}
+      table{width:100%;border-collapse:collapse;margin:12px 0}
+      th,td{border:1px solid #000;padding:4px 6px;text-align:left}
+      th{background:#f5f5f5;font-weight:bold}
+      .total-block{text-align:right;margin:8px 0}
+      .total-row{margin:2px 0}
+      .signatures{display:flex;justify-content:space-between;margin-top:24px}
+      @media print{@page{margin:15mm}}
+    </style></head><body>
+    <div class="bank-block">
+      <div class="bank-left">
+        <div>Банк получателя</div>
+        <div>ПАО Сбербанк России</div>
+        <div style="margin-top:6px">ИНН&nbsp;&nbsp;500705271772&nbsp;&nbsp;&nbsp;&nbsp;ОГРНИП&nbsp;315500700008401</div>
+        <div>ИП Зотова Екатерина Викторовна</div>
+        <div style="margin-top:4px;color:#666">Получатель</div>
+      </div>
+      <div class="bank-right">
+        <div class="bank-row"><span>БИК</span><span>044525225</span></div>
+        <div class="bank-row"><span>Сч.№</span><span style="font-size:10px">30101810400000000225</span></div>
+        <div style="margin-top:6px" class="bank-row"><span>Сч.№</span><span style="font-size:10px">40802810340000024041</span></div>
+      </div>
+    </div>
+    <h2>Счёт на оплату № ${num} от ${new Date().toLocaleDateString('ru-RU')}</h2>
+    <div class="line"></div>
+    <div class="parties">
+      <div class="party-row">
+        <span class="party-label">Поставщик<br>(Исполнитель):</span>
+        <span>ИП Зотова Екатерина Викторовна, ИНН 500705271772, ОГРНИП 315500700008401,<br>141801, МО, г. Дмитров, мкр. им. Владимира Махалина, д.20, тел.: +7 916 763-02-07</span>
+      </div>
+      <div class="party-row">
+        <span class="party-label">Покупатель<br>(Заказчик):</span>
+        <span>${tenant}, Офис № ${unit}</span>
+      </div>
+      <div class="party-row">
+        <span class="party-label">Основание:</span>
+        <span>Договор аренды нежилого помещения</span>
+      </div>
+    </div>
+    <table>
+      <thead><tr><th>№</th><th>Товары (работы, услуги)</th><th>Кол-во</th><th>Ед.</th><th>Цена</th><th>Сумма</th></tr></thead>
+      <tbody>
+        ${lines.map((l,i) => `<tr><td>${i+1}</td><td>${l.name}</td><td>1</td><td>мес</td><td>${l.amount.toLocaleString('ru-RU')}</td><td>${l.amount.toLocaleString('ru-RU')}</td></tr>`).join('')}
+      </tbody>
+    </table>
+    <div class="total-block">
+      <div class="total-row">Итого: ${total.toLocaleString('ru-RU')} руб.</div>
+      <div class="total-row"><b>Всего к оплате: ${total.toLocaleString('ru-RU')} руб.</b></div>
+    </div>
+    <div class="line"></div>
+    <div class="signatures">
+      <div>Руководитель _________________ Зотова Е.В.</div>
+      <div>Бухгалтер _________________ Зотова Е.В.</div>
+    </div>
+    <script>window.onload=function(){window.print();window.close()}<\/script>
+    </body></html>`
+    const w = window.open('', '_blank')
+    if (w) { w.document.write(html); w.document.close() }
   }
   const s = {
     card: { background: '#fff', border: '1px solid #e8ebf3', borderRadius: 9, padding: 16, marginBottom: 12 } as React.CSSProperties,
