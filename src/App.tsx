@@ -256,7 +256,7 @@ export default function App() {
         <div style={{ padding: '12px 14px', borderTop: '1px solid #ffffff12', display: 'flex', alignItems: 'center', gap: 8 }}>
           <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#4f6ef7', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 600, color: '#fff' }}>АС</div>
           <div>
-            <div onClick={() => setPage('settings')} style={{ fontSize: 13, fontWeight: 500, color: '#c9cdd8', cursor: 'pointer', textDecoration: 'underline' }}>Андрей Соколов</div>
+            <div onClick={() => setPage('settings')} style={{ fontSize: 13, fontWeight: 500, color: '#c9cdd8', cursor: 'pointer' }}>Андрей Соколов</div>
             <div style={{ fontSize: 12, color: '#4b5563' }}>Управляющий</div>
           </div>
         </div>
