@@ -125,11 +125,11 @@ export function SettingsModal({ onClose, onLogout }: { onClose: () => void; onLo
 
             {tab === 1 && (
               <>
-                <div style={{ marginBottom: 16 }}>
+                <div style={{ marginBottom: 14 }}>
                   <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 6 }}>Текущий пароль</div>
                   <input style={inp} type="password" value={oldPw} onChange={e => setOldPw(e.target.value)} placeholder="Введите текущий пароль" />
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 16px', marginBottom: 16 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 16px', marginBottom: 14 }}>
                   <div>
                     <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 6 }}>Новый пароль</div>
                     <input style={inp} type="password" value={newPw} onChange={e => setNewPw(e.target.value)} placeholder="Минимум 6 символов" />
@@ -140,11 +140,11 @@ export function SettingsModal({ onClose, onLogout }: { onClose: () => void; onLo
                   </div>
                 </div>
                 {pwMsg && <div style={{ fontSize: 12, color: pwMsg.includes('Ошибка') || pwMsg.includes('не') ? '#ef4444' : '#16a34a', marginBottom: 12, padding: '8px 12px', background: pwMsg.includes('Ошибка') || pwMsg.includes('не') ? '#fef2f2' : '#f0fdf4', borderRadius: 8 }}>{pwMsg}</div>}
-                <button onClick={changePassword} style={{ padding: '10px 20px', border: 'none', borderRadius: 10, background: '#ea580c', fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <button onClick={changePassword} style={{ padding: '10px 20px', border: 'none', borderRadius: 10, background: '#ea580c', fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', color: '#fff', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 16 }}>
                   🔒 Обновить пароль
                 </button>
 
-                <div style={{ marginTop: 20, padding: 16, border: '1px solid #e5e7eb', borderRadius: 12 }}>
+                <div style={{ padding: 14, border: '1px solid #e5e7eb', borderRadius: 12, marginBottom: 16 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div>
                       <div style={{ fontSize: 14, fontWeight: 500, color: '#1a2240' }}>Двухфакторная аутентификация</div>
@@ -155,26 +155,59 @@ export function SettingsModal({ onClose, onLogout }: { onClose: () => void; onLo
                     </div>
                   </div>
                 </div>
+
+                <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 10 }}>Активные сессии</div>
+                {[
+                  { device: 'MacBook Pro · Safari · Москва', time: 'Текущая сессия', current: true },
+                  { device: 'iPhone 15 · Маяк App · Москва', time: '2 ч назад', current: false },
+                ].map((s, i) => (
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', border: '1px solid #e5e7eb', borderRadius: 10, marginBottom: 8 }}>
+                    <div style={{ fontSize: 14, color: '#1a2240' }}>{s.device}</div>
+                    <div style={{ fontSize: 12, color: s.current ? '#8596b4' : '#9ca3af' }}>{s.time}</div>
+                  </div>
+                ))}
               </>
             )}
 
             {tab === 2 && (
               <>
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 6 }}>Язык интерфейса</div>
+                  <select style={{ ...inp, appearance: 'none' as any }}>
+                    <option>Русский</option>
+                    <option>English</option>
+                  </select>
+                </div>
+                <div style={{ marginBottom: 20 }}>
+                  <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 6 }}>Тема оформления</div>
+                  <select style={{ ...inp, appearance: 'none' as any }}>
+                    <option>Светлая</option>
+                    <option>Тёмная</option>
+                    <option>Системная</option>
+                  </select>
+                </div>
+
+                <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 10 }}>Email-уведомления</div>
                 {[
-                  { label: 'Email уведомления', desc: 'Получать уведомления о новых платежах и задачах', on: true },
-                  { label: 'Напоминания о просрочке', desc: 'Автоматические напоминания арендаторам', on: true },
-                  { label: 'Ежемесячный отчёт', desc: 'Отчёт на email в конце каждого месяца', on: false },
+                  { label: 'Биллинг и платежи', on: true },
+                  { label: 'Модерация клиентов', on: true },
+                  { label: 'Безопасность аккаунта', on: true },
+                  { label: 'Новости продукта', on: false },
                 ].map((item, i) => (
-                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 0', borderBottom: '1px solid #f0f2f8' }}>
-                    <div>
-                      <div style={{ fontSize: 14, fontWeight: 500, color: '#1a2240' }}>{item.label}</div>
-                      <div style={{ fontSize: 12, color: '#8596b4', marginTop: 2 }}>{item.desc}</div>
-                    </div>
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', border: '1px solid #e5e7eb', borderRadius: 10, marginBottom: 8 }}>
+                    <div style={{ fontSize: 14, color: '#1a2240' }}>{item.label}</div>
                     <div style={{ width: 44, height: 24, borderRadius: 12, background: item.on ? '#ea580c' : '#e5e7eb', cursor: 'pointer', position: 'relative', flexShrink: 0 }}>
                       <div style={{ position: 'absolute', top: 3, left: item.on ? 23 : 3, width: 18, height: 18, background: '#fff', borderRadius: '50%', transition: 'left .2s' }} />
                     </div>
                   </div>
                 ))}
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16 }}>
+                  <button onClick={onClose} style={{ padding: '10px 20px', border: '1px solid #e5e7eb', borderRadius: 10, background: '#fff', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit', color: '#374151' }}>Отмена</button>
+                  <button style={{ padding: '10px 20px', border: 'none', borderRadius: 10, background: '#ea580c', fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    ✓ Сохранить изменения
+                  </button>
+                </div>
               </>
             )}
           </div>
