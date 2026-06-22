@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from './lib/supabase'
 import { AuthPage } from './pages/Auth'
 import { AIAssistantPage } from './pages/AIAssistant'
-import { SettingsPage } from './pages/Settings'
+import { SettingsModal } from './pages/Settings'
 import { KnowledgeBasePage } from './pages/KnowledgeBase'
 import { TenantCardPage } from './pages/TenantCard'
 import { InvoiceDetailPage } from './pages/InvoiceDetail'
@@ -219,6 +219,7 @@ function Tasks() {
 export default function App() {
   const [page, setPage] = useState<Page>('dashboard')
   const [selectedInvoice, setSelectedInvoice] = useState<any>(null)
+  const [showSettings, setShowSettings] = useState(false)
   const [user, setUser] = useState<any>(null)
   const [loading, setLoading] = useState(true)
 
@@ -256,7 +257,7 @@ export default function App() {
         <div style={{ padding: '12px 14px', borderTop: '1px solid #ffffff12', display: 'flex', alignItems: 'center', gap: 8 }}>
           <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#4f6ef7', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 600, color: '#fff' }}>АС</div>
           <div>
-            <div onClick={() => setPage('settings')} style={{ fontSize: 13, fontWeight: 500, color: '#c9cdd8', cursor: 'pointer' }}>Андрей Соколов</div>
+            <div onClick={() => setShowSettings(true)} style={{ fontSize: 13, fontWeight: 500, color: '#c9cdd8', cursor: 'pointer' }}>Андрей Соколов</div>
             <div style={{ fontSize: 12, color: '#4b5563' }}>Управляющий</div>
           </div>
         </div>
@@ -297,7 +298,7 @@ export default function App() {
           {page === 'reference' && <SettingsReferencePage />}
           {page === 'billing' && <BillingPage />}
           {page === 'invoice-detail' && selectedInvoice && <InvoiceDetailPage invoice={selectedInvoice} onBack={() => setPage('invoices')} />}
-          {page === 'settings' && <SettingsPage onLogout={() => setUser(null)} />}
+          {showSettings && <SettingsModal onClose={() => setShowSettings(false)} onLogout={() => { setShowSettings(false); setUser(null) }} />}
         </main>
       </div>
     </div>
