@@ -263,7 +263,17 @@ export default function App() {
         <header style={{ background: '#fff', borderBottom: '1px solid #e8ebf3', padding: '10px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
           <div>
             <div style={{ fontSize: 17, fontWeight: 600, color: '#1a2240' }}>
-              {page === 'dashboard' ? 'Сводка дня' : page === 'tenants' ? 'Арендаторы' : page === 'invoices' ? 'Счета' : 'Задачи'}
+              {{
+              'dashboard': 'Сводка дня',
+              'tenants': 'Арендаторы',
+              'invoices': 'Счета',
+              'tasks': 'Задачи',
+              'ai': 'AI Ассистент',
+              'kb': 'База знаний',
+              'reference': 'Справочники',
+              'billing': 'Биллинг',
+              'tenant-card': 'Карточка арендатора',
+            }[page] || 'Маяк'}
             </div>
             <div style={{ fontSize: 11, color: '#8596b4', marginTop: 1 }}>Бизнес-центр Маяк</div>
           </div>
