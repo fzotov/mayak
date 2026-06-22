@@ -182,6 +182,7 @@ export function TenantNewPage({ onBack, onSaved }: { onBack: () => void; onSaved
           <div><label style={label}>{form.type === 'IP' ? 'ОГРНИП' : form.type === 'COMPANY' ? 'ОГРН' : 'Паспорт серия/номер'}</label><input style={inp} value={form.ogrn} onChange={f('ogrn')} placeholder={form.type === 'IP' ? '315500700000000' : '1027700000000'} /></div>
           <div><label style={label}>Email</label><input style={inp} type="email" value={form.email} onChange={f('email')} placeholder="email@company.ru" /></div>
           <div><label style={label}>Телефон</label><input style={inp} value={form.phone} onChange={f('phone')} placeholder="+7 916 000-00-00" /></div>
+          <div></div>
         </div>
         <div style={{ marginTop: 12 }}>
           <label style={label}>Юридический адрес</label>
@@ -198,7 +199,7 @@ export function TenantNewPage({ onBack, onSaved }: { onBack: () => void; onSaved
         <div style={grid3}>
           <div style={{ gridColumn: '1/3' }}><label style={label}>Расчётный счёт</label><input style={inp} value={form.bank_account} onChange={f('bank_account')} placeholder="40702810000000000000" /></div>
           <div><label style={label}>БИК</label><input style={inp} value={form.bik} onChange={f('bik')} placeholder="044525225" /></div>
-          <div style={{ gridColumn: '1/3' }}><label style={label}>Корреспондентский счёт</label><input style={inp} value={form.corr_account} onChange={f('corr_account')} placeholder="30101810400000000225" /></div>
+          <div style={{ gridColumn: '1/-1' }}><label style={label}>Корреспондентский счёт</label><input style={inp} value={form.corr_account} onChange={f('corr_account')} placeholder="30101810400000000225" /></div>
         </div>
       </div>
 
