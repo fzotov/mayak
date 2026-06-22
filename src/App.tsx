@@ -85,10 +85,10 @@ function Dashboard() {
             <div key={inv.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid #f0f2f8' }}>
               <div>
                 <div style={{ fontSize: 14, fontWeight: 500, color: '#1a2240' }}>{inv.lease.tenant.full_name}</div>
-                <div style={{ fontSize: 12, color: '#8596b4' }}>Офис {inv.lease.unit.number} · №{inv.number}</div>
+                <div style={{ fontSize: 12, color: '#8596b4' }}>Офис {inv.units?.number || '—'} · №{inv.number}</div>
               </div>
               <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: 14, fontWeight: 600, color: '#ef4444' }}>{inv.total.toLocaleString('ru')} ₽</div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: '#ef4444' }}>{inv.total_amount.toLocaleString('ru')} ₽</div>
                 <div style={{ fontSize: 12, color: '#bbc4d6' }}>+{inv.daysOverdue} дней</div>
               </div>
             </div>
@@ -117,6 +117,12 @@ function Dashboard() {
 }
 
 function Invoices({ onOpenInvoice }: { onOpenInvoice: (inv: any) => void }) {
+  const [invoices, setInvoices] = useState<any[]>([])
+  const [loadingI, setLoadingI] = useState(true)
+
+  useEffect(() => {
+    getInvoices().then(data => { setInvoices(data); setLoadingI(false) })
+  }, [])
   const [filter, setFilter] = useState('')
   const filtered = filter ? mockInvoices.filter(i => i.status === filter) : mockInvoices
   return (
@@ -146,9 +152,9 @@ function Invoices({ onOpenInvoice }: { onOpenInvoice: (inv: any) => void }) {
               <tr key={inv.id} onClick={() => onOpenInvoice(inv)} style={{ borderBottom: '1px solid #f0f2f8', cursor: 'pointer' }}>
                 <td style={{ padding: '9px 12px', fontWeight: 500, color: '#1a2240' }}>№{inv.number}</td>
                 <td style={{ padding: '9px 12px', color: '#374151' }}>{inv.lease.tenant.full_name}</td>
-                <td style={{ padding: '9px 12px', color: '#374151' }}>{inv.lease.unit.number}</td>
+                <td style={{ padding: '9px 12px', color: '#374151' }}>{inv.units?.number || '—'}</td>
                 <td style={{ padding: '9px 12px', color: '#8596b4' }}>{inv.periodStart?.slice(0, 7)}</td>
-                <td style={{ padding: '9px 12px', fontWeight: 600, color: inv.status === 'OVERDUE' ? '#ef4444' : '#1a2240' }}>{inv.total.toLocaleString('ru')} ₽</td>
+                <td style={{ padding: '9px 12px', fontWeight: 600, color: inv.status === 'OVERDUE' ? '#ef4444' : '#1a2240' }}>{inv.total_amount.toLocaleString('ru')} ₽</td>
                 <td style={{ padding: '9px 12px' }}><Badge s={inv.status} /></td>
               </tr>
             ))}
@@ -187,7 +193,7 @@ function Tenants({ onOpenTenant }: { onOpenTenant: () => void }) {
           </tr>
         </thead>
         <tbody>
-          {loadingT ? <tr><td colSpan={6} style={{padding:20,textAlign:'center',color:'#8596b4'}}>Загрузка...</td></tr> : tenants.map(t => (
+          {loadingI ? <tr><td colSpan={6} style={{padding:20,textAlign:'center',color:'#8596b4'}}>Загрузка...</td></tr> : tenants.map(t => (
             <tr key={t.id} style={{ borderBottom: '1px solid #f0f2f8' }}>
               <td style={{ padding: '9px 12px', fontWeight: 500, color: '#4f6ef7', cursor: 'pointer', textDecoration: 'underline' }} onClick={() => onOpenTenant()}>{t.full_name}</td>
               <td style={{ padding: '9px 12px', color: '#6b7280' }}>{TYPE_LABEL[t.type]}</td>
