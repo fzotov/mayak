@@ -8,10 +8,11 @@ import { TenantCardPage } from './pages/TenantCard'
 import { InvoiceDetailPage } from './pages/InvoiceDetail'
 import { SettingsReferencePage } from './pages/Settings2'
 import { BillingPage } from './pages/Billing'
+import { TenantNewPage } from './pages/TenantNew'
 import { mockStats, mockTasks, mockOverdue, mockEvents, mockInvoices, mockTenants } from './lib/mockData'
 import { useRealTenants, useRealInvoices } from './lib/useRealData'
 
-type Page = 'dashboard' | 'tenants' | 'invoices' | 'tasks' | 'ai' | 'kb' | 'tenant-card' | 'reference' | 'billing' | 'invoice-detail' | 'settings'
+type Page = 'dashboard' | 'tenants' | 'invoices' | 'tasks' | 'ai' | 'kb' | 'tenant-card' | 'reference' | 'billing' | 'invoice-detail' | 'settings' | 'tenant-new'
 
 const NAV = [
   { id: 'dashboard', label: 'Сводка дня', icon: '⊞' },
@@ -305,6 +306,7 @@ export default function App() {
           {page === 'tenant-card' && <TenantCardPage onBack={() => setPage('tenants')} onCreateInvoice={() => setPage('billing')} />}
           {page === 'reference' && <SettingsReferencePage />}
           {page === 'billing' && <BillingPage />}
+          {page === 'tenant-new' && <TenantNewPage onBack={() => setPage('tenants')} onSaved={() => setPage('tenants')} />}
           {page === 'invoice-detail' && selectedInvoice && <InvoiceDetailPage invoice={selectedInvoice} onBack={() => setPage('invoices')} />}
           {showSettings && <SettingsModal onClose={() => setShowSettings(false)} onLogout={() => { setShowSettings(false); setUser(null) }} />}
         </main>
