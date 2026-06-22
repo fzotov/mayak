@@ -296,7 +296,7 @@ export default function App() {
           {page === 'tasks' && <Tasks />}
           {page === 'ai' && <AIAssistantPage />}
           {page === 'kb' && <KnowledgeBasePage />}
-          {page === 'tenant-card' && <TenantCardPage onBack={() => setPage('tenants')} />}
+          {page === 'tenant-card' && <TenantCardPage onBack={() => setPage('tenants')} onCreateInvoice={() => setPage('billing')} />}
           {page === 'reference' && <SettingsReferencePage />}
           {page === 'billing' && <BillingPage />}
           {page === 'invoice-detail' && selectedInvoice && <InvoiceDetailPage invoice={selectedInvoice} onBack={() => setPage('invoices')} />}

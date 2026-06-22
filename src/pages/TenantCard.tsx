@@ -56,7 +56,7 @@ function SuccessToast() {
   )
 }
 
-export function TenantCardPage({ onBack }: { onBack: () => void }) {
+export function TenantCardPage({ onBack, onCreateInvoice }: { onBack: () => void; onCreateInvoice?: () => void }) {
   const [tab, setTab] = useState(0)
   const [editing, setEditing] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
@@ -121,7 +121,7 @@ export function TenantCardPage({ onBack }: { onBack: () => void }) {
           ) : (
             <>
               <button onClick={() => setEditing(true)} style={{ padding: '7px 14px', border: '1px solid #e8ebf3', borderRadius: 7, background: '#fff', cursor: 'pointer', fontSize: 14, fontFamily: 'inherit', color: '#374151' }}>Редактировать</button>
-              <button style={{ padding: '7px 14px', border: 'none', borderRadius: 7, background: '#4f6ef7', cursor: 'pointer', fontSize: 14, fontFamily: 'inherit', color: '#fff', fontWeight: 500 }}>Выставить счёт</button>
+              <button onClick={onCreateInvoice} style={{ padding: '7px 14px', border: 'none', borderRadius: 7, background: '#4f6ef7', cursor: 'pointer', fontSize: 14, fontFamily: 'inherit', color: '#fff', fontWeight: 500 }}>Выставить счёт</button>
             </>
           )}
         </div>
