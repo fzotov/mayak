@@ -3,6 +3,7 @@ import { supabase, getTenants, getInvoices } from './lib/supabase'
 import { AuthPage } from './pages/Auth'
 import { AIAssistantPage } from './pages/AIAssistant'
 import { SettingsModal } from './pages/Settings'
+import { MeterReadingsPage } from './pages/MeterReadings'
 import { KnowledgeBasePage } from './pages/KnowledgeBase'
 import { TenantCardPage } from './pages/TenantCard'
 import { InvoiceDetailPage } from './pages/InvoiceDetail'
@@ -10,7 +11,7 @@ import { SettingsReferencePage } from './pages/Settings2'
 import { BillingPage } from './pages/Billing'
 import { mockStats, mockTasks, mockOverdue, mockEvents, mockInvoices, mockTenants } from './lib/mockData'
 
-type Page = 'dashboard' | 'tenants' | 'invoices' | 'tasks' | 'ai' | 'kb' | 'tenant-card' | 'reference' | 'billing' | 'invoice-detail' | 'settings'
+type Page = 'dashboard' | 'tenants' | 'invoices' | 'tasks' | 'ai' | 'kb' | 'tenant-card' | 'reference' | 'billing' | 'invoice-detail' | 'settings' | 'meters'
 
 const NAV = [
   { id: 'dashboard', label: 'Сводка дня', icon: '⊞' },
@@ -21,6 +22,7 @@ const NAV = [
   { id: 'kb', label: 'База знаний', icon: '◉' },
   { id: 'reference', label: 'Справочники', icon: '⚙' },
   { id: 'billing', label: 'Биллинг', icon: '◈' },
+  { id: 'meters', label: 'Счётчики', icon: '⊙' },
 ] as const
 
 const SOURCE_COLOR: Record<string, string> = { OWNER: '#ef4444', SYSTEM: '#9ca3af', EMPLOYEE: '#3b82f6' }
@@ -310,6 +312,7 @@ export default function App() {
           {page === 'reference' && <SettingsReferencePage />}
           {page === 'billing' && <BillingPage />}
           {page === 'invoice-detail' && selectedInvoice && <InvoiceDetailPage invoice={selectedInvoice} onBack={() => setPage('invoices')} />}
+          {page === 'meters' && <MeterReadingsPage />}
           {showSettings && <SettingsModal onClose={() => setShowSettings(false)} onLogout={() => { setShowSettings(false); setUser(null) }} />}
         </main>
       </div>
