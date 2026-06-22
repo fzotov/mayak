@@ -272,7 +272,7 @@ export default function App() {
         <main style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
           {page === 'dashboard' && <Dashboard />}
           {page === 'invoices' && <Invoices />}
-          {page === 'tenants' && <Tenants />}
+          {page === 'tenants' && <Tenants onOpenTenant={() => setPage('tenant-card')} />}
           {page === 'tasks' && <Tasks />}
           {page === 'ai' && <AIAssistantPage />}
           {page === 'kb' && <KnowledgeBasePage />}
