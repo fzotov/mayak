@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import jsPDF from 'jspdf'
+import QRCode from 'qrcode'
 
 const STATUS_LABEL: Record<string, string> = { OVERDUE: 'Просрочен', SENT: 'Выставлен', DRAFT: 'Черновик', PAID: 'Оплачен' }
 const STATUS_COLOR: Record<string, string> = { OVERDUE: '#ef4444', SENT: '#2563eb', DRAFT: '#6b7280', PAID: '#16a34a' }
@@ -8,12 +8,27 @@ const STATUS_BG: Record<string, string> = { OVERDUE: '#fef2f2', SENT: '#eff6ff',
 export function InvoiceDetailPage({ invoice, onBack }: { invoice: any; onBack: () => void }) {
   const [showQR, setShowQR] = useState(false)
 
-  const generatePDF = () => {
+  const generatePDF = async () => {
     const tenant = invoice.lease.tenant.fullName
     const unit = invoice.lease.unit.number
     const num = invoice.number
     const total = invoice.total
     const date = new Date().toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })
+    // Формируем строку QR по ГОСТ Р 56042-2014
+    const qrString = [
+      'ST00012',
+      'Name=ИП Зотова Екатерина Викторовна',
+      'PersonalAcc=40802810340000024041',
+      'BankName=ПАО Сбербанк России',
+      'BIC=044525225',
+      'CorrespAcc=30101810400000000225',
+      'PayeeINN=500705271772',
+      'Sum=' + (total * 100),
+      'Purpose=Оплата по счету №' + num + ' за аренду офиса № ' + unit
+    ].join('|')
+
+    const qrDataUrl = await QRCode.toDataURL(qrString, { width: 120, margin: 1, errorCorrectionLevel: 'M' })
+
     const lines = [
       { name: 'Аренда нежилого помещения № ' + unit + ' за ' + (invoice.periodStart?.slice(0,7) || ''), amount: Math.round(total * 0.85) },
       { name: 'Уборка помещения', amount: 2500 },
@@ -56,28 +71,7 @@ export function InvoiceDetailPage({ invoice, onBack }: { invoice: any; onBack: (
     <table class="req">
       <tr>
         <td class="qr-cell" rowspan="3">
-          <svg width="80" height="80" viewBox="0 0 80 80" xmlns="http://www.w3.org/2000/svg">
-            <rect width="80" height="80" fill="white"/>
-            <g fill="black">
-              <rect x="3" y="3" width="22" height="22" fill="none" stroke="black" stroke-width="3"/>
-              <rect x="8" y="8" width="12" height="12"/>
-              <rect x="55" y="3" width="22" height="22" fill="none" stroke="black" stroke-width="3"/>
-              <rect x="60" y="8" width="12" height="12"/>
-              <rect x="3" y="55" width="22" height="22" fill="none" stroke="black" stroke-width="3"/>
-              <rect x="8" y="60" width="12" height="12"/>
-              <rect x="30" y="3" width="5" height="5"/><rect x="37" y="3" width="5" height="5"/>
-              <rect x="30" y="10" width="5" height="5"/><rect x="44" y="10" width="5" height="5"/>
-              <rect x="30" y="30" width="5" height="5"/><rect x="37" y="30" width="5" height="5"/>
-              <rect x="44" y="30" width="5" height="5"/><rect x="51" y="30" width="5" height="5"/>
-              <rect x="30" y="37" width="5" height="5"/><rect x="44" y="37" width="5" height="5"/>
-              <rect x="30" y="44" width="5" height="5"/><rect x="37" y="44" width="5" height="5"/>
-              <rect x="51" y="44" width="5" height="5"/><rect x="58" y="44" width="5" height="5"/>
-              <rect x="65" y="30" width="5" height="5"/><rect x="72" y="37" width="3" height="3"/>
-              <rect x="65" y="44" width="5" height="5"/><rect x="30" y="58" width="5" height="5"/>
-              <rect x="37" y="58" width="5" height="5"/><rect x="51" y="65" width="5" height="5"/>
-              <rect x="65" y="58" width="5" height="5"/><rect x="72" y="65" width="3" height="3"/>
-            </g>
-          </svg>
+<img src="${qrDataUrl}" width="100" height="100" style="display:block"/>
           <div style="font-size:7pt;margin-top:3px;color:#333;text-align:center">Оплатите, отсканировав<br>код в банковском приложении</div>
         </td>
         <td style="width:42%">
