@@ -171,7 +171,7 @@ async function sendWelcomeEmail(tenant: any) {
   const data = await res.json()
   alert(data.ok ? 'Email sent!' : 'Error: ' + data.error)
 }
-function Tenants({ onOpenTenant }: { onOpenTenant: () => void }) {
+function Tenants({ onOpenTenant, onAddTenant }: { onOpenTenant: () => void; onAddTenant: () => void }) {
   return (
     <div style={{ background: '#fff', border: '1px solid #e8ebf3', borderRadius: 9, overflow: 'hidden' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
@@ -292,7 +292,7 @@ export default function App() {
         <main style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
           {page === 'dashboard' && <Dashboard />}
           {page === 'invoices' && <Invoices onOpenInvoice={(inv) => { setSelectedInvoice(inv); setPage('invoice-detail') }} />}
-          {page === 'tenants' && <Tenants onOpenTenant={() => setPage('tenant-card')} />}
+          {page === 'tenants' && <Tenants onOpenTenant={() => setPage('tenant-card')} onAddTenant={() => setPage('tenant-new')} />}
           {page === 'tasks' && <Tasks />}
           {page === 'ai' && <AIAssistantPage />}
           {page === 'kb' && <KnowledgeBasePage />}
