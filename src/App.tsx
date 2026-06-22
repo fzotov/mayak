@@ -1,15 +1,17 @@
 import { useState, useEffect } from 'react'
 import { supabase } from './lib/supabase'
 import { AuthPage } from './pages/Auth'
+import { AIAssistantPage } from './pages/AIAssistant'
 import { mockStats, mockTasks, mockOverdue, mockEvents, mockInvoices, mockTenants } from './lib/mockData'
 
-type Page = 'dashboard' | 'tenants' | 'invoices' | 'tasks'
+type Page = 'dashboard' | 'tenants' | 'invoices' | 'tasks' | 'ai'
 
 const NAV = [
   { id: 'dashboard', label: 'Сводка дня', icon: '⊞' },
   { id: 'tenants', label: 'Арендаторы', icon: '◎' },
   { id: 'invoices', label: 'Счета', icon: '◈' },
   { id: 'tasks', label: 'Задачи', icon: '✓' },
+  { id: 'ai', label: 'AI Ассистент', icon: '✦' },
 ] as const
 
 const SOURCE_COLOR: Record<string, string> = { OWNER: '#ef4444', SYSTEM: '#9ca3af', EMPLOYEE: '#3b82f6' }
@@ -269,6 +271,7 @@ export default function App() {
           {page === 'invoices' && <Invoices />}
           {page === 'tenants' && <Tenants />}
           {page === 'tasks' && <Tasks />}
+          {page === 'ai' && <AIAssistantPage />}
         </main>
       </div>
     </div>
