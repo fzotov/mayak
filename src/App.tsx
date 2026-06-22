@@ -173,6 +173,11 @@ async function sendWelcomeEmail(tenant: any) {
 }
 function Tenants({ onOpenTenant, onAddTenant }: { onOpenTenant: () => void; onAddTenant: () => void }) {
   return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+        <div style={{ fontSize: 18, fontWeight: 600, color: '#1a2240' }}>Арендаторы</div>
+        <button onClick={onAddTenant} style={{ padding: '8px 16px', border: 'none', borderRadius: 8, background: '#4f6ef7', color: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>+ Добавить арендатора</button>
+      </div>
     <div style={{ background: '#fff', border: '1px solid #e8ebf3', borderRadius: 9, overflow: 'hidden' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
         <thead>
