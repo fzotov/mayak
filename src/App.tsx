@@ -11,6 +11,7 @@ import { BillingPage } from './pages/Billing'
 import { TenantNewPage } from './pages/TenantNew'
 import { FloorPlanPage } from './pages/FloorPlan'
 import StaffPage from './pages/Staff'
+import InventoryPage from './pages/Inventory'
 import TasksPage from './pages/Tasks'
 import { mockStats, mockTasks, mockOverdue, mockEvents, mockInvoices, mockTenants } from './lib/mockData'
 import { useRealTenants, useRealInvoices } from './lib/useRealData'
@@ -355,7 +356,7 @@ export default function App() {
           {page === 'reconcile' && <div style={{padding:20,color:'#8596b4',fontSize:14}}>Сверка — в разработке</div>}
           {page === 'heat' && <div style={{padding:20,color:'#8596b4',fontSize:14}}>Тепло — в разработке</div>}
           {page === 'staff' && <StaffPage />}
-          {page === 'inventory' && <div style={{padding:20,color:'#8596b4',fontSize:14}}>Инвентарь — в разработке</div>}
+          {page === 'inventory' && <InventoryPage />}
           {page === 'floorplan' && <FloorPlanPage />}
           {page === 'invoice-detail' && selectedInvoice && <InvoiceDetailPage invoice={selectedInvoice} onBack={() => setPage('invoices')} />}
           {showSettings && <SettingsModal onClose={() => setShowSettings(false)} onLogout={() => { setShowSettings(false); setUser(null) }} />}
