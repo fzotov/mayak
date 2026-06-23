@@ -12,6 +12,7 @@ import { TenantNewPage } from './pages/TenantNew'
 import { FloorPlanPage } from './pages/FloorPlan'
 import StaffPage from './pages/Staff'
 import InventoryPage from './pages/Inventory'
+import ServicesPage from './pages/Services'
 import TasksPage from './pages/Tasks'
 import { mockStats, mockTasks, mockOverdue, mockEvents, mockInvoices, mockTenants } from './lib/mockData'
 import { useRealTenants, useRealInvoices } from './lib/useRealData'
@@ -47,6 +48,7 @@ const NAV_GROUPS = [
   ] },
   { label: 'СИСТЕМА', items: [
     { id: 'ai', label: 'AI Ассистент', icon: '✦' },
+    { id: 'services', label: 'Справочник услуг', icon: '◈' },
     { id: 'reference', label: 'Справочники', icon: '⚙' },
   ] },
 ]
@@ -316,6 +318,7 @@ export default function App() {
               'ai': 'AI Ассистент',
               'kb': 'База знаний',
               'reference': 'Справочники',
+              'services': 'Справочник услуг',
               'billing': 'Биллинг',
               'my-tasks': 'Мои задачи',
               'repairs': 'Заявки на ремонт',
@@ -346,6 +349,7 @@ export default function App() {
           {page === 'kb' && <KnowledgeBasePage />}
           {page === 'tenant-card' && <TenantCardPage onBack={() => setPage('tenants')} onCreateInvoice={() => setPage('billing')} />}
           {page === 'reference' && <SettingsReferencePage />}
+          {page === 'services' && <ServicesPage />}
           {page === 'billing' && <BillingPage />}
           {page === 'tenant-new' && <TenantNewPage onBack={() => setPage('tenants')} onSaved={() => setPage('tenants')} />}
           {page === 'my-tasks' && <div style={{padding:20,color:'#8596b4',fontSize:14}}>Мои задачи — в разработке</div>}
