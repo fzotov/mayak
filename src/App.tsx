@@ -263,6 +263,12 @@ export default function App() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    const handler = (e: any) => setPage(e.detail)
+    window.addEventListener('navigate', handler)
+    return () => window.removeEventListener('navigate', handler)
+  }, [])
+
+  useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       setUser(data.session?.user ?? null)
       setLoading(false)
