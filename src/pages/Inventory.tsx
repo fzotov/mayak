@@ -30,33 +30,35 @@ interface Movement {
 
 interface Staff { id: string; full_name: string }
 
-async function fetchCategories() {
-  const { data } = await supabase.from('inventory_categories').select('name').order('name')
-  return (data || []).map((c: any) => c.name)
-}
-
 const emptyItem: Omit<Item, 'id' | 'responsible'> = {
   name: '', category: '', description: '', quantity: 1, quantity_available: 1,
   location: '', cost: 0, serial_number: '', inventory_number: '',
   responsible_id: null, supplier: '', received_at: '', notes: ''
 }
 
+const inp: React.CSSProperties = { width: '100%', border: '1px solid #e8ebf3', borderRadius: 7, padding: '8px 10px', fontSize: 14, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' as const }
+const lbl: React.CSSProperties = { fontSize: 12, color: '#8596b4', marginBottom: 4, display: 'block', fontWeight: 500 }
 
-
-function ItemModal({ item, staff, categories: initCategories, onClose, onSaved }: { item: Item | null; staff: Staff[]; categories: string[]; onClose: () => void; onSaved: () => void }) {
+function ItemModal({ item, staff, onClose, onSaved }: { item: Item | null; staff: Staff[]; onClose: () => void; onSaved: () => void }) {
   const [form, setForm] = useState<Omit<Item, 'id' | 'responsible'>>(item ? { ...item } : { ...emptyItem })
   const [saving, setSaving] = useState(false)
-  const [categories, setCategories] = useState<string[]>([])
-  const [newCat, setNewCat] = useState('')
-
-  useEffect(() => { fetchCategories().then(setCategories) }, [])
   const [tab, setTab] = useState<'info' | 'movements'>('info')
   const [movements, setMovements] = useState<Movement[]>([])
+  const [categories, setCategories] = useState<string[]>([])
+  const [newCat, setNewCat] = useState('')
   const [issueQty, setIssueQty] = useState(1)
   const [issueStaff, setIssueStaff] = useState('')
   const [issueNote, setIssueNote] = useState('')
 
-  useEffect(() => { if (item?.id && tab === 'movements') fetchMovements() }, [tab])
+  useEffect(() => {
+    supabase.from('inventory_categories').select('name').order('name').then(({ data }) => {
+      setCategories((data || []).map((c: any) => c.name))
+    })
+  }, [])
+
+  useEffect(() => {
+    if (item?.id && tab === 'movements') fetchMovements()
+  }, [tab])
 
   async function fetchMovements() {
     const { data } = await supabase.from('inventory_movements')
@@ -71,8 +73,8 @@ function ItemModal({ item, staff, categories: initCategories, onClose, onSaved }
   async function addCategory() {
     if (!newCat.trim()) return
     await supabase.from('inventory_categories').insert({ name: newCat.trim() })
-    const updated = await fetchCategories()
-    setCategories(updated)
+    const { data } = await supabase.from('inventory_categories').select('name').order('name')
+    setCategories((data || []).map((c: any) => c.name))
     set('category', newCat.trim())
     setNewCat('')
   }
@@ -80,12 +82,13 @@ function ItemModal({ item, staff, categories: initCategories, onClose, onSaved }
   async function save() {
     if (!form.name.trim()) return alert('Введите название')
     setSaving(true)
+    const cleanForm = { ...form, received_at: form.received_at || null }
     if (item?.id) {
-      const cleanForm = {...form, received_at: form.received_at || null}
       const r = await supabase.from('inventory').update(cleanForm).eq('id', item.id)
+      if (r.error) { alert('Ошибка: ' + r.error.message); setSaving(false); return }
     } else {
-      const cleanForm = {...form, received_at: form.received_at || null}
       const r = await supabase.from('inventory').insert(cleanForm)
+      if (r.error) { alert('Ошибка: ' + r.error.message); setSaving(false); return }
     }
     setSaving(false)
     onSaved()
@@ -108,7 +111,7 @@ function ItemModal({ item, staff, categories: initCategories, onClose, onSaved }
     onSaved()
   }
 
-  async function returnItem(movId: string, qty: number) {
+  async function returnItem(qty: number) {
     if (!item?.id) return
     await supabase.from('inventory_movements').insert({
       item_id: item.id, action: 'returned', quantity: qty, note: 'Возврат'
@@ -117,9 +120,6 @@ function ItemModal({ item, staff, categories: initCategories, onClose, onSaved }
     fetchMovements()
     onSaved()
   }
-
-  const inp: React.CSSProperties = { width: '100%', border: '1px solid #e8ebf3', borderRadius: 7, padding: '8px 10px', fontSize: 14, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' as const }
-  const lbl: React.CSSProperties = { fontSize: 12, color: '#8596b4', marginBottom: 4, display: 'block', fontWeight: 500 }
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: '#00000066', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
@@ -130,7 +130,7 @@ function ItemModal({ item, staff, categories: initCategories, onClose, onSaved }
         </div>
 
         {item && (
-          <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid #e8ebf3' }}>
+          <div style={{ display: 'flex', borderBottom: '1px solid #e8ebf3' }}>
             {(['info', 'movements'] as const).map(t => (
               <button key={t} onClick={() => setTab(t)} style={{ flex: 1, padding: '10px', border: 'none', background: 'none', fontSize: 13, fontWeight: tab === t ? 600 : 400, color: tab === t ? '#4f6ef7' : '#8596b4', borderBottom: `2px solid ${tab === t ? '#4f6ef7' : 'transparent'}`, cursor: 'pointer', fontFamily: 'inherit' }}>
                 {{ info: 'Карточка', movements: 'История выдачи' }[t]}
@@ -143,15 +143,16 @@ function ItemModal({ item, staff, categories: initCategories, onClose, onSaved }
           <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div><label style={lbl}>Название *</label><input style={inp} value={form.name} onChange={e => set('name', e.target.value)} placeholder="Офисное кресло" /></div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-              <div><label style={lbl}>Категория</label>
+              <div>
+                <label style={lbl}>Категория</label>
                 <select style={inp} value={form.category} onChange={e => set('category', e.target.value)}>
                   <option value="">— Выбрать</option>
                   {categories.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
-              <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-                <input style={{ ...inp, flex: 1 }} value={newCat} onChange={e => setNewCat(e.target.value)} placeholder="Новая категория..." onKeyDown={e => e.key === 'Enter' && addCategory()} />
-                <button type="button" onClick={addCategory} style={{ padding: '8px 12px', borderRadius: 7, border: 'none', background: '#4f6ef7', color: '#fff', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>+ Добавить</button>
-              </div>
+                <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                  <input style={{ ...inp, flex: 1 }} value={newCat} onChange={e => setNewCat(e.target.value)} placeholder="Новая категория..." onKeyDown={e => e.key === 'Enter' && addCategory()} />
+                  <button type="button" onClick={addCategory} style={{ padding: '8px 12px', borderRadius: 7, border: 'none', background: '#4f6ef7', color: '#fff', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>+ Добавить</button>
+                </div>
               </div>
               <div><label style={lbl}>Инвентарный номер</label><input style={inp} value={form.inventory_number} onChange={e => set('inventory_number', e.target.value)} placeholder="INV-001" /></div>
             </div>
@@ -193,23 +194,17 @@ function ItemModal({ item, staff, categories: initCategories, onClose, onSaved }
               <input style={{ ...inp, marginBottom: 8 }} value={issueNote} onChange={e => setIssueNote(e.target.value)} placeholder="Заметка (необязательно)" />
               <button onClick={issueItem} style={{ padding: '8px 16px', borderRadius: 7, border: 'none', background: '#4f6ef7', color: '#fff', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>Выдать</button>
             </div>
-
             <div style={{ fontSize: 13, fontWeight: 600, color: '#1a2240', marginBottom: 10 }}>История</div>
             {movements.length === 0 ? <div style={{ color: '#8596b4', fontSize: 13 }}>Движений нет</div> : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {movements.map(m => (
                   <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: '#fff', border: '1px solid #e8ebf3', borderRadius: 8, borderLeft: `3px solid ${m.action === 'issued' ? '#f59e0b' : '#22c55e'}` }}>
                     <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 13, fontWeight: 500, color: '#1a2240' }}>
-                        {m.action === 'issued' ? '📤 Выдано' : '📥 Возврат'} — {m.quantity} шт.
-                      </div>
-                      <div style={{ fontSize: 12, color: '#8596b4' }}>
-                        {(m.staff as any)?.full_name || '—'} · {new Date(m.created_at).toLocaleDateString('ru')}
-                        {m.note && ` · ${m.note}`}
-                      </div>
+                      <div style={{ fontSize: 13, fontWeight: 500, color: '#1a2240' }}>{m.action === 'issued' ? '📤 Выдано' : '📥 Возврат'} — {m.quantity} шт.</div>
+                      <div style={{ fontSize: 12, color: '#8596b4' }}>{(m.staff as any)?.full_name || '—'} · {new Date(m.created_at).toLocaleDateString('ru')}{m.note && ` · ${m.note}`}</div>
                     </div>
                     {m.action === 'issued' && (
-                      <button onClick={() => returnItem(m.id, m.quantity)} style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid #e8ebf3', background: '#f0fdf4', color: '#16a34a', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>Вернуть</button>
+                      <button onClick={() => returnItem(m.quantity)} style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid #e8ebf3', background: '#f0fdf4', color: '#16a34a', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>Вернуть</button>
                     )}
                   </div>
                 ))}
@@ -242,16 +237,18 @@ export default function InventoryPage() {
   const [search, setSearch] = useState('')
   const [catFilter, setCatFilter] = useState('')
 
-  useEffect(() => { fetchAll(); fetchCategories().then(setCategories) }, [])
+  useEffect(() => { fetchAll() }, [])
 
   async function fetchAll() {
     setLoading(true)
-    const [{ data: inv }, { data: st }] = await Promise.all([
+    const [{ data: inv }, { data: st }, { data: cats }] = await Promise.all([
       supabase.from('inventory').select('*, responsible:staff(full_name)').order('name'),
-      supabase.from('staff').select('id, full_name').eq('status', 'active').order('full_name')
+      supabase.from('staff').select('id, full_name').eq('status', 'active').order('full_name'),
+      supabase.from('inventory_categories').select('name').order('name')
     ])
     setItems(inv || [])
     setStaff(st || [])
+    setCategories((cats || []).map((c: any) => c.name))
     setLoading(false)
   }
 
@@ -323,7 +320,7 @@ export default function InventoryPage() {
         </div>
       )}
 
-      {showModal && <ItemModal item={selected} staff={staff} categories={categories} onClose={() => setShowModal(false)} onSaved={() => { setShowModal(false); fetchAll(); fetchCategories().then(setCategories) }} />}
+      {showModal && <ItemModal item={selected} staff={staff} onClose={() => setShowModal(false)} onSaved={() => { setShowModal(false); fetchAll() }} />}
     </div>
   )
 }
