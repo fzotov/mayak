@@ -9,6 +9,7 @@ interface Task {
   status: 'todo' | 'in_progress' | 'done'
   priority: 'low' | 'normal' | 'high'
   due_date: string
+  letter_id?: string | null
   assignee?: { full_name: string }
 }
 
@@ -22,7 +23,7 @@ const statusCols: { key: Task['status']; label: string; color: string; bg: strin
 
 const priorityIcon: Record<string, string> = { high: '🔴', normal: '🟡', low: '🔵' }
 
-const emptyTask: Omit<Task, 'id'> = { title: '', description: '', assignee_id: null, status: 'todo', priority: 'normal', due_date: '' }
+const emptyTask: Omit<Task, 'id'> = { title: '', description: '', assignee_id: null, status: 'todo', priority: 'normal', due_date: '', letter_id: null }
 
 function TaskModal({ task, staff, onClose, onSaved }: { task: Task | null; staff: Staff[]; onClose: () => void; onSaved: () => void }) {
   const [form, setForm] = useState<Omit<Task, 'id'>>(task ? { ...task } : { ...emptyTask })
@@ -150,6 +151,7 @@ export default function TasksPage() {
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#8596b4' }}>
                         <span>{(t.assignee as any)?.full_name || '—'}</span>
                         {t.due_date && <span>{new Date(t.due_date).toLocaleDateString('ru')}</span>}
+                        {t.letter_id && <span style={{ color: '#7c3aed', fontSize: 11, cursor: 'pointer' }} onClick={e => { e.stopPropagation(); window.location.href = '/#letters' }}>✉ письмо</span>}
                       </div>
                     </div>
                   ))}
