@@ -63,7 +63,7 @@ function ItemModal({ item, staff, onClose, onSaved }: { item: Item | null; staff
     if (!form.name.trim()) return alert('Введите название')
     setSaving(true)
     if (item?.id) await supabase.from('inventory').update(form).eq('id', item.id)
-    else const dbResult = await supabase.from('inventory').insert(form); console.log('INVENTORY INSERT:', JSON.stringify(dbResult))
+    else await supabase.from('inventory').insert(form)
     setSaving(false)
     onSaved()
   }
