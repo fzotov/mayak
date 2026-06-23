@@ -40,7 +40,8 @@ export function FloorPlanPage() {
   const [selected, setSelected] = useState<string | null>(null)
 
   useEffect(() => {
-    supabase.from('buildings').select('*').eq('active', true).then(({ data }) => {
+    supabase.from('buildings').select('*').eq('active', true).then(({ data, error }) => {
+      console.log('buildings:', data, error)
       if (data && data.length > 0) {
         setBuildings(data)
         setSelectedBuilding(data[0])
