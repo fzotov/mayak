@@ -16,7 +16,7 @@ import { useRealTenants, useRealInvoices } from './lib/useRealData'
 type Page = 'dashboard' | 'tenants' | 'invoices' | 'tasks' | 'ai' | 'kb' | 'tenant-card' | 'reference' | 'billing' | 'invoice-detail' | 'settings' | 'tenant-new'
 
 const NAV_GROUPS = [
-  { label: '', items: [{ id: 'dashboard', label: 'Сводка дня', icon: '⊞' }] },
+  { label: '', items: [{ id: 'dashboard', label: 'Сводка дня', icon: '⊞' }, { id: 'floorplan', label: 'План этажей', icon: '🏢' }] },
   { label: 'ЗАДАЧИ', items: [
     { id: 'tasks', label: 'Все задачи', icon: '✓' },
     { id: 'my-tasks', label: 'Мои задачи', icon: '☑' },
