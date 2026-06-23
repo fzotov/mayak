@@ -46,7 +46,7 @@ const emptyItem: Omit<Item, 'id' | 'responsible'> = {
 function ItemModal({ item, staff, categories: initCategories, onClose, onSaved }: { item: Item | null; staff: Staff[]; categories: string[]; onClose: () => void; onSaved: () => void }) {
   const [form, setForm] = useState<Omit<Item, 'id' | 'responsible'>>(item ? { ...item } : { ...emptyItem })
   const [saving, setSaving] = useState(false)
-  const [categories, setCategories] = useState<string[]>(initCategories)
+  const [categories, setCategories] = useState<string[]>([])
   const [newCat, setNewCat] = useState('')
 
   useEffect(() => { fetchCategories().then(setCategories) }, [])
