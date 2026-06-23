@@ -410,3 +410,163 @@ export function TenantCardPage({ onBack, onCreateInvoice }: { onBack: () => void
     </div>
   )
 }
+
+function HistoryTab() {
+  const [rentHistory, setRentHistory] = useState<any[]>([])
+  const [depositHistory, setDepositHistory] = useState<any[]>([])
+  const [showRentModal, setShowRentModal] = useState(false)
+  const [showDepModal, setShowDepModal] = useState(false)
+  const [rentForm, setRentForm] = useState({ date: '', amount: 0, note: '' })
+  const [depForm, setDepForm] = useState({ date: '', amount: 0, action: 'received', note: '' })
+  const inp: React.CSSProperties = { width: '100%', border: '1px solid #e5e7eb', borderRadius: 6, padding: '7px 10px', fontSize: 14, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' as const }
+
+  useEffect(() => { fetchHistory() }, [])
+
+  async function fetchHistory() {
+    const [{ data: rh }, { data: dh }] = await Promise.all([
+      supabase.from('rent_history').select('*').order('date', { ascending: false }),
+      supabase.from('deposit_history').select('*').order('date', { ascending: false })
+    ])
+    setRentHistory(rh || [])
+    setDepositHistory(dh || [])
+  }
+
+  async function addRent() {
+    if (!rentForm.date || !rentForm.amount) return alert('Заполните дату и сумму')
+    await supabase.from('rent_history').insert(rentForm)
+    setShowRentModal(false)
+    setRentForm({ date: '', amount: 0, note: '' })
+    fetchHistory()
+  }
+
+  async function addDeposit() {
+    if (!depForm.date || !depForm.amount) return alert('Заполните дату и сумму')
+    await supabase.from('deposit_history').insert(depForm)
+    setShowDepModal(false)
+    setDepForm({ date: '', amount: 0, action: 'received', note: '' })
+    fetchHistory()
+  }
+
+  async function deleteRent(id: string) {
+    if (!confirm('Удалить запись?')) return
+    await supabase.from('rent_history').delete().eq('id', id)
+    fetchHistory()
+  }
+
+  async function deleteDeposit(id: string) {
+    if (!confirm('Удалить запись?')) return
+    await supabase.from('deposit_history').delete().eq('id', id)
+    fetchHistory()
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: '#111' }}>История аренды</div>
+          <button onClick={() => setShowRentModal(true)} style={{ padding: '6px 14px', borderRadius: 6, border: 'none', background: '#111', color: '#fff', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>+ Добавить</button>
+        </div>
+        <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 8, overflow: 'hidden' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+            <thead>
+              <tr style={{ background: '#f9fafb', borderBottom: '1px solid #e5e7eb' }}>
+                {['Дата', 'Сумма', 'Заметка', ''].map(h => <th key={h} style={{ padding: '9px 14px', textAlign: 'left', fontWeight: 500, color: '#6b7280', fontSize: 12 }}>{h}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {rentHistory.length === 0 ? (
+                <tr><td colSpan={4} style={{ padding: 16, textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>Нет записей</td></tr>
+              ) : rentHistory.map(r => (
+                <tr key={r.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                  <td style={{ padding: '9px 14px', color: '#374151' }}>{new Date(r.date).toLocaleDateString('ru')}</td>
+                  <td style={{ padding: '9px 14px', fontWeight: 600, color: '#111' }}>{Number(r.amount).toLocaleString('ru')} ₽</td>
+                  <td style={{ padding: '9px 14px', color: '#6b7280' }}>{r.note || '—'}</td>
+                  <td style={{ padding: '9px 14px' }}><button onClick={() => deleteRent(r.id)} style={{ border: 'none', background: 'none', color: '#ef4444', fontSize: 13, cursor: 'pointer' }}>Удалить</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: '#111' }}>История депозитов</div>
+          <button onClick={() => setShowDepModal(true)} style={{ padding: '6px 14px', borderRadius: 6, border: 'none', background: '#111', color: '#fff', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>+ Добавить</button>
+        </div>
+        <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 8, overflow: 'hidden' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+            <thead>
+              <tr style={{ background: '#f9fafb', borderBottom: '1px solid #e5e7eb' }}>
+                {['Дата', 'Действие', 'Сумма', 'Заметка', ''].map(h => <th key={h} style={{ padding: '9px 14px', textAlign: 'left', fontWeight: 500, color: '#6b7280', fontSize: 12 }}>{h}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {depositHistory.length === 0 ? (
+                <tr><td colSpan={5} style={{ padding: 16, textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>Нет записей</td></tr>
+              ) : depositHistory.map(d => (
+                <tr key={d.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                  <td style={{ padding: '9px 14px', color: '#374151' }}>{new Date(d.date).toLocaleDateString('ru')}</td>
+                  <td style={{ padding: '9px 14px' }}>
+                    <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 10, background: d.action === 'received' ? '#dcfce7' : '#fee2e2', color: d.action === 'received' ? '#16a34a' : '#ef4444' }}>
+                      {d.action === 'received' ? 'Получен' : 'Возврат'}
+                    </span>
+                  </td>
+                  <td style={{ padding: '9px 14px', fontWeight: 600, color: '#111' }}>{Number(d.amount).toLocaleString('ru')} ₽</td>
+                  <td style={{ padding: '9px 14px', color: '#6b7280' }}>{d.note || '—'}</td>
+                  <td style={{ padding: '9px 14px' }}><button onClick={() => deleteDeposit(d.id)} style={{ border: 'none', background: 'none', color: '#ef4444', fontSize: 13, cursor: 'pointer' }}>Удалить</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {showRentModal && (
+        <div style={{ position: 'fixed', inset: 0, background: '#00000040', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div style={{ background: '#fff', borderRadius: 12, width: '100%', maxWidth: 400, boxShadow: '0 8px 32px #0002', border: '1px solid #e5e7eb' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid #e5e7eb' }}>
+              <div style={{ fontSize: 15, fontWeight: 600 }}>Добавить аренду</div>
+              <button onClick={() => setShowRentModal(false)} style={{ border: 'none', background: 'none', fontSize: 18, color: '#9ca3af', cursor: 'pointer' }}>✕</button>
+            </div>
+            <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div><label style={{ fontSize: 12, color: '#6b7280', marginBottom: 4, display: 'block' }}>Дата</label><input style={inp} type="date" value={rentForm.date} onChange={e => setRentForm(f => ({ ...f, date: e.target.value }))} /></div>
+              <div><label style={{ fontSize: 12, color: '#6b7280', marginBottom: 4, display: 'block' }}>Сумма (₽)</label><input style={inp} type="number" value={rentForm.amount || ''} onChange={e => setRentForm(f => ({ ...f, amount: Number(e.target.value) }))} /></div>
+              <div><label style={{ fontSize: 12, color: '#6b7280', marginBottom: 4, display: 'block' }}>Заметка</label><input style={inp} value={rentForm.note} onChange={e => setRentForm(f => ({ ...f, note: e.target.value }))} /></div>
+            </div>
+            <div style={{ display: 'flex', gap: 8, padding: '14px 20px', borderTop: '1px solid #e5e7eb' }}>
+              <button onClick={addRent} style={{ flex: 1, padding: '8px', borderRadius: 6, border: 'none', background: '#111', color: '#fff', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>Сохранить</button>
+              <button onClick={() => setShowRentModal(false)} style={{ padding: '8px 14px', borderRadius: 6, border: '1px solid #e5e7eb', background: '#fff', color: '#6b7280', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>Отмена</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showDepModal && (
+        <div style={{ position: 'fixed', inset: 0, background: '#00000040', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div style={{ background: '#fff', borderRadius: 12, width: '100%', maxWidth: 400, boxShadow: '0 8px 32px #0002', border: '1px solid #e5e7eb' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid #e5e7eb' }}>
+              <div style={{ fontSize: 15, fontWeight: 600 }}>Добавить депозит</div>
+              <button onClick={() => setShowDepModal(false)} style={{ border: 'none', background: 'none', fontSize: 18, color: '#9ca3af', cursor: 'pointer' }}>✕</button>
+            </div>
+            <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div><label style={{ fontSize: 12, color: '#6b7280', marginBottom: 4, display: 'block' }}>Дата</label><input style={inp} type="date" value={depForm.date} onChange={e => setDepForm(f => ({ ...f, date: e.target.value }))} /></div>
+              <div><label style={{ fontSize: 12, color: '#6b7280', marginBottom: 4, display: 'block' }}>Действие</label>
+                <select style={inp} value={depForm.action} onChange={e => setDepForm(f => ({ ...f, action: e.target.value }))}>
+                  <option value="received">Получен</option>
+                  <option value="returned">Возврат</option>
+                </select>
+              </div>
+              <div><label style={{ fontSize: 12, color: '#6b7280', marginBottom: 4, display: 'block' }}>Сумма (₽)</label><input style={inp} type="number" value={depForm.amount || ''} onChange={e => setDepForm(f => ({ ...f, amount: Number(e.target.value) }))} /></div>
+              <div><label style={{ fontSize: 12, color: '#6b7280', marginBottom: 4, display: 'block' }}>Заметка</label><input style={inp} value={depForm.note} onChange={e => setDepForm(f => ({ ...f, note: e.target.value }))} /></div>
+            </div>
+            <div style={{ display: 'flex', gap: 8, padding: '14px 20px', borderTop: '1px solid #e5e7eb' }}>
+              <button onClick={addDeposit} style={{ flex: 1, padding: '8px', borderRadius: 6, border: 'none', background: '#111', color: '#fff', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>Сохранить</button>
+              <button onClick={() => setShowDepModal(false)} style={{ padding: '8px 14px', borderRadius: 6, border: '1px solid #e5e7eb', background: '#fff', color: '#6b7280', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>Отмена</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
