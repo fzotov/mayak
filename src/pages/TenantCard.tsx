@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { supabase } from '../lib/supabase'
 
-const TABS = ['Общие', 'Помещения', 'Счётчики', 'Услуги', 'Счета', 'Документы']
+const TABS = ['Общие', 'Помещения', 'Счётчики', 'Услуги', 'Счета', 'История', 'Документы']
 const TYPE_LABELS: Record<string, string> = { COMPANY: 'Юрлицо', IP: 'ИП', INDIVIDUAL: 'Физлицо' }
 const METER_LABELS: Record<string, string> = { electricity: 'Электричество', cold_water: 'Холодная вода', hot_water: 'Горячая вода' }
 const METER_UNITS: Record<string, string> = { electricity: 'кВт·ч', cold_water: 'м³', hot_water: 'м³' }
@@ -380,6 +381,11 @@ export function TenantCardPage({ onBack, onCreateInvoice }: { onBack: () => void
       )}
 
       {tab === 5 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <HistoryTab />
+        </div>
+      )}
+      {tab === 6 && (
         <div style={s.card}>
           <div style={{ fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 14, textTransform: 'uppercase', letterSpacing: '.5px' }}>Документы</div>
           {[
