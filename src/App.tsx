@@ -276,7 +276,7 @@ export default function App() {
     <div style={{ display: 'flex', minHeight: '100vh', background: '#fafafa', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif' }}>
       <aside style={{ width: 220, flexShrink: 0, background: '#fff', borderRight: '1px solid #e5e7eb', display: 'flex', flexDirection: 'column' }}>
         <div style={{ padding: '16px 16px 12px', borderBottom: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ width: 30, height: 30, borderRadius: 8, background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 700, color: '#fff' }}>М</div>
+          <img src="/favicon.ico" style={{ width: 30, height: 30, borderRadius: 8, objectFit: 'contain' }} alt="Маяк" />
           <div>
             <div style={{ fontSize: 14, fontWeight: 600, color: '#111' }}>Маяк</div>
             <div style={{ fontSize: 11, color: '#6b7280' }}>Property OS</div>
