@@ -105,23 +105,12 @@ function LetterModal({ letter, onClose, onSaved }: { letter: Letter | null; onCl
         reader.onload = () => res((reader.result as string).split(',')[1])
         reader.readAsDataURL(file)
       })
-      const isImage = file.type.startsWith('image/')
-      const content: any[] = []
-      if (isImage) {
-        content.push({ type: 'image', source: { type: 'base64', media_type: file.type, data: base64 } })
-      } else {
-        content.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } })
-      }
-      content.push({ type: 'text', text: 'Извлеки содержимое письма. Верни JSON: {"subject":"","sender":"","recipient":"","date":"YYYY-MM-DD","body":"","summary":"","action":""}. Только JSON.' })
-
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
+      const res = await fetch('/api/process-letter', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'anthropic-dangerous-direct-browser-access': 'true' },
-        body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 1000, messages: [{ role: 'user', content }] })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ base64, mediaType: file.type })
       })
-      const data = await res.json()
-      const text = data.content?.[0]?.text || '{}'
-      const parsed = JSON.parse(text.replace(/```json|```/g, '').trim())
+      const parsed = await res.json()
       if (parsed.subject) set('subject', parsed.subject)
       if (parsed.sender) set('sender', parsed.sender)
       if (parsed.recipient) set('recipient', parsed.recipient)
