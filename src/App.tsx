@@ -313,6 +313,15 @@ export default function App() {
               'kb': 'База знаний',
               'reference': 'Справочники',
               'billing': 'Биллинг',
+              'my-tasks': 'Мои задачи',
+              'repairs': 'Заявки на ремонт',
+              'contracts': 'Договоры',
+              'letters': 'Письма',
+              'bank': 'Банк',
+              'reconcile': 'Сверка',
+              'heat': 'Тепло',
+              'staff': 'Сотрудники',
+              'inventory': 'Инвентарь',
               'tenant-card': 'Карточка арендатора',
             }[page] || 'Маяк'}
             </div>
@@ -335,6 +344,15 @@ export default function App() {
           {page === 'reference' && <SettingsReferencePage />}
           {page === 'billing' && <BillingPage />}
           {page === 'tenant-new' && <TenantNewPage onBack={() => setPage('tenants')} onSaved={() => setPage('tenants')} />}
+          {page === 'my-tasks' && <div style={{padding:20,color:'#8596b4',fontSize:14}}>Мои задачи — в разработке</div>}
+          {page === 'repairs' && <div style={{padding:20,color:'#8596b4',fontSize:14}}>Заявки на ремонт — в разработке</div>}
+          {page === 'contracts' && <div style={{padding:20,color:'#8596b4',fontSize:14}}>Договоры — в разработке</div>}
+          {page === 'letters' && <div style={{padding:20,color:'#8596b4',fontSize:14}}>Письма — в разработке</div>}
+          {page === 'bank' && <div style={{padding:20,color:'#8596b4',fontSize:14}}>Банк — в разработке</div>}
+          {page === 'reconcile' && <div style={{padding:20,color:'#8596b4',fontSize:14}}>Сверка — в разработке</div>}
+          {page === 'heat' && <div style={{padding:20,color:'#8596b4',fontSize:14}}>Тепло — в разработке</div>}
+          {page === 'staff' && <div style={{padding:20,color:'#8596b4',fontSize:14}}>Сотрудники — в разработке</div>}
+          {page === 'inventory' && <div style={{padding:20,color:'#8596b4',fontSize:14}}>Инвентарь — в разработке</div>}
           {page === 'invoice-detail' && selectedInvoice && <InvoiceDetailPage invoice={selectedInvoice} onBack={() => setPage('invoices')} />}
           {showSettings && <SettingsModal onClose={() => setShowSettings(false)} onLogout={() => { setShowSettings(false); setUser(null) }} />}
         </main>
