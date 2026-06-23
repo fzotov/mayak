@@ -273,41 +273,41 @@ export default function App() {
   if (!user) return <AuthPage onLogin={() => supabase.auth.getSession().then(({ data }) => setUser(data.session?.user ?? null))} />
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', background: '#f0f2f8', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif' }}>
-      <aside style={{ width: 200, flexShrink: 0, background: '#1e2235', display: 'flex', flexDirection: 'column' }}>
-        <div style={{ padding: '14px 14px 12px', borderBottom: '1px solid #ffffff12', display: 'flex', alignItems: 'center', gap: 9 }}>
-          <div style={{ width: 28, height: 28, borderRadius: 7, background: '#4f6ef7', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700, color: '#fff' }}>М</div>
+    <div style={{ display: 'flex', minHeight: '100vh', background: '#fafafa', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif' }}>
+      <aside style={{ width: 220, flexShrink: 0, background: '#fff', borderRight: '1px solid #e5e7eb', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ padding: '16px 16px 12px', borderBottom: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ width: 30, height: 30, borderRadius: 8, background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 700, color: '#fff' }}>М</div>
           <div>
-            <div style={{ fontSize: 14, fontWeight: 600, color: '#fff' }}>Маяк</div>
-            <div style={{ fontSize: 12, color: '#6b7c9e' }}>Property OS</div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: '#111' }}>Маяк</div>
+            <div style={{ fontSize: 11, color: '#6b7280' }}>Property OS</div>
           </div>
         </div>
-        <nav style={{ padding: '8px 0', flex: 1 }}>
+        <nav style={{ padding: '8px 0', flex: 1, overflowY: 'auto' }}>
           {NAV_GROUPS.map((group, gi) => (
             <div key={gi}>
-              {group.label ? <div style={{ fontSize: 10, fontWeight: 600, color: '#4b5563', letterSpacing: '.7px', padding: '10px 14px 4px', textTransform: 'uppercase' as const }}>{group.label}</div> : null}
+              {group.label ? <div style={{ fontSize: 10, fontWeight: 600, color: '#9ca3af', letterSpacing: '.8px', padding: '12px 16px 4px', textTransform: 'uppercase' as const }}>{group.label}</div> : null}
               {group.items.map(n => (
                 <button key={n.id} onClick={() => setPage(n.id as Page)}
-                  style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 14px', width: '100%', border: 'none', borderLeft: `2px solid ${page === n.id ? '#4f6ef7' : 'transparent'}`, background: page === n.id ? '#4f6ef715' : 'transparent', color: page === n.id ? '#7c9dff' : '#8596b4', cursor: 'pointer', fontSize: 14, fontFamily: 'inherit', textAlign: 'left', fontWeight: page === n.id ? 500 : 400 }}>
-                  <span style={{ fontSize: 15 }}>{n.icon}</span>{n.label}
+                  style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 16px', width: '100%', border: 'none', borderRadius: 0, background: page === n.id ? '#f3f4f6' : 'transparent', color: page === n.id ? '#111' : '#6b7280', cursor: 'pointer', fontSize: 13, fontFamily: 'inherit', textAlign: 'left', fontWeight: page === n.id ? 500 : 400, transition: 'background .1s' }}>
+                  <span style={{ fontSize: 14, opacity: page === n.id ? 1 : 0.6 }}>{n.icon}</span>{n.label}
                 </button>
               ))}
             </div>
           ))}
         </nav>
-        <div style={{ padding: '12px 14px', borderTop: '1px solid #ffffff12', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#4f6ef7', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 600, color: '#fff' }}>АС</div>
+        <div style={{ padding: '12px 16px', borderTop: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#f3f4f6', border: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600, color: '#374151' }}>АС</div>
           <div>
-            <div onClick={() => setShowSettings(true)} style={{ fontSize: 13, fontWeight: 500, color: '#c9cdd8', cursor: 'pointer' }}>Андрей Соколов</div>
-            <div style={{ fontSize: 12, color: '#4b5563' }}>Управляющий</div>
+            <div onClick={() => setShowSettings(true)} style={{ fontSize: 12, fontWeight: 500, color: '#111', cursor: 'pointer' }}>Андрей Соколов</div>
+            <div style={{ fontSize: 11, color: '#9ca3af' }}>Управляющий</div>
           </div>
         </div>
       </aside>
 
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        <header style={{ background: '#fff', borderBottom: '1px solid #e8ebf3', padding: '10px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#fafafa' }}>
+        <header style={{ background: '#fff', borderBottom: '1px solid #e5e7eb', padding: '12px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
           <div>
-            <div style={{ fontSize: 17, fontWeight: 600, color: '#1a2240' }}>
+            <div style={{ fontSize: 15, fontWeight: 600, color: '#111' }}>
               {{
               'dashboard': 'Сводка дня',
               'tenants': 'Арендаторы',
@@ -329,15 +329,15 @@ export default function App() {
               'tenant-card': 'Карточка арендатора',
             }[page] || 'Маяк'}
             </div>
-            <div style={{ fontSize: 13, color: '#8596b4', marginTop: 1 }}>Бизнес-центр Маяк</div>
+            <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 1 }}>Бизнес-центр Маяк</div>
           </div>
-          <div style={{ display: 'flex', background: '#f0f2f8', borderRadius: 7, padding: 2, gap: 2 }}>
+          <div style={{ display: 'flex', background: '#f3f4f6', borderRadius: 6, padding: 2, gap: 1 }}>
             {['Сегодня', 'Неделя', 'Месяц'].map((p, i) => (
-              <button key={p} style={{ padding: '4px 11px', borderRadius: 5, fontSize: 13, fontWeight: 500, border: 'none', cursor: 'pointer', fontFamily: 'inherit', background: i === 0 ? '#fff' : 'transparent', color: i === 0 ? '#1a2240' : '#8596b4' }}>{p}</button>
+              <button key={p} style={{ padding: '4px 12px', borderRadius: 4, fontSize: 12, fontWeight: 500, border: 'none', cursor: 'pointer', fontFamily: 'inherit', background: i === 0 ? '#fff' : 'transparent', color: i === 0 ? '#111' : '#6b7280', boxShadow: i === 0 ? '0 1px 2px #0001' : 'none' }}>{p}</button>
             ))}
           </div>
         </header>
-        <main style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
+        <main style={{ flex: 1, overflowY: 'auto', padding: 24 }}>
           {page === 'dashboard' && <Dashboard />}
           {page === 'invoices' && <Invoices onOpenInvoice={(inv) => { setSelectedInvoice(inv); setPage('invoice-detail') }} />}
           {page === 'tenants' && <Tenants onOpenTenant={() => setPage('tenant-card')} onAddTenant={() => setPage('tenant-new')} />}
