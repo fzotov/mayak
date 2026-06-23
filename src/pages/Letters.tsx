@@ -27,6 +27,71 @@ const statusLabel: Record<string, { label: string; bg: string; color: string }> 
 const inp: React.CSSProperties = { width: '100%', border: '1px solid #e5e7eb', borderRadius: 6, padding: '7px 10px', fontSize: 14, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' as const }
 const lbl: React.CSSProperties = { fontSize: 12, color: '#6b7280', marginBottom: 4, display: 'block', fontWeight: 500 }
 
+
+function TaskFromLetterModal({ letter, onClose, onSaved }: { letter: any; onClose: () => void; onSaved: () => void }) {
+  const [staff, setStaff] = useState<any[]>([])
+  const [title, setTitle] = useState('Ответить на письмо: ' + (letter.subject || ''))
+  const [description, setDescription] = useState(letter.ai_action || letter.ai_summary || '')
+  const [assigneeId, setAssigneeId] = useState('')
+  const [priority, setPriority] = useState('normal')
+  const [dueDate, setDueDate] = useState('')
+  const [saving, setSaving] = useState(false)
+  const si: React.CSSProperties = { width: '100%', border: '1px solid #e5e7eb', borderRadius: 6, padding: '7px 10px', fontSize: 14, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' as const }
+  const sl: React.CSSProperties = { fontSize: 12, color: '#6b7280', marginBottom: 4, display: 'block', fontWeight: 500 }
+
+  useEffect(() => {
+    supabase.from('staff').select('id, full_name').eq('status', 'active').order('full_name').then(({ data }) => setStaff(data || []))
+  }, [])
+
+  async function save() {
+    if (!title.trim()) return alert('Введите заголовок')
+    setSaving(true)
+    await supabase.from('tasks').insert({ title, description, assignee_id: assigneeId || null, status: 'todo', priority, due_date: dueDate || null, letter_id: letter.id })
+    setSaving(false)
+    onSaved()
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: '#00000060', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div style={{ background: '#fff', borderRadius: 12, width: '100%', maxWidth: 480, boxShadow: '0 8px 32px #0003', border: '1px solid #e5e7eb' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid #e5e7eb' }}>
+          <div style={{ fontSize: 15, fontWeight: 600 }}>Создать задачу по письму</div>
+          <button onClick={onClose} style={{ border: 'none', background: 'none', fontSize: 18, color: '#9ca3af', cursor: 'pointer' }}>x</button>
+        </div>
+        <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: 10, fontSize: 13, color: '#15803d' }}>
+            Письмо зарегистрировано. Создайте задачу для ответа.
+          </div>
+          <div><label style={sl}>Задача</label><input style={si} value={title} onChange={e => setTitle(e.target.value)} /></div>
+          <div><label style={sl}>Описание</label><textarea style={{ ...si, height: 70, resize: 'none' }} value={description} onChange={e => setDescription(e.target.value)} /></div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <div><label style={sl}>Исполнитель</label>
+              <select style={si} value={assigneeId} onChange={e => setAssigneeId(e.target.value)}>
+                <option value="">— Не назначен</option>
+                {staff.map((s: any) => <option key={s.id} value={s.id}>{s.full_name}</option>)}
+              </select>
+            </div>
+            <div><label style={sl}>Приоритет</label>
+              <select style={si} value={priority} onChange={e => setPriority(e.target.value)}>
+                <option value="low">Низкий</option>
+                <option value="normal">Обычный</option>
+                <option value="high">Высокий</option>
+              </select>
+            </div>
+          </div>
+          <div><label style={sl}>Срок ответа</label><input style={si} type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} /></div>
+        </div>
+        <div style={{ display: 'flex', gap: 8, padding: '14px 20px', borderTop: '1px solid #e5e7eb' }}>
+          <button onClick={save} disabled={saving} style={{ flex: 1, padding: '8px', borderRadius: 6, border: 'none', background: '#111', color: '#fff', fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', opacity: saving ? 0.6 : 1 }}>
+            {saving ? 'Создание...' : 'Создать задачу'}
+          </button>
+          <button onClick={onClose} style={{ padding: '8px 14px', borderRadius: 6, border: '1px solid #e5e7eb', background: '#fff', color: '#6b7280', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>Пропустить</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function PromptModal({ onClose, onGenerate }: { onClose: () => void; onGenerate: (prompt: string) => void }) {
   const [prompt, setPrompt] = useState('')
   return (
