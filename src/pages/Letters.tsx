@@ -124,8 +124,13 @@ function LetterModal({ letter, onClose, onSaved }: { letter: Letter | null; onCl
   async function save() {
     if (!form.subject) return alert('Введите тему')
     setSaving(true)
-    if (letter?.id) await supabase.from('letters').update(form).eq('id', letter.id)
-    else await supabase.from('letters').insert(form)
+    if (letter?.id) {
+      const r = await supabase.from('letters').update(form).eq('id', letter.id)
+      if (r.error) { alert('Ошибка: ' + r.error.message); setSaving(false); return }
+    } else {
+      const r = await supabase.from('letters').insert(form)
+      if (r.error) { alert('Ошибка: ' + r.error.message); setSaving(false); return }
+    }
     setSaving(false)
     onSaved()
   }
