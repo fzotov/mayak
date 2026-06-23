@@ -81,29 +81,13 @@ function LetterModal({ letter, onClose, onSaved }: { letter: Letter | null; onCl
     setShowPrompt(false)
     setGenerating(true)
     try {
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
+      const res = await fetch('/api/generate-letter', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'anthropic-dangerous-direct-browser-access': 'true'
-        },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-6',
-          max_tokens: 1000,
-          messages: [{
-            role: 'user',
-            content: `Напиши деловое письмо на русском языке для управляющей компании бизнес-центра "Маяк".
-Тема: ${form.subject || 'не указана'}
-Получатель: ${form.recipient || 'арендатор'}
-Отправитель: ${form.sender || 'Администрация БЦ Маяк'}
-Инструкции: ${prompt}
-
-Верни только текст письма без пояснений.`
-          }]
-        })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subject: form.subject, recipient: form.recipient, sender: form.sender, prompt })
       })
       const data = await res.json()
-      const text = data.content?.[0]?.text || ''
+      const text = data.text || ''
       if (!text) throw new Error('empty')
       set('body', text)
     } catch (e) {
