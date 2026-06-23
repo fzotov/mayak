@@ -432,7 +432,7 @@ function HistoryTab() {
   }
 
   async function addRent() {
-    if (!rentForm.date || !rentForm.amount) return alert('Заполните дату и сумму')
+    if (!rentForm.amount) return alert('Введите сумму')
     const r = await supabase.from('rent_history').insert(rentForm)
     if (r.error) { alert('Ошибка: ' + r.error.message); return }
     setShowRentModal(false)
