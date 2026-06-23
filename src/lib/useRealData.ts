@@ -3,10 +3,10 @@ import { getTenants, getInvoices } from './supabase'
 import { mockTenants, mockInvoices } from './mockData'
 
 export function useRealTenants() {
-  const [tenants, setTenants] = useState(mockTenants)
+  const [tenants, setTenants] = useState<any[]>([])
   useEffect(() => {
     getTenants().then(data => {
-      if (data.length > 0) {
+      {
         const mapped = data.map((t: any) => ({
           ...t,
           fullName: t.full_name,
@@ -21,10 +21,10 @@ export function useRealTenants() {
 }
 
 export function useRealInvoices() {
-  const [invoices, setInvoices] = useState(mockInvoices)
+  const [invoices, setInvoices] = useState<any[]>([])
   useEffect(() => {
     getInvoices().then(data => {
-      if (data.length > 0) {
+      {
         const mapped = data.map((inv: any) => ({
           ...inv,
           total: inv.total_amount,
