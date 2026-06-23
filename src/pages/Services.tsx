@@ -15,7 +15,7 @@ const emptyService: Omit<Service, 'id'> = {
   name: '', category: '', description: '', price: 0, unit: 'шт', vat: 0
 }
 
-const UNITS = ['шт', 'м²', 'м²/мес', 'м³', 'кВт·ч', 'мес', 'час', 'услуга']
+
 
 const inp: React.CSSProperties = { width: '100%', border: '1px solid #e5e7eb', borderRadius: 6, padding: '7px 10px', fontSize: 14, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' as const }
 const lbl: React.CSSProperties = { fontSize: 12, color: '#6b7280', marginBottom: 4, display: 'block', fontWeight: 500 }
@@ -23,7 +23,32 @@ const lbl: React.CSSProperties = { fontSize: 12, color: '#6b7280', marginBottom:
 function ServiceModal({ service, categories, onClose, onSaved }: { service: Service | null; categories: string[]; onClose: () => void; onSaved: () => void }) {
   const [form, setForm] = useState<Omit<Service, 'id'>>(service ? { ...service } : { ...emptyService })
   const [saving, setSaving] = useState(false)
+  const [units, setUnits] = useState<string[]>([])
+  const [newUnit, setNewUnit] = useState('')
   const set = (k: string, v: string | number) => setForm(f => ({ ...f, [k]: v }))
+
+  useEffect(() => {
+    supabase.from('service_units').select('name').order('name').then(({ data }) => {
+      setUnits((data || []).map((u: any) => u.name))
+    })
+  }, [])
+
+  async function addUnit() {
+    if (!newUnit.trim()) return
+    await supabase.from('service_units').insert({ name: newUnit.trim() })
+    const { data } = await supabase.from('service_units').select('name').order('name')
+    setUnits((data || []).map((u: any) => u.name))
+    set('unit', newUnit.trim())
+    setNewUnit('')
+  }
+
+  async function deleteUnit() {
+    if (!form.unit || !confirm('Удалить единицу "' + form.unit + '"?')) return
+    await supabase.from('service_units').delete().eq('name', form.unit)
+    const { data } = await supabase.from('service_units').select('name').order('name')
+    setUnits((data || []).map((u: any) => u.name))
+    set('unit', '')
+  }
 
   async function save() {
     if (!form.name.trim()) return alert('Введите название')
@@ -60,8 +85,14 @@ function ServiceModal({ service, categories, onClose, onSaved }: { service: Serv
             <div>
               <label style={lbl}>Единица измерения</label>
               <select style={inp} value={form.unit} onChange={e => set('unit', e.target.value)}>
-                {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
+                <option value="">— Выбрать</option>
+                {units.map(u => <option key={u} value={u}>{u}</option>)}
               </select>
+              <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                <input style={{ ...inp, flex: 1 }} value={newUnit} onChange={e => setNewUnit(e.target.value)} placeholder="Новая единица..." onKeyDown={e => e.key === 'Enter' && addUnit()} />
+                <button type="button" onClick={addUnit} style={{ padding: '7px 10px', borderRadius: 6, border: 'none', background: '#111', color: '#fff', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>+</button>
+              </div>
+              {form.unit && <button type="button" onClick={deleteUnit} style={{ marginTop: 4, padding: '3px 8px', borderRadius: 6, border: 'none', background: '#fee2e2', color: '#ef4444', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>Удалить «{form.unit}»</button>}
             </div>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
