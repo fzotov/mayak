@@ -9,6 +9,7 @@ import { InvoiceDetailPage } from './pages/InvoiceDetail'
 import { SettingsReferencePage } from './pages/Settings2'
 import { BillingPage } from './pages/Billing'
 import { TenantNewPage } from './pages/TenantNew'
+import { FloorPlanPage } from './pages/FloorPlan'
 import { mockStats, mockTasks, mockOverdue, mockEvents, mockInvoices, mockTenants } from './lib/mockData'
 import { useRealTenants, useRealInvoices } from './lib/useRealData'
 
@@ -353,6 +354,7 @@ export default function App() {
           {page === 'heat' && <div style={{padding:20,color:'#8596b4',fontSize:14}}>Тепло — в разработке</div>}
           {page === 'staff' && <div style={{padding:20,color:'#8596b4',fontSize:14}}>Сотрудники — в разработке</div>}
           {page === 'inventory' && <div style={{padding:20,color:'#8596b4',fontSize:14}}>Инвентарь — в разработке</div>}
+          {page === 'floorplan' && <FloorPlanPage />}
           {page === 'invoice-detail' && selectedInvoice && <InvoiceDetailPage invoice={selectedInvoice} onBack={() => setPage('invoices')} />}
           {showSettings && <SettingsModal onClose={() => setShowSettings(false)} onLogout={() => { setShowSettings(false); setUser(null) }} />}
         </main>
