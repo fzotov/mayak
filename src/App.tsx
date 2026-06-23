@@ -335,6 +335,7 @@ export default function App() {
               'bank': 'Банк',
               'reconcile': 'Сверка',
               'heat': 'Тепло',
+              'meters': 'Счётчики',
               'staff': 'Сотрудники',
               'inventory': 'Инвентарь',
               'tenant-card': 'Карточка арендатора',
@@ -367,6 +368,7 @@ export default function App() {
           {page === 'bank' && <div style={{padding:20,color:'#8596b4',fontSize:14}}>Банк — в разработке</div>}
           {page === 'reconcile' && <div style={{padding:20,color:'#8596b4',fontSize:14}}>Сверка — в разработке</div>}
           {page === 'heat' && <div style={{padding:20,color:'#8596b4',fontSize:14}}>Тепло — в разработке</div>}
+          {page === 'meters' && <MetersPage />}
           {page === 'staff' && <StaffPage />}
           {page === 'inventory' && <InventoryPage />}
           {page === 'floorplan' && <FloorPlanPage />}
