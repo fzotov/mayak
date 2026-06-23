@@ -136,7 +136,7 @@ function LetterModal({ letter, onClose, onSaved }: { letter: Letter | null; onCl
       setSaving(false)
       onSaved()
     } else {
-      const r = await supabase.from('letters').insert({ ...form }).select().single()
+      const r = await supabase.from('letters').insert({ ...form }).select('*').single()
       if (r.error) { alert('Ошибка: ' + r.error.message); setSaving(false); return }
       setSaving(false)
       // Если входящее письмо и есть ai_action — предлагаем создать задачу
@@ -153,6 +153,8 @@ function LetterModal({ letter, onClose, onSaved }: { letter: Letter | null; onCl
     await supabase.from('letters').delete().eq('id', letter.id)
     onSaved()
   }
+
+  if (savedLetter) return <TaskFromLetterModal letter={savedLetter} onClose={onSaved} onSaved={onSaved} />
 
   return (
     <>
@@ -236,7 +238,7 @@ function LetterModal({ letter, onClose, onSaved }: { letter: Letter | null; onCl
         </div>
       </div>
       {showPrompt && <PromptModal onClose={() => setShowPrompt(false)} onGenerate={generateLetter} />}
-      {savedLetter && <TaskFromLetterModal letter={savedLetter} onClose={onSaved} onSaved={onSaved} />}
+
     </>
   )
 }
