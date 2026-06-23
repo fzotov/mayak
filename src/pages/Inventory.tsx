@@ -52,7 +52,8 @@ function ItemModal({ item, staff, onClose, onSaved }: { item: Item | null; staff
 
   useEffect(() => {
     supabase.from('inventory_categories').select('name').order('name').then(({ data }) => {
-      setCategories((data || []).map((c: any) => c.name))
+      const cats = (data || []).map((c: any) => c.name)
+      setCategories(cats.length > 0 ? cats : ['Мебель', 'Техника', 'Инструменты', 'Канцелярия', 'Хозяйство', 'Другое'])
     })
   }, [])
 
