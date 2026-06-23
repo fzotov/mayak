@@ -73,6 +73,7 @@ function LetterModal({ letter, onClose, onSaved }: { letter: Letter | null; onCl
   const [generating, setGenerating] = useState(false)
   const [processing, setProcessing] = useState(false)
   const [showPrompt, setShowPrompt] = useState(false)
+  const [savedLetter, setSavedLetter] = useState<any>(null)
   const [file, setFile] = useState<File | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }))
@@ -132,12 +133,19 @@ function LetterModal({ letter, onClose, onSaved }: { letter: Letter | null; onCl
     if (letter?.id) {
       const r = await supabase.from('letters').update(form).eq('id', letter.id)
       if (r.error) { alert('Ошибка: ' + r.error.message); setSaving(false); return }
+      setSaving(false)
+      onSaved()
     } else {
-      const r = await supabase.from('letters').insert(form)
+      const r = await supabase.from('letters').insert({ ...form }).select().single()
       if (r.error) { alert('Ошибка: ' + r.error.message); setSaving(false); return }
+      setSaving(false)
+      // Если входящее письмо и есть ai_action — предлагаем создать задачу
+      if (form.type === 'incoming' && (form.ai_action || form.ai_summary)) {
+        setSavedLetter({ ...form, id: r.data?.id })
+      } else {
+        onSaved()
+      }
     }
-    setSaving(false)
-    onSaved()
   }
 
   async function remove() {
@@ -228,6 +236,7 @@ function LetterModal({ letter, onClose, onSaved }: { letter: Letter | null; onCl
         </div>
       </div>
       {showPrompt && <PromptModal onClose={() => setShowPrompt(false)} onGenerate={generateLetter} />}
+      {savedLetter && <TaskFromLetterModal letter={savedLetter} onClose={onSaved} onSaved={onSaved} />}
     </>
   )
 }
