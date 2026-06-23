@@ -14,30 +14,16 @@ import { useRealTenants, useRealInvoices } from './lib/useRealData'
 
 type Page = 'dashboard' | 'tenants' | 'invoices' | 'tasks' | 'ai' | 'kb' | 'tenant-card' | 'reference' | 'billing' | 'invoice-detail' | 'settings' | 'tenant-new'
 
-const NAV_GROUPS = [
-  { label: null, items: [
-    { id: 'dashboard', label: 'Сводка дня', icon: '⊞' },
-  ]},
-  { label: 'ЗАДАЧИ', items: [
-    { id: 'tasks', label: 'Все задачи', icon: '✓' },
-  ]},
-  { label: 'АРЕНДА', items: [
-    { id: 'tenants', label: 'Арендаторы', icon: '◎' },
-  ]},
-  { label: 'ФИНАНСЫ', items: [
-    { id: 'invoices', label: 'Счета', icon: '◈' },
-    { id: 'billing', label: 'Биллинг', icon: '₽' },
-  ]},
-  { label: 'ОБЪЕКТ', items: [
-    { id: 'meters', label: 'Счётчики', icon: '⊙' },
-    { id: 'kb', label: 'База знаний', icon: '◉' },
-  ]},
-  { label: 'СИСТЕМА', items: [
-    { id: 'ai', label: 'AI Ассистент', icon: '✦' },
-    { id: 'reference', label: 'Справочники', icon: '⚙' },
-  ]},
-]
-const NAV = NAV_GROUPS.flatMap(g => g.items)
+const NAV = [
+  { id: 'dashboard', label: 'Сводка дня', icon: '⊞' },
+  { id: 'tenants', label: 'Арендаторы', icon: '◎' },
+  { id: 'invoices', label: 'Счета', icon: '◈' },
+  { id: 'tasks', label: 'Задачи', icon: '✓' },
+  { id: 'ai', label: 'AI Ассистент', icon: '✦' },
+  { id: 'kb', label: 'База знаний', icon: '◉' },
+  { id: 'reference', label: 'Справочники', icon: '⚙' },
+  { id: 'billing', label: 'Биллинг', icon: '◈' },
+] as const
 
 const SOURCE_COLOR: Record<string, string> = { OWNER: '#ef4444', SYSTEM: '#9ca3af', EMPLOYEE: '#3b82f6' }
 const PRIORITY_PREFIX: Record<string, string> = { CRITICAL: '!! ', HIGH: '! ', NORMAL: '' }
@@ -270,10 +256,7 @@ export default function App() {
           </div>
         </div>
         <nav style={{ padding: '8px 0', flex: 1 }}>
-          {NAV_GROUPS.map((group, gi) => (
-            <div key={gi}>
-              {group.label && <div style={{ fontSize: 10, fontWeight: 600, color: '#4b5563', letterSpacing: '.7px', padding: '10px 14px 4px', textTransform: 'uppercase' as any }}>{group.label}</div>}
-              {group.items.map(n => (
+          {NAV.map(n => (
             <button key={n.id} onClick={() => setPage(n.id as Page)}
               style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 14px', width: '100%', border: 'none', borderLeft: `2px solid ${page === n.id ? '#4f6ef7' : 'transparent'}`, background: page === n.id ? '#4f6ef715' : 'transparent', color: page === n.id ? '#7c9dff' : '#8596b4', cursor: 'pointer', fontSize: 14, fontFamily: 'inherit', textAlign: 'left', fontWeight: page === n.id ? 500 : 400 }}>
               <span style={{ fontSize: 15 }}>{n.icon}</span>{n.label}
