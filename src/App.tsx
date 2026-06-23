@@ -16,11 +16,35 @@ type Page = 'dashboard' | 'tenants' | 'invoices' | 'tasks' | 'ai' | 'kb' | 'tena
 
 const NAV_GROUPS = [
   { label: '', items: [{ id: 'dashboard', label: 'Сводка дня', icon: '⊞' }] },
-  { label: 'ЗАДАЧИ', items: [{ id: 'tasks', label: 'Все задачи', icon: '✓' }] },
-  { label: 'АРЕНДА', items: [{ id: 'tenants', label: 'Арендаторы', icon: '◎' }] },
-  { label: 'ФИНАНСЫ', items: [{ id: 'invoices', label: 'Счета', icon: '◈' }, { id: 'billing', label: 'Биллинг', icon: '₽' }] },
-  { label: 'ОБЪЕКТ', items: [{ id: 'meters', label: 'Счётчики', icon: '⊙' }, { id: 'kb', label: 'База знаний', icon: '◉' }] },
-  { label: 'СИСТЕМА', items: [{ id: 'ai', label: 'AI Ассистент', icon: '✦' }, { id: 'reference', label: 'Справочники', icon: '⚙' }] },
+  { label: 'ЗАДАЧИ', items: [
+    { id: 'tasks', label: 'Все задачи', icon: '✓' },
+    { id: 'my-tasks', label: 'Мои задачи', icon: '☑' },
+    { id: 'repairs', label: 'Заявки на ремонт', icon: '🔧' },
+  ] },
+  { label: 'АРЕНДА', items: [
+    { id: 'tenants', label: 'Арендаторы', icon: '◎' },
+    { id: 'contracts', label: 'Договоры', icon: '📄' },
+    { id: 'letters', label: 'Письма', icon: '✉' },
+  ] },
+  { label: 'ФИНАНСЫ', items: [
+    { id: 'invoices', label: 'Счета', icon: '◈' },
+    { id: 'billing', label: 'Биллинг', icon: '₽' },
+    { id: 'bank', label: 'Банк', icon: '🏦' },
+    { id: 'reconcile', label: 'Сверка', icon: '⚖' },
+  ] },
+  { label: 'ОБЪЕКТ', items: [
+    { id: 'meters', label: 'Счётчики', icon: '⊙' },
+    { id: 'heat', label: 'Тепло', icon: '🌡' },
+    { id: 'kb', label: 'База знаний', icon: '◉' },
+  ] },
+  { label: 'ПЕРСОНАЛ', items: [
+    { id: 'staff', label: 'Сотрудники', icon: '👥' },
+    { id: 'inventory', label: 'Инвентарь', icon: '📦' },
+  ] },
+  { label: 'СИСТЕМА', items: [
+    { id: 'ai', label: 'AI Ассистент', icon: '✦' },
+    { id: 'reference', label: 'Справочники', icon: '⚙' },
+  ] },
 ]
 const NAV = NAV_GROUPS.flatMap(g => g.items)
 
