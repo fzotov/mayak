@@ -48,6 +48,8 @@ function ItemModal({ item, staff, categories: initCategories, onClose, onSaved }
   const [saving, setSaving] = useState(false)
   const [categories, setCategories] = useState<string[]>(initCategories)
   const [newCat, setNewCat] = useState('')
+
+  useEffect(() => { fetchCategories().then(setCategories) }, [])
   const [tab, setTab] = useState<'info' | 'movements'>('info')
   const [movements, setMovements] = useState<Movement[]>([])
   const [issueQty, setIssueQty] = useState(1)
