@@ -264,77 +264,68 @@ function MeterModal({ meter, units, onClose, onSaved }: { meter: Meter | null; u
 }
 
 export default function MetersPage() {
-  const [meters, setMeters] = useState<Meter[]>([])
-  const [units, setUnits] = useState<Unit[]>([])
+  const [meters, setMeters] = useState<any[]>([])
+  const [units, setUnits] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [selected, setSelected] = useState<Meter | null>(null)
+  const [selected, setSelected] = useState<any>(null)
   const [showMeterModal, setShowMeterModal] = useState(false)
   const [showReadingModal, setShowReadingModal] = useState(false)
   const [typeFilter, setTypeFilter] = useState('')
+  const [error, setError] = useState('')
 
-  useEffect(() => { fetchAll() }, [])
-
-  async function fetchAll() {
-    setLoading(true)
-    const [{ data: m }, { data: u }] = await Promise.all([
-      supabase.from('meters').select('*').order('created_at', { ascending: false }),
+  useEffect(() => {
+    Promise.all([
+      supabase.from('meters').select('*'),
       supabase.from('units').select('id, number').order('number')
-    ])
-    setMeters(m || [])
-    setUnits(u || [])
-    setLoading(false)
-  }
+    ]).then(([{ data: m, error: e1 }, { data: u, error: e2 }]) => {
+      if (e1) setError('Meters error: ' + e1.message)
+      if (e2) setError('Units error: ' + e2.message)
+      setMeters(m || [])
+      setUnits(u || [])
+      setLoading(false)
+    })
+  }, [])
 
-  const filtered = typeFilter ? meters.filter(m => m.type === typeFilter) : meters
+  if (error) return <div style={{ padding: 20, color: 'red' }}>{error}</div>
+  if (loading) return <div style={{ padding: 20, color: '#9ca3af' }}>Загрузка...</div>
 
   return (
     <div>
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
-        <select style={{ border: '1px solid #e5e7eb', borderRadius: 6, padding: '7px 12px', fontSize: 14, fontFamily: 'inherit', outline: 'none', background: '#fff' }}
-          value={typeFilter} onChange={e => setTypeFilter(e.target.value)}>
-          <option value="">Все типы</option>
-          {Object.entries(METER_TYPES).map(([k, v]) => <option key={k} value={k}>{v.icon} {v.label}</option>)}
-        </select>
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 16 }}>
         <div style={{ flex: 1 }} />
         <button onClick={() => { setSelected(null); setShowMeterModal(true) }} style={{ padding: '7px 16px', border: 'none', borderRadius: 6, background: '#111', color: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>
           + Добавить счётчик
         </button>
       </div>
-
-      {loading ? <div style={{ color: '#9ca3af', fontSize: 14 }}>Загрузка...</div> : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
-          {filtered.map(m => {
-            const mt = METER_TYPES[m.type] || { label: m.type, icon: '📊', unit: '' }
-            return (
-              <div key={m.id} style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10, padding: 16, cursor: 'pointer' }}
-                onMouseEnter={e => (e.currentTarget.style.boxShadow = '0 4px 16px #0001')}
-                onMouseLeave={e => (e.currentTarget.style.boxShadow = 'none')}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ fontSize: 20 }}>{mt.icon}</span>
-                    <div>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: '#111' }}>{mt.label}</div>
-                      <div style={{ fontSize: 12, color: '#6b7280' }}>№{m.number || m.serial}</div>
-                    </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
+        {meters.map(m => {
+          const mt = METER_TYPES[m.type] || { label: m.type, icon: '📊', unit: '' }
+          return (
+            <div key={m.id} style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10, padding: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 20 }}>{mt.icon}</span>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#111' }}>{mt.label}</div>
+                    <div style={{ fontSize: 12, color: '#6b7280' }}>№{m.number || m.serial}</div>
                   </div>
-                  <button onClick={() => { setSelected(m); setShowMeterModal(true) }} style={{ border: 'none', background: '#f3f4f6', borderRadius: 6, padding: '4px 8px', fontSize: 12, color: '#6b7280', cursor: 'pointer' }}>✎</button>
                 </div>
-                <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 10 }}>
-                  {m.tariff > 0 && <span>Тариф: {m.tariff} ₽/{mt.unit}</span>}
-                  {m.area > 0 && <span> · {m.area} м²</span>}
-                </div>
-                <button onClick={() => { setSelected(m); setShowReadingModal(true) }} style={{ width: '100%', padding: '7px', borderRadius: 6, border: 'none', background: '#111', color: '#fff', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>
-                  Показания
-                </button>
+                <button onClick={() => { setSelected(m); setShowMeterModal(true) }} style={{ border: 'none', background: '#f3f4f6', borderRadius: 6, padding: '4px 8px', fontSize: 12, color: '#6b7280', cursor: 'pointer' }}>✎</button>
               </div>
-            )
-          })}
-          {filtered.length === 0 && <div style={{ color: '#9ca3af', fontSize: 14 }}>Счётчики не найдены</div>}
-        </div>
-      )}
-
-      {showMeterModal && <MeterModal meter={selected} units={units} onClose={() => setShowMeterModal(false)} onSaved={() => { setShowMeterModal(false); fetchAll() }} />}
-      {showReadingModal && selected && <ReadingModal meter={selected} onClose={() => setShowReadingModal(false)} onSaved={fetchAll} />}
+              <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 10 }}>
+                {m.tariff > 0 && <span>Тариф: {m.tariff} ₽/{mt.unit}</span>}
+                {m.area > 0 && <span> · {m.area} м²</span>}
+              </div>
+              <button onClick={() => { setSelected(m); setShowReadingModal(true) }} style={{ width: '100%', padding: '7px', borderRadius: 6, border: 'none', background: '#111', color: '#fff', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>
+                Показания
+              </button>
+            </div>
+          )
+        })}
+        {meters.length === 0 && <div style={{ color: '#9ca3af', fontSize: 14 }}>Счётчики не найдены</div>}
+      </div>
+      {showMeterModal && <MeterModal meter={selected} units={units} onClose={() => setShowMeterModal(false)} onSaved={() => { setShowMeterModal(false); Promise.all([supabase.from('meters').select('*'), supabase.from('units').select('id, number').order('number')]).then(([{data:m},{data:u}]) => { setMeters(m||[]); setUnits(u||[]) }) }} />}
+      {showReadingModal && selected && <ReadingModal meter={selected} onClose={() => setShowReadingModal(false)} onSaved={() => supabase.from('meters').select('*').then(({data:m}) => setMeters(m||[]))} />}
     </div>
   )
 }
