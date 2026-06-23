@@ -10,6 +10,8 @@ import { SettingsReferencePage } from './pages/Settings2'
 import { BillingPage } from './pages/Billing'
 import { TenantNewPage } from './pages/TenantNew'
 import { FloorPlanPage } from './pages/FloorPlan'
+import StaffPage from './pages/Staff'
+import TasksPage from './pages/Tasks'
 import { mockStats, mockTasks, mockOverdue, mockEvents, mockInvoices, mockTenants } from './lib/mockData'
 import { useRealTenants, useRealInvoices } from './lib/useRealData'
 
@@ -338,7 +340,7 @@ export default function App() {
           {page === 'dashboard' && <Dashboard />}
           {page === 'invoices' && <Invoices onOpenInvoice={(inv) => { setSelectedInvoice(inv); setPage('invoice-detail') }} />}
           {page === 'tenants' && <Tenants onOpenTenant={() => setPage('tenant-card')} onAddTenant={() => setPage('tenant-new')} />}
-          {page === 'tasks' && <Tasks />}
+          {page === 'tasks' && <TasksPage />}
           {page === 'ai' && <AIAssistantPage />}
           {page === 'kb' && <KnowledgeBasePage />}
           {page === 'tenant-card' && <TenantCardPage onBack={() => setPage('tenants')} onCreateInvoice={() => setPage('billing')} />}
@@ -352,7 +354,7 @@ export default function App() {
           {page === 'bank' && <div style={{padding:20,color:'#8596b4',fontSize:14}}>Банк — в разработке</div>}
           {page === 'reconcile' && <div style={{padding:20,color:'#8596b4',fontSize:14}}>Сверка — в разработке</div>}
           {page === 'heat' && <div style={{padding:20,color:'#8596b4',fontSize:14}}>Тепло — в разработке</div>}
-          {page === 'staff' && <div style={{padding:20,color:'#8596b4',fontSize:14}}>Сотрудники — в разработке</div>}
+          {page === 'staff' && <StaffPage />}
           {page === 'inventory' && <div style={{padding:20,color:'#8596b4',fontSize:14}}>Инвентарь — в разработке</div>}
           {page === 'floorplan' && <FloorPlanPage />}
           {page === 'invoice-detail' && selectedInvoice && <InvoiceDetailPage invoice={selectedInvoice} onBack={() => setPage('invoices')} />}
