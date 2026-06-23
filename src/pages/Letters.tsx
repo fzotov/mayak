@@ -236,7 +236,7 @@ function LetterModal({ letter, onClose, onSaved }: { letter: Letter | null; onCl
               <input ref={fileRef} type="file" accept=".pdf,image/*" style={{ display: 'none' }} onChange={e => setFile(e.target.files?.[0] || null)} />
               <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
                 <button onClick={() => fileRef.current?.click()} style={{ padding: '6px 14px', borderRadius: 6, border: '1px solid #e5e7eb', background: '#fff', color: '#374151', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>
-                  {file ? file.name : 'Выбрать файл'}
+                  {file ? (file.name.length > 30 ? file.name.slice(0, 30) + '...' : file.name) : 'Выбрать файл'}
                 </button>
                 {file && (
                   <button onClick={processFile} disabled={processing} style={{ padding: '6px 14px', borderRadius: 6, border: 'none', background: '#7c3aed', color: '#fff', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', opacity: processing ? 0.6 : 1 }}>
