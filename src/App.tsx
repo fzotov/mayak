@@ -13,6 +13,8 @@ import { FloorPlanPage } from './pages/FloorPlan'
 import StaffPage from './pages/Staff'
 import InventoryPage from './pages/Inventory'
 import ServicesPage from './pages/Services'
+import LettersPage from './pages/Letters'
+import LettersPage from './pages/Letters'
 import TasksPage from './pages/Tasks'
 import { mockStats, mockTasks, mockOverdue, mockEvents, mockInvoices, mockTenants } from './lib/mockData'
 import { useRealTenants, useRealInvoices } from './lib/useRealData'
@@ -324,6 +326,7 @@ export default function App() {
               'repairs': 'Заявки на ремонт',
               'contracts': 'Договоры',
               'letters': 'Письма',
+              'letters': 'Письма',
               'bank': 'Банк',
               'reconcile': 'Сверка',
               'heat': 'Тепло',
@@ -355,7 +358,7 @@ export default function App() {
           {page === 'my-tasks' && <div style={{padding:20,color:'#8596b4',fontSize:14}}>Мои задачи — в разработке</div>}
           {page === 'repairs' && <div style={{padding:20,color:'#8596b4',fontSize:14}}>Заявки на ремонт — в разработке</div>}
           {page === 'contracts' && <div style={{padding:20,color:'#8596b4',fontSize:14}}>Договоры — в разработке</div>}
-          {page === 'letters' && <div style={{padding:20,color:'#8596b4',fontSize:14}}>Письма — в разработке</div>}
+          {page === 'letters' && <LettersPage />}
           {page === 'bank' && <div style={{padding:20,color:'#8596b4',fontSize:14}}>Банк — в разработке</div>}
           {page === 'reconcile' && <div style={{padding:20,color:'#8596b4',fontSize:14}}>Сверка — в разработке</div>}
           {page === 'heat' && <div style={{padding:20,color:'#8596b4',fontSize:14}}>Тепло — в разработке</div>}
