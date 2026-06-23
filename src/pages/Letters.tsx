@@ -27,6 +27,36 @@ const statusLabel: Record<string, { label: string; bg: string; color: string }> 
 const inp: React.CSSProperties = { width: '100%', border: '1px solid #e5e7eb', borderRadius: 6, padding: '7px 10px', fontSize: 14, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' as const }
 const lbl: React.CSSProperties = { fontSize: 12, color: '#6b7280', marginBottom: 4, display: 'block', fontWeight: 500 }
 
+function PromptModal({ onClose, onGenerate }: { onClose: () => void; onGenerate: (prompt: string) => void }) {
+  const [prompt, setPrompt] = useState('')
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: '#00000060', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div style={{ background: '#fff', borderRadius: 12, width: '100%', maxWidth: 500, boxShadow: '0 8px 32px #0003', border: '1px solid #e5e7eb' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid #e5e7eb' }}>
+          <div style={{ fontSize: 15, fontWeight: 600 }}>✦ Генерация письма AI</div>
+          <button onClick={onClose} style={{ border: 'none', background: 'none', fontSize: 18, color: '#9ca3af', cursor: 'pointer' }}>✕</button>
+        </div>
+        <div style={{ padding: 20 }}>
+          <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 10 }}>Опишите подробно содержание письма — тон, ключевые моменты, требования, сроки.</div>
+          <textarea
+            style={{ ...inp, height: 140, resize: 'vertical' }}
+            placeholder="Например: письмо-напоминание об оплате аренды за июнь, срок оплаты был 5 числа, прошло уже 10 дней, попросить оплатить в течение 3 дней иначе будут начислены пени согласно договору"
+            value={prompt}
+            onChange={e => setPrompt(e.target.value)}
+            autoFocus
+          />
+        </div>
+        <div style={{ display: 'flex', gap: 8, padding: '14px 20px', borderTop: '1px solid #e5e7eb' }}>
+          <button onClick={() => onGenerate(prompt)} disabled={!prompt.trim()} style={{ flex: 1, padding: '8px', borderRadius: 6, border: 'none', background: '#111', color: '#fff', fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', opacity: !prompt.trim() ? 0.5 : 1 }}>
+            Сгенерировать
+          </button>
+          <button onClick={onClose} style={{ padding: '8px 14px', borderRadius: 6, border: '1px solid #e5e7eb', background: '#fff', color: '#6b7280', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>Отмена</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function LetterModal({ letter, onClose, onSaved }: { letter: Letter | null; onClose: () => void; onSaved: () => void }) {
   const [form, setForm] = useState({
     type: letter?.type || 'outgoing',
@@ -42,33 +72,39 @@ function LetterModal({ letter, onClose, onSaved }: { letter: Letter | null; onCl
   const [saving, setSaving] = useState(false)
   const [generating, setGenerating] = useState(false)
   const [processing, setProcessing] = useState(false)
+  const [showPrompt, setShowPrompt] = useState(false)
   const [file, setFile] = useState<File | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }))
 
-  async function generateLetter() {
-    if (!form.subject) return alert('Введите тему письма')
+  async function generateLetter(prompt: string) {
+    setShowPrompt(false)
     setGenerating(true)
     try {
       const res = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'anthropic-dangerous-direct-browser-access': 'true'
+        },
         body: JSON.stringify({
           model: 'claude-sonnet-4-6',
           max_tokens: 1000,
           messages: [{
             role: 'user',
             content: `Напиши деловое письмо на русском языке для управляющей компании бизнес-центра "Маяк".
-Тема: ${form.subject}
+Тема: ${form.subject || 'не указана'}
 Получатель: ${form.recipient || 'арендатор'}
 Отправитель: ${form.sender || 'Администрация БЦ Маяк'}
+Инструкции: ${prompt}
 
-Письмо должно быть официальным, кратким и вежливым. Верни только текст письма без лишних пояснений.`
+Верни только текст письма без пояснений.`
           }]
         })
       })
       const data = await res.json()
       const text = data.content?.[0]?.text || ''
+      if (!text) throw new Error('empty')
       set('body', text)
     } catch (e) {
       alert('Ошибка генерации')
@@ -85,27 +121,23 @@ function LetterModal({ letter, onClose, onSaved }: { letter: Letter | null; onCl
         reader.onload = () => res((reader.result as string).split(',')[1])
         reader.readAsDataURL(file)
       })
-
       const isImage = file.type.startsWith('image/')
-      const isPdf = file.type === 'application/pdf'
-
       const content: any[] = []
       if (isImage) {
         content.push({ type: 'image', source: { type: 'base64', media_type: file.type, data: base64 } })
-      } else if (isPdf) {
+      } else {
         content.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } })
       }
-      content.push({ type: 'text', text: 'Извлеки содержимое этого письма. Верни JSON с полями: subject (тема), sender (отправитель), recipient (получатель), date (дата в формате YYYY-MM-DD), body (полный текст письма), summary (краткое резюме 1-2 предложения), action (требуемое действие если есть). Только JSON без markdown.' })
+      content.push({ type: 'text', text: 'Извлеки содержимое письма. Верни JSON: {"subject":"","sender":"","recipient":"","date":"YYYY-MM-DD","body":"","summary":"","action":""}. Только JSON.' })
 
       const res = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'anthropic-dangerous-direct-browser-access': 'true' },
         body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 1000, messages: [{ role: 'user', content }] })
       })
       const data = await res.json()
       const text = data.content?.[0]?.text || '{}'
       const parsed = JSON.parse(text.replace(/```json|```/g, '').trim())
-
       if (parsed.subject) set('subject', parsed.subject)
       if (parsed.sender) set('sender', parsed.sender)
       if (parsed.recipient) set('recipient', parsed.recipient)
@@ -142,86 +174,88 @@ function LetterModal({ letter, onClose, onSaved }: { letter: Letter | null; onCl
   }
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: '#00000050', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-      <div style={{ background: '#fff', borderRadius: 12, width: '100%', maxWidth: 680, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 8px 32px #0003', border: '1px solid #e5e7eb' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid #e5e7eb' }}>
-          <div style={{ fontSize: 15, fontWeight: 600, color: '#111' }}>{letter ? 'Письмо' : 'Новое письмо'}</div>
-          <button onClick={onClose} style={{ border: 'none', background: 'none', fontSize: 18, color: '#9ca3af', cursor: 'pointer' }}>✕</button>
-        </div>
+    <>
+      <div style={{ position: 'fixed', inset: 0, background: '#00000050', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        <div style={{ background: '#fff', borderRadius: 12, width: '100%', maxWidth: 680, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 8px 32px #0003', border: '1px solid #e5e7eb' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid #e5e7eb' }}>
+            <div style={{ fontSize: 15, fontWeight: 600, color: '#111' }}>{letter ? 'Письмо' : 'Новое письмо'}</div>
+            <button onClick={onClose} style={{ border: 'none', background: 'none', fontSize: 18, color: '#9ca3af', cursor: 'pointer' }}>✕</button>
+          </div>
 
-        <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
-          {/* Загрузка файла */}
-          <div style={{ background: '#f9fafb', border: '2px dashed #e5e7eb', borderRadius: 8, padding: 16, textAlign: 'center' }}>
-            <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 8 }}>Загрузить входящее письмо (PDF, Word, фото)</div>
-            <input ref={fileRef} type="file" accept=".pdf,.doc,.docx,image/*" style={{ display: 'none' }} onChange={e => setFile(e.target.files?.[0] || null)} />
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
-              <button onClick={() => fileRef.current?.click()} style={{ padding: '6px 14px', borderRadius: 6, border: '1px solid #e5e7eb', background: '#fff', color: '#374151', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>
-                {file ? file.name : 'Выбрать файл'}
-              </button>
-              {file && (
-                <button onClick={processFile} disabled={processing} style={{ padding: '6px 14px', borderRadius: 6, border: 'none', background: '#7c3aed', color: '#fff', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', opacity: processing ? 0.6 : 1 }}>
-                  {processing ? '⏳ Обработка...' : '✦ Обработать AI'}
+          <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ background: '#f9fafb', border: '2px dashed #e5e7eb', borderRadius: 8, padding: 16, textAlign: 'center' }}>
+              <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 8 }}>Загрузить входящее письмо (PDF, фото)</div>
+              <input ref={fileRef} type="file" accept=".pdf,image/*" style={{ display: 'none' }} onChange={e => setFile(e.target.files?.[0] || null)} />
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+                <button onClick={() => fileRef.current?.click()} style={{ padding: '6px 14px', borderRadius: 6, border: '1px solid #e5e7eb', background: '#fff', color: '#374151', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  {file ? file.name : 'Выбрать файл'}
                 </button>
-              )}
+                {file && (
+                  <button onClick={processFile} disabled={processing} style={{ padding: '6px 14px', borderRadius: 6, border: 'none', background: '#7c3aed', color: '#fff', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', opacity: processing ? 0.6 : 1 }}>
+                    {processing ? '⏳ Обработка...' : '✦ Обработать AI'}
+                  </button>
+                )}
+              </div>
             </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <div><label style={lbl}>Тип</label>
+                <select style={inp} value={form.type} onChange={e => set('type', e.target.value)}>
+                  <option value="outgoing">Исходящее</option>
+                  <option value="incoming">Входящее</option>
+                </select>
+              </div>
+              <div><label style={lbl}>Статус</label>
+                <select style={inp} value={form.status} onChange={e => set('status', e.target.value)}>
+                  <option value="draft">Черновик</option>
+                  <option value="sent">Отправлено</option>
+                  <option value="received">Получено</option>
+                  <option value="processed">Обработано</option>
+                </select>
+              </div>
+            </div>
+
+            <div><label style={lbl}>Тема *</label><input style={inp} value={form.subject} onChange={e => set('subject', e.target.value)} placeholder="Уведомление об изменении арендной ставки" /></div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <div><label style={lbl}>От кого</label><input style={inp} value={form.sender} onChange={e => set('sender', e.target.value)} placeholder="Администрация БЦ Маяк" /></div>
+              <div><label style={lbl}>Кому</label><input style={inp} value={form.recipient} onChange={e => set('recipient', e.target.value)} placeholder="ООО Техцентр" /></div>
+            </div>
+
+            <div><label style={lbl}>Дата</label><input style={inp} type="date" value={form.date} onChange={e => set('date', e.target.value)} /></div>
+
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                <label style={lbl}>Текст письма</label>
+                {form.type === 'outgoing' && (
+                  <button onClick={() => setShowPrompt(true)} disabled={generating} style={{ padding: '4px 12px', borderRadius: 6, border: 'none', background: '#111', color: '#fff', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', opacity: generating ? 0.6 : 1 }}>
+                    {generating ? '⏳ Генерация...' : '✦ Сгенерировать AI'}
+                  </button>
+                )}
+              </div>
+              <textarea style={{ ...inp, height: 180, resize: 'vertical' }} value={form.body} onChange={e => set('body', e.target.value)} placeholder="Текст письма..." />
+            </div>
+
+            {(form.ai_summary || form.ai_action) && (
+              <div style={{ background: '#f5f3ff', border: '1px solid #ede9fe', borderRadius: 8, padding: 12 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: '#7c3aed', marginBottom: 6 }}>✦ AI Анализ</div>
+                {form.ai_summary && <div style={{ fontSize: 13, color: '#374151', marginBottom: 4 }}><b>Резюме:</b> {form.ai_summary}</div>}
+                {form.ai_action && <div style={{ fontSize: 13, color: '#374151' }}><b>Требуемое действие:</b> {form.ai_action}</div>}
+              </div>
+            )}
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            <div><label style={lbl}>Тип</label>
-              <select style={inp} value={form.type} onChange={e => set('type', e.target.value)}>
-                <option value="outgoing">Исходящее</option>
-                <option value="incoming">Входящее</option>
-              </select>
-            </div>
-            <div><label style={lbl}>Статус</label>
-              <select style={inp} value={form.status} onChange={e => set('status', e.target.value)}>
-                <option value="draft">Черновик</option>
-                <option value="sent">Отправлено</option>
-                <option value="received">Получено</option>
-                <option value="processed">Обработано</option>
-              </select>
-            </div>
+          <div style={{ display: 'flex', gap: 8, padding: '14px 20px', borderTop: '1px solid #e5e7eb' }}>
+            <button onClick={save} disabled={saving} style={{ flex: 1, padding: '8px', borderRadius: 6, border: 'none', background: '#111', color: '#fff', fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', opacity: saving ? 0.6 : 1 }}>
+              {saving ? 'Сохранение...' : 'Сохранить'}
+            </button>
+            {letter && <button onClick={remove} style={{ padding: '8px 14px', borderRadius: 6, border: 'none', background: '#fee2e2', color: '#ef4444', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>Удалить</button>}
+            <button onClick={onClose} style={{ padding: '8px 14px', borderRadius: 6, border: '1px solid #e5e7eb', background: '#fff', color: '#6b7280', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>Отмена</button>
           </div>
-
-          <div><label style={lbl}>Тема *</label><input style={inp} value={form.subject} onChange={e => set('subject', e.target.value)} placeholder="Уведомление об изменении арендной ставки" /></div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            <div><label style={lbl}>От кого</label><input style={inp} value={form.sender} onChange={e => set('sender', e.target.value)} placeholder="Администрация БЦ Маяк" /></div>
-            <div><label style={lbl}>Кому</label><input style={inp} value={form.recipient} onChange={e => set('recipient', e.target.value)} placeholder="ООО Техцентр" /></div>
-          </div>
-
-          <div><label style={lbl}>Дата</label><input style={inp} type="date" value={form.date} onChange={e => set('date', e.target.value)} /></div>
-
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-              <label style={lbl}>Текст письма</label>
-              {form.type === 'outgoing' && (
-                <button onClick={generateLetter} disabled={generating} style={{ padding: '4px 12px', borderRadius: 6, border: 'none', background: '#111', color: '#fff', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', opacity: generating ? 0.6 : 1 }}>
-                  {generating ? '⏳ Генерация...' : '✦ Сгенерировать AI'}
-                </button>
-              )}
-            </div>
-            <textarea style={{ ...inp, height: 180, resize: 'vertical' }} value={form.body} onChange={e => set('body', e.target.value)} placeholder="Текст письма..." />
-          </div>
-
-          {(form.ai_summary || form.ai_action) && (
-            <div style={{ background: '#f5f3ff', border: '1px solid #ede9fe', borderRadius: 8, padding: 12 }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: '#7c3aed', marginBottom: 6 }}>✦ AI Анализ</div>
-              {form.ai_summary && <div style={{ fontSize: 13, color: '#374151', marginBottom: 4 }}><b>Резюме:</b> {form.ai_summary}</div>}
-              {form.ai_action && <div style={{ fontSize: 13, color: '#374151' }}><b>Требуемое действие:</b> {form.ai_action}</div>}
-            </div>
-          )}
-        </div>
-
-        <div style={{ display: 'flex', gap: 8, padding: '14px 20px', borderTop: '1px solid #e5e7eb' }}>
-          <button onClick={save} disabled={saving} style={{ flex: 1, padding: '8px', borderRadius: 6, border: 'none', background: '#111', color: '#fff', fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', opacity: saving ? 0.6 : 1 }}>
-            {saving ? 'Сохранение...' : 'Сохранить'}
-          </button>
-          {letter && <button onClick={remove} style={{ padding: '8px 14px', borderRadius: 6, border: 'none', background: '#fee2e2', color: '#ef4444', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>Удалить</button>}
-          <button onClick={onClose} style={{ padding: '8px 14px', borderRadius: 6, border: '1px solid #e5e7eb', background: '#fff', color: '#6b7280', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>Отмена</button>
         </div>
       </div>
-    </div>
+      {showPrompt && <PromptModal onClose={() => setShowPrompt(false)} onGenerate={generateLetter} />}
+    </>
   )
 }
 
