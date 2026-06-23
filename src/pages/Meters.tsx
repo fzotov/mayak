@@ -277,7 +277,7 @@ export default function MetersPage() {
   async function fetchAll() {
     setLoading(true)
     const [{ data: m }, { data: u }] = await Promise.all([
-      supabase.from('meters').select('*').order('type').order('number'),
+      supabase.from('meters').select('*').order('created_at', { ascending: false }),
       supabase.from('units').select('id, number').order('number')
     ])
     setMeters(m || [])
