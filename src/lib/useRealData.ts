@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
 import { getTenants, getInvoices } from './supabase'
-import { mockTenants, mockInvoices } from './mockData'
 
 export function useRealTenants() {
   const [tenants, setTenants] = useState<any[]>([])
