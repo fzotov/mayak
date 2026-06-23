@@ -288,7 +288,7 @@ export default function App() {
               {group.label ? <div style={{ fontSize: 10, fontWeight: 600, color: '#9ca3af', letterSpacing: '.8px', padding: '12px 16px 4px', textTransform: 'uppercase' as const }}>{group.label}</div> : null}
               {group.items.map(n => (
                 <button key={n.id} onClick={() => setPage(n.id as Page)}
-                  style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 16px', width: '100%', border: 'none', borderRadius: 0, background: page === n.id ? '#f3f4f6' : 'transparent', color: page === n.id ? '#111' : '#6b7280', cursor: 'pointer', fontSize: 13, fontFamily: 'inherit', textAlign: 'left', fontWeight: page === n.id ? 500 : 400, transition: 'background .1s' }}>
+                  style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 16px', width: '100%', border: 'none', borderRadius: 0, background: page === n.id ? '#f3f4f6' : 'transparent', color: page === n.id ? '#111' : '#6b7280', cursor: 'pointer', fontSize: 14, fontFamily: 'inherit', textAlign: 'left', fontWeight: page === n.id ? 500 : 400, transition: 'background .1s' }}>
                   <span style={{ fontSize: 14, opacity: page === n.id ? 1 : 0.6 }}>{n.icon}</span>{n.label}
                 </button>
               ))}
@@ -307,7 +307,7 @@ export default function App() {
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#fafafa' }}>
         <header style={{ background: '#fff', borderBottom: '1px solid #e5e7eb', padding: '12px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
           <div>
-            <div style={{ fontSize: 15, fontWeight: 600, color: '#111' }}>
+            <div style={{ fontSize: 18, fontWeight: 600, color: '#111' }}>
               {{
               'dashboard': 'Сводка дня',
               'tenants': 'Арендаторы',
@@ -329,7 +329,7 @@ export default function App() {
               'tenant-card': 'Карточка арендатора',
             }[page] || 'Маяк'}
             </div>
-            <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 1 }}>Бизнес-центр Маяк</div>
+            <div style={{ fontSize: 13, color: '#9ca3af', marginTop: 2 }}>Бизнес-центр Маяк</div>
           </div>
           <div style={{ display: 'flex', background: '#f3f4f6', borderRadius: 6, padding: 2, gap: 1 }}>
             {['Сегодня', 'Неделя', 'Месяц'].map((p, i) => (
