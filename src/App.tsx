@@ -15,6 +15,7 @@ import InventoryPage from './pages/Inventory'
 import ServicesPage from './pages/Services'
 import LettersPage from './pages/Letters'
 import MetersPage from './pages/Meters'
+import UnitsPage from './pages/Units'
 import TasksPage from './pages/Tasks'
 import { mockStats, mockTasks, mockOverdue, mockEvents, mockInvoices, mockTenants } from './lib/mockData'
 import { useRealTenants, useRealInvoices } from './lib/useRealData'
@@ -22,7 +23,8 @@ import { useRealTenants, useRealInvoices } from './lib/useRealData'
 type Page = 'dashboard' | 'tenants' | 'invoices' | 'tasks' | 'ai' | 'kb' | 'tenant-card' | 'reference' | 'billing' | 'invoice-detail' | 'settings' | 'tenant-new'
 
 const NAV_GROUPS = [
-  { label: '', items: [{ id: 'dashboard', label: 'Сводка дня', icon: '⊞' }, { id: 'floorplan', label: 'План этажей', icon: '🏢' }] },
+  { label: '', items: [{ id: 'dashboard', label: 'Сводка дня', icon: '⊞' }, { id: 'floorplan', label: 'План этажей', icon: '🏢' },
+    { id: 'units', label: 'Помещения', icon: '🚪' }] },
   { label: 'ЗАДАЧИ', items: [
     { id: 'tasks', label: 'Все задачи', icon: '✓' },
     { id: 'my-tasks', label: 'Мои задачи', icon: '☑' },
@@ -373,6 +375,7 @@ export default function App() {
           {page === 'staff' && <StaffPage />}
           {page === 'inventory' && <InventoryPage />}
           {page === 'floorplan' && <FloorPlanPage />}
+          {page === 'units' && <UnitsPage />}
           {page === 'invoice-detail' && selectedInvoice && <InvoiceDetailPage invoice={selectedInvoice} onBack={() => setPage('invoices')} />}
           {showSettings && <SettingsModal onClose={() => setShowSettings(false)} onLogout={() => { setShowSettings(false); setUser(null) }} />}
         </main>
