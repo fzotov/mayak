@@ -139,8 +139,8 @@ function LetterModal({ letter, onClose, onSaved }: { letter: Letter | null; onCl
       const r = await supabase.from('letters').insert({ ...form }).select('*').single()
       if (r.error) { alert('Ошибка: ' + r.error.message); setSaving(false); return }
       setSaving(false)
-      // Если входящее письмо и есть ai_action — предлагаем создать задачу
-      if (form.type === 'incoming' && (form.ai_action || form.ai_summary)) {
+      // Если входящее письмо — предлагаем создать задачу
+      if (form.type === 'incoming') {
         setSavedLetter({ ...form, id: r.data?.id })
       } else {
         onSaved()
