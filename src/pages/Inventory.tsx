@@ -154,6 +154,18 @@ function ItemModal({ item, staff, onClose, onSaved }: { item: Item | null; staff
                   <input style={{ ...inp, flex: 1 }} value={newCat} onChange={e => setNewCat(e.target.value)} placeholder="Новая категория..." onKeyDown={e => e.key === 'Enter' && addCategory()} />
                   <button type="button" onClick={addCategory} style={{ padding: '8px 12px', borderRadius: 7, border: 'none', background: '#4f6ef7', color: '#fff', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>+ Добавить</button>
                 </div>
+                {form.category && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                    <span style={{ fontSize: 12, color: '#8596b4' }}>Выбрана: <b>{form.category}</b></span>
+                    <button type="button" onClick={async () => {
+                      if (!confirm('Удалить категорию "' + form.category + '"?')) return
+                      await supabase.from('inventory_categories').delete().eq('name', form.category)
+                      const { data } = await supabase.from('inventory_categories').select('name').order('name')
+                      setCategories((data || []).map((c: any) => c.name))
+                      set('category', '')
+                    }} style={{ padding: '3px 8px', borderRadius: 6, border: 'none', background: '#fee2e2', color: '#ef4444', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>Удалить</button>
+                  </div>
+                )}
               </div>
               <div><label style={lbl}>Инвентарный номер</label><input style={inp} value={form.inventory_number} onChange={e => set('inventory_number', e.target.value)} placeholder="INV-001" /></div>
             </div>
