@@ -62,8 +62,13 @@ function ItemModal({ item, staff, onClose, onSaved }: { item: Item | null; staff
   async function save() {
     if (!form.name.trim()) return alert('Введите название')
     setSaving(true)
-    if (item?.id) await supabase.from('inventory').update(form).eq('id', item.id)
-    else await supabase.from('inventory').insert(form)
+    if (item?.id) {
+      const r = await supabase.from('inventory').update(form).eq('id', item.id)
+      if (r.error) alert('Ошибка: ' + r.error.message)
+    } else {
+      const r = await supabase.from('inventory').insert(form)
+      if (r.error) alert('Ошибка: ' + r.error.message)
+    }
     setSaving(false)
     onSaved()
   }
