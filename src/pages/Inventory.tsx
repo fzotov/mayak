@@ -30,17 +30,24 @@ interface Movement {
 
 interface Staff { id: string; full_name: string }
 
+async function fetchCategories() {
+  const { data } = await supabase.from('inventory_categories').select('name').order('name')
+  return (data || []).map((c: any) => c.name)
+}
+
 const emptyItem: Omit<Item, 'id' | 'responsible'> = {
   name: '', category: '', description: '', quantity: 1, quantity_available: 1,
   location: '', cost: 0, serial_number: '', inventory_number: '',
   responsible_id: null, supplier: '', received_at: '', notes: ''
 }
 
-const CATEGORIES = ['Мебель', 'Техника', 'Инструменты', 'Канцелярия', 'Хозяйство', 'Другое']
 
-function ItemModal({ item, staff, onClose, onSaved }: { item: Item | null; staff: Staff[]; onClose: () => void; onSaved: () => void }) {
+
+function ItemModal({ item, staff, categories: initCategories, onClose, onSaved }: { item: Item | null; staff: Staff[]; categories: string[]; onClose: () => void; onSaved: () => void }) {
   const [form, setForm] = useState<Omit<Item, 'id' | 'responsible'>>(item ? { ...item } : { ...emptyItem })
   const [saving, setSaving] = useState(false)
+  const [categories, setCategories] = useState<string[]>(initCategories)
+  const [newCat, setNewCat] = useState('')
   const [tab, setTab] = useState<'info' | 'movements'>('info')
   const [movements, setMovements] = useState<Movement[]>([])
   const [issueQty, setIssueQty] = useState(1)
@@ -58,6 +65,15 @@ function ItemModal({ item, staff, onClose, onSaved }: { item: Item | null; staff
   }
 
   const set = (k: string, v: string | number | null) => setForm(f => ({ ...f, [k]: v }))
+
+  async function addCategory() {
+    if (!newCat.trim()) return
+    await supabase.from('inventory_categories').insert({ name: newCat.trim() })
+    const updated = await fetchCategories()
+    setCategories(updated)
+    set('category', newCat.trim())
+    setNewCat('')
+  }
 
   async function save() {
     if (!form.name.trim()) return alert('Введите название')
@@ -128,8 +144,12 @@ function ItemModal({ item, staff, onClose, onSaved }: { item: Item | null; staff
               <div><label style={lbl}>Категория</label>
                 <select style={inp} value={form.category} onChange={e => set('category', e.target.value)}>
                   <option value="">— Выбрать</option>
-                  {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                  {categories.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
+              <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                <input style={{ ...inp, flex: 1 }} value={newCat} onChange={e => setNewCat(e.target.value)} placeholder="Новая категория..." onKeyDown={e => e.key === 'Enter' && addCategory()} />
+                <button type="button" onClick={addCategory} style={{ padding: '8px 12px', borderRadius: 7, border: 'none', background: '#4f6ef7', color: '#fff', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>+ Добавить</button>
+              </div>
               </div>
               <div><label style={lbl}>Инвентарный номер</label><input style={inp} value={form.inventory_number} onChange={e => set('inventory_number', e.target.value)} placeholder="INV-001" /></div>
             </div>
@@ -213,13 +233,14 @@ function ItemModal({ item, staff, onClose, onSaved }: { item: Item | null; staff
 export default function InventoryPage() {
   const [items, setItems] = useState<Item[]>([])
   const [staff, setStaff] = useState<Staff[]>([])
+  const [categories, setCategories] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState<Item | null>(null)
   const [showModal, setShowModal] = useState(false)
   const [search, setSearch] = useState('')
   const [catFilter, setCatFilter] = useState('')
 
-  useEffect(() => { fetchAll() }, [])
+  useEffect(() => { fetchAll(); fetchCategories().then(setCategories) }, [])
 
   async function fetchAll() {
     setLoading(true)
@@ -238,10 +259,8 @@ export default function InventoryPage() {
     return matchSearch && matchCat
   })
 
-  const catBadgeColor: Record<string, string> = {
-    'Мебель': '#dbeafe', 'Техника': '#ede9fe', 'Инструменты': '#fef3c7',
-    'Канцелярия': '#dcfce7', 'Хозяйство': '#fee2e2', 'Другое': '#f0f2f8'
-  }
+  const catColors = ['#dbeafe','#ede9fe','#fef3c7','#dcfce7','#fee2e2','#f0f2f8','#fde68a','#d1fae5']
+  const catBadgeColor = Object.fromEntries(categories.map((c, i) => [c, catColors[i % catColors.length]]))
 
   return (
     <div>
@@ -256,7 +275,7 @@ export default function InventoryPage() {
           value={catFilter} onChange={e => setCatFilter(e.target.value)}
         >
           <option value="">Все категории</option>
-          {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+          {categories.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
         <button onClick={() => { setSelected(null); setShowModal(true) }} style={{ padding: '8px 16px', border: 'none', borderRadius: 8, background: '#4f6ef7', color: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>
           + Добавить
@@ -302,7 +321,7 @@ export default function InventoryPage() {
         </div>
       )}
 
-      {showModal && <ItemModal item={selected} staff={staff} onClose={() => setShowModal(false)} onSaved={() => { setShowModal(false); fetchAll() }} />}
+      {showModal && <ItemModal item={selected} staff={staff} categories={categories} onClose={() => setShowModal(false)} onSaved={() => { setShowModal(false); fetchAll(); fetchCategories().then(setCategories) }} />}
     </div>
   )
 }
