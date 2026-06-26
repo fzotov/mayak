@@ -34,15 +34,18 @@ function Modal({ s, onClose, onSaved }: { s: Staff | null; onClose: () => void; 
   async function save() {
     if (!form.full_name.trim()) return alert('Введите ФИО')
     setSaving(true)
-    if (s?.id) await supabase.from('staff').update(form).eq('id', s.id)
-    else await supabase.from('staff').insert(form)
+    const { error } = s?.id
+      ? await supabase.from('staff').update(form).eq('id', s.id)
+      : await supabase.from('staff').insert(form)
     setSaving(false)
+    if (error) { alert('Ошибка сохранения: ' + error.message); return }
     onSaved()
   }
 
   async function dismiss() {
     if (!s?.id) return
-    await supabase.from('staff').update({ status: 'fired' }).eq('id', s.id)
+    const { error } = await supabase.from('staff').update({ status: 'fired' }).eq('id', s.id)
+    if (error) { alert('Ошибка: ' + error.message); return }
     onSaved()
   }
 
@@ -130,7 +133,7 @@ export default function StaffPage() {
       {loading ? <div style={{ color: '#8596b4', fontSize: 14 }}>Загрузка...</div> : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 12 }}>
           {staff.map(s => {
-            const initials = s.full_name.split(' ').map(w => w[0]).slice(0, 2).join('')
+            const initials = s.full_name.split(' ').filter(Boolean).map(w => w[0]).slice(0, 2).join('')
             const rc = roleColor[s.role] || roleColor.staff
             return (
               <div key={s.id} onClick={() => { setSelected(s); setShowModal(true) }} style={{ background: '#fff', border: '1px solid #e8ebf3', borderRadius: 10, padding: '14px 16px', cursor: 'pointer', transition: 'box-shadow .15s' }}

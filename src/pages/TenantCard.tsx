@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 
-const TABS = ['Общие', 'Помещения', 'Счётчики', 'Услуги', 'Счета', 'История', 'Документы']
+const TABS = ['Общие', 'Помещения', 'Счётчики', 'Услуги', 'Счета', 'История', 'Документы', 'Доступ']
 const TYPE_LABELS: Record<string, string> = { COMPANY: 'Юрлицо', IP: 'ИП', INDIVIDUAL: 'Физлицо' }
 const METER_LABELS: Record<string, string> = { electricity: 'Электричество', cold_water: 'Холодная вода', hot_water: 'Горячая вода' }
 const METER_UNITS: Record<string, string> = { electricity: 'кВт·ч', cold_water: 'м³', hot_water: 'м³' }
@@ -64,6 +64,13 @@ export function TenantCardPage({ onBack, onCreateInvoice }: { onBack: () => void
   const [showSuccess, setShowSuccess] = useState(false)
   const [form, setForm] = useState(initial)
   const [saved, setSaved] = useState(initial)
+  const [portalAccess, setPortalAccess] = useState<any>(null)
+  const [portalLoaded, setPortalLoaded] = useState(false)
+
+  useEffect(() => {
+    supabase.from('tenant_portal_access').select('*').eq('email', initial.email).maybeSingle()
+      .then(({ data }) => { setPortalAccess(data); setPortalLoaded(true) })
+  }, [])
   const [services, setServices] = useState([
     { name: 'Уборка', price: 2500, active: true },
   ])
@@ -78,20 +85,20 @@ export function TenantCardPage({ onBack, onCreateInvoice }: { onBack: () => void
 
   const createInvoice = async () => {
     setCreating(true)
-    const period = invoiceYear + '-' + String(invoiceMonth).padStart(2, '0')
-    const rent = t.units.reduce((sum: number, u: any) => sum + (u.rent || 0), 0)
-    const cleaning = 2500 * t.units.length
-    const total = rent + cleaning
-    // Сохраняем в Supabase
-    await fetch('/api/billing-generate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ month: invoiceMonth, year: invoiceYear })
-    })
-    setCreating(false)
-    setInvoiceCreated(true)
-    setShowInvoiceForm(false)
-    setTimeout(() => setInvoiceCreated(false), 3000)
+    try {
+      await fetch('/api/billing-generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ month: invoiceMonth, year: invoiceYear })
+      })
+      setInvoiceCreated(true)
+      setShowInvoiceForm(false)
+      setTimeout(() => setInvoiceCreated(false), 3000)
+    } catch {
+      // ignore network errors for mock page
+    } finally {
+      setCreating(false)
+    }
   }
   const [newService, setNewService] = useState({ name: '', price: '' })
   const [meters] = useState([
@@ -188,7 +195,19 @@ export function TenantCardPage({ onBack, onCreateInvoice }: { onBack: () => void
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
         <button onClick={onBack} style={{ padding: '6px 12px', border: '1px solid #e8ebf3', borderRadius: 7, background: '#fff', cursor: 'pointer', fontSize: 14, fontFamily: 'inherit', color: '#6b7280' }}>← Назад</button>
         <div>
-<div style={{ fontSize: 16, fontWeight: 600, color: '#1a2240' }}>{saved.fullName}</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ fontSize: 16, fontWeight: 600, color: '#1a2240' }}>{saved.fullName}</div>
+            {portalLoaded && (
+              <div title={
+                !portalAccess ? 'Нет доступа к порталу' :
+                portalAccess.status === 'active' ? 'Портал активен' :
+                portalAccess.status === 'blocked' ? 'Доступ заблокирован' : 'Приглашён, не активировал'
+              } style={{
+                width: 10, height: 10, borderRadius: '50%', flexShrink: 0,
+                background: !portalAccess ? '#d1d5db' : portalAccess.status === 'active' ? '#22c55e' : portalAccess.status === 'blocked' ? '#ef4444' : '#f59e0b',
+              }} />
+            )}
+          </div>
           <div style={{ fontSize: 14, color: '#8596b4' }}>{TYPE_LABELS[saved.type]} · ИНН {saved.inn}</div>
         </div>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
@@ -385,6 +404,18 @@ export function TenantCardPage({ onBack, onCreateInvoice }: { onBack: () => void
           <HistoryTab />
         </div>
       )}
+      {tab === 7 && (
+        <AccessTab
+          email={saved.email}
+          tenantName={saved.fullName}
+          portalAccess={portalAccess}
+          onRefresh={() => {
+            supabase.from('tenant_portal_access').select('*').eq('email', saved.email).maybeSingle()
+              .then(({ data }) => setPortalAccess(data))
+          }}
+        />
+      )}
+
       {tab === 6 && (
         <div style={s.card}>
           <div style={{ fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 14, textTransform: 'uppercase', letterSpacing: '.5px' }}>Документы</div>
@@ -407,6 +438,168 @@ export function TenantCardPage({ onBack, onCreateInvoice }: { onBack: () => void
           <button style={{ width: '100%', padding: 8, border: '1px dashed #e8ebf3', borderRadius: 7, background: 'transparent', color: '#4f6ef7', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit', marginTop: 4 }}>+ Загрузить документ</button>
         </div>
       )}
+    </div>
+  )
+}
+
+const PORTAL_URL = 'https://mayak-xi.vercel.app/tenant'
+
+const STATUS_LABELS: Record<string, { label: string; color: string; bg: string }> = {
+  invited:  { label: 'Приглашён',    color: '#d97706', bg: '#fef3c7' },
+  active:   { label: 'Активен',      color: '#16a34a', bg: '#dcfce7' },
+  blocked:  { label: 'Заблокирован', color: '#ef4444', bg: '#fee2e2' },
+}
+
+function AccessTab({ email, tenantName, portalAccess, onRefresh }: {
+  email: string
+  tenantName: string
+  portalAccess: any
+  onRefresh: () => void
+}) {
+  const [inviteEmail, setInviteEmail] = useState(email)
+  const [sending, setSending] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const inp: React.CSSProperties = { width: '100%', boxSizing: 'border-box' as const, padding: '9px 12px', border: '1px solid #e8ebf3', borderRadius: 7, fontSize: 14, fontFamily: 'inherit', outline: 'none', color: '#1a2240' }
+  const btn = (extra?: React.CSSProperties): React.CSSProperties => ({ padding: '8px 16px', borderRadius: 7, border: 'none', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500, ...extra })
+
+  async function sendInvite() {
+    if (!inviteEmail) return alert('Введите email')
+    setSending(true)
+    try {
+      const r = await fetch('/api/send-tenant-invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: inviteEmail, tenantName, unitNumber: '204' }),
+      })
+
+      // API не доступен локально (только Vercel) — fallback: создаём запись без письма
+      if (!r.ok || r.headers.get('content-type')?.includes('text/html')) {
+        const token = Array.from(crypto.getRandomValues(new Uint8Array(32))).map(b => b.toString(16).padStart(2, '0')).join('')
+        const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+        const { error } = await supabase.from('tenant_portal_access').upsert(
+          { email: inviteEmail, invite_token: token, invite_sent_at: new Date().toISOString(), invite_expires_at: expiresAt, status: 'invited' },
+          { onConflict: 'email' }
+        )
+        if (error) { alert('Ошибка БД: ' + error.message); return }
+        const activateUrl = `https://mayak-xi.vercel.app/tenant/activate?token=${token}`
+        alert(`✓ Запись создана.\n\nAPI письма недоступно в dev-режиме.\nСсылка активации:\n${activateUrl}`)
+        onRefresh()
+        return
+      }
+
+      let d: any
+      try { d = await r.json() } catch { throw new Error('Сервер вернул неожиданный ответ') }
+      if (!d.ok) { alert('Ошибка: ' + d.error); return }
+      alert('Приглашение отправлено на ' + inviteEmail)
+      onRefresh()
+    } catch (e: any) {
+      alert('Ошибка отправки: ' + e.message)
+    } finally {
+      setSending(false)
+    }
+  }
+
+  async function blockAccess() {
+    if (!confirm('Заблокировать доступ к порталу?')) return
+    await supabase.from('tenant_portal_access').update({ status: 'blocked' }).eq('id', portalAccess.id)
+    onRefresh()
+  }
+
+  async function unblockAccess() {
+    await supabase.from('tenant_portal_access').update({ status: portalAccess.password_hash ? 'active' : 'invited' }).eq('id', portalAccess.id)
+    onRefresh()
+  }
+
+  async function resetPassword() {
+    if (!confirm('Сбросить пароль и отправить новое приглашение?')) return
+    await supabase.from('tenant_portal_access').update({ password_hash: null, status: 'invited' }).eq('id', portalAccess.id)
+    sendInvite()
+  }
+
+  function copyLink() {
+    navigator.clipboard.writeText(PORTAL_URL).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000) })
+  }
+
+  const fmtDate = (d: string | null) => d ? new Date(d).toLocaleString('ru', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'
+
+  if (!portalAccess) {
+    return (
+      <div style={{ ...s.card, maxWidth: 560 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '20px 0 28px', gap: 12 }}>
+          <div style={{ fontSize: 40 }}>🔐</div>
+          <div style={{ fontSize: 15, fontWeight: 600, color: '#1a2240' }}>Доступ к порталу не настроен</div>
+          <div style={{ fontSize: 14, color: '#8596b4', textAlign: 'center', maxWidth: 360, lineHeight: 1.5 }}>
+            Создайте доступ для арендатора — он получит письмо со ссылкой для активации аккаунта.
+          </div>
+        </div>
+        <div style={{ borderTop: '1px solid #f0f2f8', paddingTop: 20 }}>
+          <div style={{ fontSize: 13, color: '#8596b4', marginBottom: 5, fontWeight: 500 }}>Email для приглашения</div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input
+              style={{ ...inp, flex: 1 }}
+              type="email"
+              value={inviteEmail}
+              onChange={e => setInviteEmail(e.target.value)}
+              placeholder="email@example.com"
+            />
+            <button
+              onClick={sendInvite}
+              disabled={sending}
+              style={btn({ background: '#111', color: '#fff', opacity: sending ? 0.7 : 1, whiteSpace: 'nowrap' })}
+            >
+              {sending ? 'Отправка...' : 'Создать доступ и отправить приглашение'}
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  const st = STATUS_LABELS[portalAccess.status] ?? STATUS_LABELS.invited
+
+  return (
+    <div style={{ ...s.card, maxWidth: 560 }}>
+      <div style={{ fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 16, textTransform: 'uppercase', letterSpacing: '.5px' }}>Доступ к порталу</div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 24px', marginBottom: 20 }}>
+        <div>
+          <div style={s.label}>Email</div>
+          <div style={s.value}>{portalAccess.email}</div>
+        </div>
+        <div>
+          <div style={s.label}>Статус</div>
+          <span style={{ display: 'inline-block', padding: '2px 10px', borderRadius: 10, fontSize: 13, fontWeight: 500, background: st.bg, color: st.color }}>
+            {st.label}
+          </span>
+        </div>
+        <div>
+          <div style={s.label}>Приглашение отправлено</div>
+          <div style={s.value}>{fmtDate(portalAccess.invite_sent_at)}</div>
+        </div>
+        <div>
+          <div style={s.label}>Последний вход</div>
+          <div style={s.value}>{fmtDate(portalAccess.last_login_at)}</div>
+        </div>
+      </div>
+
+      <div style={{ marginBottom: 20, padding: '10px 12px', background: '#f8f9fc', borderRadius: 7, display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ flex: 1, fontSize: 13, color: '#4f6ef7', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{PORTAL_URL}</div>
+        <button onClick={copyLink} style={btn({ background: copied ? '#dcfce7' : '#fff', color: copied ? '#16a34a' : '#4f6ef7', border: '1px solid ' + (copied ? '#bbf7d0' : '#e8ebf3') })}>
+          {copied ? '✓ Скопировано' : 'Копировать'}
+        </button>
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <button onClick={sendInvite} disabled={sending} style={btn({ background: '#eff3ff', color: '#4f6ef7', opacity: sending ? 0.7 : 1 })}>
+          {sending ? 'Отправка...' : '✉ Отправить повторно'}
+        </button>
+        {portalAccess.status === 'blocked' ? (
+          <button onClick={unblockAccess} style={btn({ background: '#dcfce7', color: '#16a34a' })}>Разблокировать</button>
+        ) : (
+          <button onClick={blockAccess} style={btn({ background: '#fee2e2', color: '#ef4444' })}>Заблокировать</button>
+        )}
+        <button onClick={resetPassword} style={btn({ background: '#f8f9fc', color: '#6b7280', border: '1px solid #e8ebf3' })}>🔑 Сбросить пароль</button>
+      </div>
     </div>
   )
 }
@@ -442,7 +635,8 @@ function HistoryTab() {
 
   async function addDeposit() {
     if (!depForm.date || !depForm.amount) return alert('Заполните дату и сумму')
-    await supabase.from('deposit_history').insert(depForm)
+    const { error } = await supabase.from('deposit_history').insert(depForm)
+    if (error) { alert('Ошибка: ' + error.message); return }
     setShowDepModal(false)
     setDepForm({ date: '', amount: 0, action: 'received', note: '' })
     fetchHistory()

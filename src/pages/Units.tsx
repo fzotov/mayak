@@ -51,15 +51,18 @@ function UnitForm({ unit, onBack }: { unit: any; onBack: () => void }) {
   async function save() {
     if (!form.number) return alert('Введите номер помещения')
     setSaving(true)
-    if (unit?.id) await supabase.from('units').update(form).eq('id', unit.id)
-    else await supabase.from('units').insert(form)
+    const { error } = unit?.id
+      ? await supabase.from('units').update(form).eq('id', unit.id)
+      : await supabase.from('units').insert(form)
     setSaving(false)
+    if (error) { alert('Ошибка сохранения: ' + error.message); return }
     onBack()
   }
 
   async function remove() {
     if (!unit?.id || !confirm('Удалить помещение?')) return
-    await supabase.from('units').delete().eq('id', unit.id)
+    const { error } = await supabase.from('units').delete().eq('id', unit.id)
+    if (error) { alert('Ошибка удаления: ' + error.message); return }
     onBack()
   }
 

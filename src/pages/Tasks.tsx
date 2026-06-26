@@ -33,15 +33,18 @@ function TaskModal({ task, staff, onClose, onSaved }: { task: Task | null; staff
   async function save() {
     if (!form.title.trim()) return alert('Введите заголовок')
     setSaving(true)
-    if (task?.id) await supabase.from('tasks').update(form).eq('id', task.id)
-    else await supabase.from('tasks').insert(form)
+    const { error } = task?.id
+      ? await supabase.from('tasks').update(form).eq('id', task.id)
+      : await supabase.from('tasks').insert(form)
     setSaving(false)
+    if (error) { alert('Ошибка сохранения: ' + error.message); return }
     onSaved()
   }
 
   async function remove() {
     if (!task?.id || !confirm('Удалить задачу?')) return
-    await supabase.from('tasks').delete().eq('id', task.id)
+    const { error } = await supabase.from('tasks').delete().eq('id', task.id)
+    if (error) { alert('Ошибка удаления: ' + error.message); return }
     onSaved()
   }
 

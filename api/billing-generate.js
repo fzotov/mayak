@@ -3,7 +3,7 @@ export default async function handler(req, res) {
   const { month, year } = req.body;
 
   const SB_URL = process.env.VITE_SUPABASE_URL;
-  const SB_KEY = process.env.SUPABASE_SERVICE_KEY;
+  const SB_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
   const headers = {
     'Content-Type': 'application/json',
     'apikey': SB_KEY,
@@ -12,7 +12,7 @@ export default async function handler(req, res) {
 
   try {
     // 1. Получаем текущие тарифы из справочников
-    const settingsRes = await fetch(SB_URL + '/rest/v1/settings?order=key,valid_from.desc', { headers });
+    const settingsRes = await fetch(SB_URL + '/rest/v1/settings?order=key&order=valid_from.desc', { headers });
     const allSettings = await settingsRes.json();
 
     // Берём актуальный тариф для каждого ключа
@@ -45,34 +45,34 @@ export default async function handler(req, res) {
       const rentTotal = units.reduce((sum, u) => sum + (u.rent || 0), 0);
       const cleaningTotal = cleaningPrice * units.length;
 
-      // Переменная часть — электричество
-      let electricityTotal = 0;
+      // Переменная часть — коммунальные услуги
+      let utilitiesTotal = 0;
       for (const meter of meters) {
         if (meter.type === 'electricity' && meter.current_reading && meter.previous_reading) {
           const consumption = meter.current_reading - meter.previous_reading;
-          electricityTotal += consumption * electricityTariff * (1 + electricityMarkup / 100);
+          utilitiesTotal += consumption * electricityTariff * (1 + electricityMarkup / 100);
         }
         if (meter.type === 'cold_water' && meter.current_reading && meter.previous_reading) {
           const consumption = meter.current_reading - meter.previous_reading;
-          electricityTotal += consumption * coldWaterTariff;
+          utilitiesTotal += consumption * coldWaterTariff;
         }
         if (meter.type === 'hot_water' && meter.current_reading && meter.previous_reading) {
           const consumption = meter.current_reading - meter.previous_reading;
-          electricityTotal += consumption * hotWaterTariff;
+          utilitiesTotal += consumption * hotWaterTariff;
         }
       }
 
       // Доп. услуги
       const servicesTotal = services.reduce((sum, s) => sum + (s.price || 0), 0);
 
-      const total = rentTotal + cleaningTotal + electricityTotal + servicesTotal;
+      const total = rentTotal + cleaningTotal + utilitiesTotal + servicesTotal;
 
       const invoice = {
         tenant_id: tenant.id,
         period: periodLabel,
         rent_amount: rentTotal,
         cleaning_amount: cleaningTotal,
-        utilities_amount: Math.round(electricityTotal * 100) / 100,
+        utilities_amount: Math.round(utilitiesTotal * 100) / 100,
         services_amount: servicesTotal,
         total_amount: Math.round(total * 100) / 100,
         status: 'DRAFT',
@@ -80,7 +80,7 @@ export default async function handler(req, res) {
         lines: [
           { name: 'Аренда', amount: rentTotal },
           { name: 'Уборка', amount: cleaningTotal },
-          { name: 'Коммунальные', amount: Math.round(electricityTotal * 100) / 100 },
+          { name: 'Коммунальные', amount: Math.round(utilitiesTotal * 100) / 100 },
           { name: 'Доп. услуги', amount: servicesTotal },
         ].filter(l => l.amount > 0)
       };

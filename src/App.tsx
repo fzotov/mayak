@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from './lib/supabase'
+import TenantActivatePage from './pages/TenantActivate'
 import { AuthPage } from './pages/Auth'
 import { AIAssistantPage } from './pages/AIAssistant'
 import { SettingsModal } from './pages/Settings'
@@ -17,10 +18,15 @@ import LettersPage from './pages/Letters'
 import MetersPage from './pages/Meters'
 import UnitsPage from './pages/Units'
 import TasksPage from './pages/Tasks'
+import ContractsPage from './pages/Contracts'
+import { InvoicesPage } from './pages/InvoicesPage'
+import HeatPage from './pages/Heat'
+import CounterpartiesPage from './pages/Counterparties'
+import RepairsPage, { fetchHotRepairs } from './pages/Repairs'
 import { mockStats, mockTasks, mockOverdue, mockEvents, mockInvoices, mockTenants } from './lib/mockData'
 import { useRealTenants, useRealInvoices } from './lib/useRealData'
 
-type Page = 'dashboard' | 'tenants' | 'invoices' | 'tasks' | 'ai' | 'kb' | 'tenant-card' | 'reference' | 'billing' | 'invoice-detail' | 'settings' | 'tenant-new'
+type Page = 'dashboard' | 'tenants' | 'invoices' | 'tasks' | 'ai' | 'kb' | 'tenant-card' | 'reference' | 'billing' | 'invoice-detail' | 'settings' | 'tenant-new' | 'contracts' | 'letters' | 'floorplan' | 'units' | 'meters' | 'staff' | 'inventory' | 'services' | 'my-tasks' | 'repairs' | 'bank' | 'reconcile' | 'heat' | 'counterparties'
 
 const NAV_GROUPS = [
   { label: '', items: [{ id: 'dashboard', label: 'Сводка дня', icon: '⊞' }, { id: 'floorplan', label: 'План этажей', icon: '🏢' },
@@ -34,6 +40,7 @@ const NAV_GROUPS = [
     { id: 'tenants', label: 'Арендаторы', icon: '◎' },
     { id: 'contracts', label: 'Договоры', icon: '📄' },
     { id: 'letters', label: 'Письма', icon: '✉' },
+    { id: 'counterparties', label: 'Контрагенты', icon: '🏗' },
   ] },
   { label: 'ФИНАНСЫ', items: [
     { id: 'invoices', label: 'Счета', icon: '◈' },
@@ -89,14 +96,30 @@ function KpiCard({ label, value, sub, color }: { label: string; value: string | 
 
 function Dashboard() {
   const s = mockStats
+  const [hotRepairs, setHotRepairs] = useState<any[]>([])
+  const [repairsLoaded, setRepairsLoaded] = useState(false)
+
+  useEffect(() => {
+    fetchHotRepairs().then(data => { setHotRepairs(data); setRepairsLoaded(true) })
+  }, [])
+
+  const REPAIR_STATUS: Record<string, { label: string; bg: string; color: string }> = {
+    new:        { label: 'Новая',    bg: '#f3f4f6', color: '#6b7280' },
+    accepted:   { label: 'Принята',  bg: '#eff3ff', color: '#4f6ef7' },
+    in_progress:{ label: 'В работе', bg: '#fef3c7', color: '#d97706' },
+    completed:  { label: 'Готово',   bg: '#dcfce7', color: '#16a34a' },
+    rejected:   { label: 'Отклонена',bg: '#fee2e2', color: '#ef4444' },
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 8 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6,1fr)', gap: 8 }}>
         <KpiCard label="Заполняемость" value={`${s.occupancyRate}%`} sub={`${s.occupiedUnits} из ${s.totalUnits} офисов`} color="#22c55e" />
         <KpiCard label="Выручка / месяц" value={`${s.totalMonthlyRevenue.toLocaleString('ru')} ₽`} />
         <KpiCard label="Просрочено счетов" value={s.overdueInvoicesCount} sub={`${s.overdueInvoicesTotal.toLocaleString('ru')} ₽ долг`} color="#ef4444" />
         <KpiCard label="Открытые заявки" value={s.openRequestsCount} color="#f59e0b" />
         <KpiCard label="Истекают договоры" value={s.expiringLeasesCount} sub="в течение 30 дней" color="#f59e0b" />
+        <KpiCard label="Аварийных заявок" value={hotRepairs.filter(r => r.priority === 'emergency').length} color="#ef4444" />
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
@@ -133,6 +156,42 @@ function Dashboard() {
             <span style={{ fontSize: 14, fontWeight: 600, color: '#ef4444' }}>{mockStats.overdueInvoicesTotal.toLocaleString('ru')} ₽</span>
           </div>
         </div>
+      </div>
+
+      {/* Горящие заявки */}
+      <div style={{ background: '#fff', border: '1px solid #e8ebf3', borderRadius: 9, padding: '13px 15px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: '#1a2240' }}>⚡ Горящие заявки</div>
+          {hotRepairs.length > 0 && (
+            <span style={{ background: '#ef4444', color: '#fff', fontSize: 11, fontWeight: 700, borderRadius: 10, padding: '2px 7px' }}>{hotRepairs.length}</span>
+          )}
+          <button onClick={() => window.dispatchEvent(new CustomEvent('navigate', { detail: 'repairs' }))} style={{ marginLeft: 'auto', padding: '4px 12px', borderRadius: 6, border: '1px solid #e8ebf3', background: '#fff', color: '#4f6ef7', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>
+            Все заявки →
+          </button>
+        </div>
+        {!repairsLoaded ? (
+          <div style={{ color: '#8596b4', fontSize: 13 }}>Загрузка...</div>
+        ) : hotRepairs.length === 0 ? (
+          <div style={{ color: '#16a34a', fontSize: 14, fontWeight: 500, padding: '8px 0' }}>✓ Срочных заявок нет</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {hotRepairs.map(r => {
+              const isEmergency = r.priority === 'emergency'
+              const st = REPAIR_STATUS[r.status] || REPAIR_STATUS.new
+              return (
+                <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', background: '#f8f9fc', borderRadius: 8, borderLeft: `3px solid ${isEmergency ? '#ef4444' : '#ea580c'}` }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: isEmergency ? '#ef4444' : '#ea580c', minWidth: 32 }}>#{r.number}</div>
+                  <div style={{ fontSize: 12, color: '#8596b4', minWidth: 60, whiteSpace: 'nowrap' }}>{(r.unit as any)?.number || '—'}</div>
+                  <div style={{ fontSize: 12, color: '#6b7280', minWidth: 70, whiteSpace: 'nowrap' }}>{r.category}</div>
+                  <div style={{ flex: 1, fontSize: 13, color: '#374151', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.description.slice(0, 50)}{r.description.length > 50 ? '…' : ''}</div>
+                  <div style={{ fontSize: 11, color: '#8596b4', whiteSpace: 'nowrap' }}>{new Date(r.created_at).toLocaleDateString('ru')}</div>
+                  <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 8, background: st.bg, color: st.color, whiteSpace: 'nowrap' }}>{st.label}</span>
+                  <button onClick={() => window.dispatchEvent(new CustomEvent('navigate', { detail: 'repairs' }))} style={{ padding: '3px 10px', borderRadius: 6, border: '1px solid #e8ebf3', background: '#fff', color: '#4f6ef7', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>Открыть</button>
+                </div>
+              )
+            })}
+          </div>
+        )}
       </div>
 
       <div style={{ background: '#fff', border: '1px solid #e8ebf3', borderRadius: 9, padding: '13px 15px' }}>
@@ -282,6 +341,7 @@ export default function App() {
   }, [])
 
   if (loading) return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'sans-serif', color: '#8596b4' }}>Загрузка...</div>
+  if (window.location.pathname === '/tenant/activate') return <TenantActivatePage />
   if (!user) return <AuthPage onLogin={() => supabase.auth.getSession().then(({ data }) => setUser(data.session?.user ?? null))} />
 
   return (
@@ -354,7 +414,7 @@ export default function App() {
         </header>
         <main style={{ flex: 1, overflowY: 'auto', padding: 24 }}>
           {page === 'dashboard' && <Dashboard />}
-          {page === 'invoices' && <Invoices onOpenInvoice={(inv) => { setSelectedInvoice(inv); setPage('invoice-detail') }} />}
+          {page === 'invoices' && <InvoicesPage onOpenInvoice={(inv) => { setSelectedInvoice(inv); setPage('invoice-detail') }} />}
           {page === 'tenants' && <Tenants onOpenTenant={() => setPage('tenant-card')} onAddTenant={() => setPage('tenant-new')} />}
           {page === 'tasks' && <TasksPage />}
           {page === 'ai' && <AIAssistantPage />}
@@ -365,12 +425,13 @@ export default function App() {
           {page === 'billing' && <BillingPage />}
           {page === 'tenant-new' && <TenantNewPage onBack={() => setPage('tenants')} onSaved={() => setPage('tenants')} />}
           {page === 'my-tasks' && <div style={{padding:20,color:'#8596b4',fontSize:14}}>Мои задачи — в разработке</div>}
-          {page === 'repairs' && <div style={{padding:20,color:'#8596b4',fontSize:14}}>Заявки на ремонт — в разработке</div>}
-          {page === 'contracts' && <div style={{padding:20,color:'#8596b4',fontSize:14}}>Договоры — в разработке</div>}
+          {page === 'repairs' && <RepairsPage />}
+          {page === 'contracts' && <ContractsPage />}
+          {page === 'counterparties' && <CounterpartiesPage />}
           {page === 'letters' && <LettersPage />}
           {page === 'bank' && <div style={{padding:20,color:'#8596b4',fontSize:14}}>Банк — в разработке</div>}
           {page === 'reconcile' && <div style={{padding:20,color:'#8596b4',fontSize:14}}>Сверка — в разработке</div>}
-          {page === 'heat' && <div style={{padding:20,color:'#8596b4',fontSize:14}}>Тепло — в разработке</div>}
+          {page === 'heat' && <HeatPage />}
           {page === 'meters' && <MetersPage />}
           {page === 'staff' && <StaffPage />}
           {page === 'inventory' && <InventoryPage />}

@@ -94,15 +94,18 @@ function MeterForm({meter, units, onBack}: {meter:any; units:any[]; onBack:()=>v
     if (!form.number) return alert('Введите номер счётчика')
     setSaving(true)
     const p = {...form, serial: form.number, unit_id: form.unit_id||null}
-    if (meter?.id) await supabase.from('meters').update(p).eq('id', meter.id)
-    else await supabase.from('meters').insert(p)
+    const { error } = meter?.id
+      ? await supabase.from('meters').update(p).eq('id', meter.id)
+      : await supabase.from('meters').insert(p)
     setSaving(false)
+    if (error) { alert('Ошибка сохранения: ' + error.message); return }
     onBack()
   }
 
   async function remove() {
     if (!meter?.id || !confirm('Удалить счётчик?')) return
-    await supabase.from('meters').delete().eq('id', meter.id)
+    const { error } = await supabase.from('meters').delete().eq('id', meter.id)
+    if (error) { alert('Ошибка удаления: ' + error.message); return }
     onBack()
   }
 
@@ -176,7 +179,7 @@ function ReadingsView({meter, onBack}: {meter:any; onBack:()=>void}) {
 
   async function save() {
     setSaving(true)
-    await supabase.from('meter_readings').insert({
+    const { error } = await supabase.from('meter_readings').insert({
       meter_id: meter.id,
       period: form.period,
       prev_value: form.prev_value,
@@ -186,13 +189,15 @@ function ReadingsView({meter, onBack}: {meter:any; onBack:()=>void}) {
       notes: form.notes
     })
     setSaving(false)
+    if (error) { alert('Ошибка сохранения показания: ' + error.message); return }
     setShowAdd(false)
     loadReadings()
   }
 
   async function del(id:string) {
     if (!confirm('Удалить?')) return
-    await supabase.from('meter_readings').delete().eq('id',id)
+    const { error } = await supabase.from('meter_readings').delete().eq('id',id)
+    if (error) { alert('Ошибка удаления: ' + error.message); return }
     loadReadings()
   }
 
