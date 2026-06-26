@@ -341,7 +341,6 @@ export default function App() {
   }, [])
 
   if (loading) return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'sans-serif', color: '#8596b4' }}>Загрузка...</div>
-  if (window.location.pathname === '/tenant/activate') return <TenantActivatePage />
   if (!user) return <AuthPage onLogin={() => supabase.auth.getSession().then(({ data }) => setUser(data.session?.user ?? null))} />
 
   return (
