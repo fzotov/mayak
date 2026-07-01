@@ -23,10 +23,12 @@ import { InvoicesPage } from './pages/InvoicesPage'
 import HeatPage from './pages/Heat'
 import CounterpartiesPage from './pages/Counterparties'
 import RepairsPage, { fetchHotRepairs } from './pages/Repairs'
+import IncomingInvoicesPage from './pages/IncomingInvoices'
+import PaymentCalendarPage from './pages/PaymentCalendar'
 import { mockStats, mockTasks, mockOverdue, mockEvents, mockInvoices, mockTenants } from './lib/mockData'
 import { useRealTenants, useRealInvoices } from './lib/useRealData'
 
-type Page = 'dashboard' | 'tenants' | 'invoices' | 'tasks' | 'ai' | 'kb' | 'tenant-card' | 'reference' | 'billing' | 'invoice-detail' | 'settings' | 'tenant-new' | 'contracts' | 'letters' | 'floorplan' | 'units' | 'meters' | 'staff' | 'inventory' | 'services' | 'my-tasks' | 'repairs' | 'bank' | 'reconcile' | 'heat' | 'counterparties'
+type Page = 'dashboard' | 'tenants' | 'invoices' | 'tasks' | 'ai' | 'kb' | 'tenant-card' | 'reference' | 'billing' | 'invoice-detail' | 'settings' | 'tenant-new' | 'contracts' | 'letters' | 'floorplan' | 'units' | 'meters' | 'staff' | 'inventory' | 'services' | 'my-tasks' | 'repairs' | 'bank' | 'reconcile' | 'heat' | 'counterparties' | 'incoming-invoices' | 'payment-calendar'
 
 const NAV_GROUPS = [
   { label: '', items: [{ id: 'dashboard', label: 'Сводка дня', icon: '⊞' }, { id: 'floorplan', label: 'План этажей', icon: '🏢' },
@@ -47,6 +49,8 @@ const NAV_GROUPS = [
     { id: 'billing', label: 'Биллинг', icon: '₽' },
     { id: 'bank', label: 'Банк', icon: '🏦' },
     { id: 'reconcile', label: 'Сверка', icon: '⚖' },
+    { id: 'incoming-invoices', label: 'Вх. счета', icon: '📥' },
+    { id: 'payment-calendar', label: 'Платежи', icon: '📅' },
   ] },
   { label: 'ОБЪЕКТ', items: [
     { id: 'meters', label: 'Счётчики', icon: '⊙' },
@@ -437,6 +441,8 @@ export default function App() {
           {page === 'floorplan' && <FloorPlanPage />}
           {page === 'units' && <UnitsPage />}
           {page === 'invoice-detail' && selectedInvoice && <InvoiceDetailPage invoice={selectedInvoice} onBack={() => setPage('invoices')} />}
+          {page === 'incoming-invoices' && <IncomingInvoicesPage />}
+          {page === 'payment-calendar' && <PaymentCalendarPage />}
           {showSettings && <SettingsModal onClose={() => setShowSettings(false)} onLogout={() => { setShowSettings(false); setUser(null) }} />}
         </main>
       </div>
