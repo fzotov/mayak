@@ -117,10 +117,25 @@ export default function IncomingInvoicesPage() {
     setRecognizing(false)
   }
 
+  async function uploadFile(): Promise<string | null> {
+    if (!form.fileBase64 || !form.fileName) return null
+    const byteChars = atob(form.fileBase64)
+    const bytes = new Uint8Array(byteChars.length)
+    for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i)
+    const blob = new Blob([bytes], { type: form.fileMime })
+    const ext = form.fileName.split('.').pop() || 'pdf'
+    const path = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+    const { error } = await supabase.storage.from('invoices').upload(path, blob, { contentType: form.fileMime })
+    if (error) { console.error('Upload error:', error); return null }
+    const { data } = supabase.storage.from('invoices').getPublicUrl(path)
+    return data.publicUrl
+  }
+
   async function save() {
     if (!form.supplier || !form.amount) return
     setSaving(true)
     const amount = parseFloat(form.amount.replace(',', '.')) || 0
+    const fileUrl = await uploadFile()
     const { data: inv, error } = await supabase
       .from('incoming_invoices')
       .insert({
@@ -129,6 +144,7 @@ export default function IncomingInvoicesPage() {
         invoice_date: form.invoice_date || null,
         due_date: form.due_date || null,
         description: form.description || null,
+        file_url: fileUrl,
         status: 'NEW',
       })
       .select()
