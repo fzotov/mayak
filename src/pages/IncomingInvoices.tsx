@@ -93,35 +93,46 @@ export default function IncomingInvoicesPage() {
   }
 
   async function recognize() {
-    if (!form.fileBase64) return
+    if (!form.fileBase64) {
+      setRecognizeError('Файл не выбран или не загружен')
+      return
+    }
     setRecognizing(true)
     setRecognizeError(null)
     try {
+      // Normalize mime type — HEIC and unknown fallback to jpeg
+      const supportedMimes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf']
+      const mimeType = supportedMimes.includes(form.fileMime) ? form.fileMime : 'image/jpeg'
+
       const r = await fetch('/api/recognize-invoice', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageBase64: form.fileBase64, mimeType: form.fileMime }),
+        body: JSON.stringify({ imageBase64: form.fileBase64, mimeType }),
       })
-      const contentType = r.headers.get('content-type') || ''
-      if (!contentType.includes('application/json')) {
-        setRecognizeError('API недоступен в dev-режиме. Заполните поля вручную.')
+
+      const text = await r.text()
+      let d: any
+      try { d = JSON.parse(text) } catch {
+        setRecognizeError(`Ответ не JSON (${r.status}): ${text.slice(0, 120)}`)
+        setRecognizing(false)
+        return
+      }
+
+      if (d.ok) {
+        setForm(f => ({
+          ...f,
+          supplier: d.supplier || f.supplier,
+          amount: d.amount != null ? String(d.amount) : f.amount,
+          invoice_date: d.invoice_date || f.invoice_date,
+          due_date: d.due_date || f.due_date,
+          description: d.description || f.description,
+        }))
+        setRecognizeError(null)
       } else {
-        const d = await r.json()
-        if (d.ok) {
-          setForm(f => ({
-            ...f,
-            supplier: d.supplier || f.supplier,
-            amount: d.amount != null ? String(d.amount) : f.amount,
-            invoice_date: d.invoice_date || f.invoice_date,
-            due_date: d.due_date || f.due_date,
-            description: d.description || f.description,
-          }))
-        } else {
-          setRecognizeError(d.error || 'Не удалось распознать')
-        }
+        setRecognizeError(d.error || 'Не удалось распознать')
       }
     } catch (e: any) {
-      setRecognizeError(e.message || 'Ошибка запроса')
+      setRecognizeError(e.message || 'Ошибка сети')
     }
     setRecognizing(false)
   }
