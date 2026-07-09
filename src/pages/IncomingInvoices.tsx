@@ -66,6 +66,7 @@ export default function IncomingInvoicesPage() {
   const [form, setForm] = useState<FormData>(emptyForm())
   const [saving, setSaving] = useState(false)
   const [recognizing, setRecognizing] = useState(false)
+  const [recognizeError, setRecognizeError] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
   async function load() {
@@ -94,13 +95,17 @@ export default function IncomingInvoicesPage() {
   async function recognize() {
     if (!form.fileBase64) return
     setRecognizing(true)
+    setRecognizeError(null)
     try {
       const r = await fetch('/api/recognize-invoice', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ imageBase64: form.fileBase64, mimeType: form.fileMime }),
       })
-      if (r.ok) {
+      const contentType = r.headers.get('content-type') || ''
+      if (!contentType.includes('application/json')) {
+        setRecognizeError('API недоступен в dev-режиме. Заполните поля вручную.')
+      } else {
         const d = await r.json()
         if (d.ok) {
           setForm(f => ({
@@ -111,9 +116,13 @@ export default function IncomingInvoicesPage() {
             due_date: d.due_date || f.due_date,
             description: d.description || f.description,
           }))
+        } else {
+          setRecognizeError(d.error || 'Не удалось распознать')
         }
       }
-    } catch (_) {}
+    } catch (e: any) {
+      setRecognizeError(e.message || 'Ошибка запроса')
+    }
     setRecognizing(false)
   }
 
@@ -297,6 +306,9 @@ export default function IncomingInvoicesPage() {
                   </button>
                 )}
               </div>
+              {recognizeError && (
+                <div style={{ marginTop: 6, fontSize: 12, color: '#ef4444' }}>⚠ {recognizeError}</div>
+              )}
             </div>
 
             <div style={{ marginBottom: 14 }}>
