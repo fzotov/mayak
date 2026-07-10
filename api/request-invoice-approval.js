@@ -90,7 +90,7 @@ export default async function handler(req, res) {
 </html>`
 
   const { error: mailErr } = await resend.emails.send({
-    from: 'БЦ Маяк <noreply@mayak-d.ru>',
+    from: 'БЦ Маяк <onboarding@resend.dev>',
     to: toEmail,
     subject: `Согласование оплаты: ${supplier} — ${amountFmt}`,
     html,
