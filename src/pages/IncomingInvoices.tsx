@@ -129,8 +129,8 @@ export default function IncomingInvoicesPage() {
         setForm(f => ({
           ...f,
           supplier: d.supplier || f.supplier,
-          amount: d.amount != null ? String(d.amount) : f.amount,
-          vat: d.vat != null ? String(d.vat) : f.vat,
+          amount: d.amount != null ? Number(d.amount).toFixed(2) : f.amount,
+          vat: d.vat != null ? Number(d.vat).toFixed(2) : f.vat,
           invoice_date: d.invoice_date || f.invoice_date,
           due_date: d.due_date || f.due_date,
           description: d.description || f.description,
