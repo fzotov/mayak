@@ -5,6 +5,7 @@ interface IncomingInvoice {
   id: string
   supplier: string
   amount: number
+  vat: number | null
   invoice_date: string | null
   due_date: string | null
   description: string | null
@@ -21,7 +22,12 @@ const STATUS_CONFIG: Record<string, { label: string; bg: string; color: string }
 }
 
 function fmt(n: number) {
-  return n.toLocaleString('ru-RU', { minimumFractionDigits: 0, maximumFractionDigits: 2 }) + ' ₽'
+  return n.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' ₽'
+}
+
+function fmtVat(vat: number | null) {
+  if (vat == null) return 'без НДС'
+  return 'НДС ' + vat.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' ₽'
 }
 
 function fmtDate(s: string | null) {
@@ -45,6 +51,7 @@ const labelStyle: React.CSSProperties = { fontSize: 13, color: GRAY, fontWeight:
 interface FormData {
   supplier: string
   amount: string
+  vat: string
   invoice_date: string
   due_date: string
   description: string
@@ -54,7 +61,7 @@ interface FormData {
 }
 
 const emptyForm = (): FormData => ({
-  supplier: '', amount: '', invoice_date: '', due_date: '', description: '',
+  supplier: '', amount: '', vat: '', invoice_date: '', due_date: '', description: '',
   fileBase64: '', fileMime: '', fileName: '',
 })
 
@@ -123,6 +130,7 @@ export default function IncomingInvoicesPage() {
           ...f,
           supplier: d.supplier || f.supplier,
           amount: d.amount != null ? String(d.amount) : f.amount,
+          vat: d.vat != null ? String(d.vat) : f.vat,
           invoice_date: d.invoice_date || f.invoice_date,
           due_date: d.due_date || f.due_date,
           description: d.description || f.description,
@@ -165,6 +173,7 @@ export default function IncomingInvoicesPage() {
         due_date: form.due_date || null,
         description: form.description || null,
         file_url: fileUrl,
+        vat: form.vat ? (parseFloat(form.vat.replace(',', '.')) || null) : null,
         status: 'NEW',
       })
       .select()
@@ -263,7 +272,10 @@ export default function IncomingInvoicesPage() {
                 return (
                   <tr key={inv.id} style={{ borderBottom: `1px solid #f3f4f6` }}>
                     <td style={{ padding: '10px 14px', fontWeight: 600, color: TEXT }}>{inv.supplier}</td>
-                    <td style={{ padding: '10px 14px', fontWeight: 700, color: inv.status === 'NEW' ? '#ef4444' : TEXT, whiteSpace: 'nowrap' }}>{fmt(inv.amount)}</td>
+                    <td style={{ padding: '10px 14px', whiteSpace: 'nowrap' }}>
+                      <div style={{ fontWeight: 700, color: inv.status === 'NEW' ? '#ef4444' : TEXT }}>{fmt(inv.amount)}</div>
+                      <div style={{ fontSize: 11, color: GRAY, marginTop: 1 }}>{fmtVat(inv.vat)}</div>
+                    </td>
                     <td style={{ padding: '10px 14px', color: GRAY, whiteSpace: 'nowrap' }}>{fmtDate(inv.invoice_date)}</td>
                     <td style={{ padding: '10px 14px', whiteSpace: 'nowrap', color: isOverdue ? '#ef4444' : GRAY, fontWeight: isOverdue ? 600 : 400 }}>{fmtDate(inv.due_date)}{isOverdue ? ' !' : ''}</td>
                     <td style={{ padding: '10px 14px', color: '#374151', maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{inv.description || '—'}</td>
@@ -327,9 +339,15 @@ export default function IncomingInvoicesPage() {
               <input style={inputStyle} value={form.supplier} onChange={e => setForm(f => ({ ...f, supplier: e.target.value }))} placeholder="ООО Ромашка" />
             </div>
 
-            <div style={{ marginBottom: 14 }}>
-              <label style={labelStyle}>Сумма (₽) *</label>
-              <input style={inputStyle} type="text" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} placeholder="50000" />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+              <div>
+                <label style={labelStyle}>Сумма (₽) *</label>
+                <input style={inputStyle} type="text" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} placeholder="50000.00" />
+              </div>
+              <div>
+                <label style={labelStyle}>НДС (₽)</label>
+                <input style={inputStyle} type="text" value={form.vat} onChange={e => setForm(f => ({ ...f, vat: e.target.value }))} placeholder="без НДС" />
+              </div>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
