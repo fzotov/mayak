@@ -43,7 +43,7 @@ export default async function handler(req, res) {
               },
               {
                 type: 'text',
-                text: 'Извлеки из счёта: поставщик, сумма, дата счёта (YYYY-MM-DD), срок оплаты (YYYY-MM-DD), назначение. Ответ строго JSON: {"supplier":"...","amount":0,"invoice_date":"...","due_date":"...","description":"..."}. Null если не найдено.',
+                text: 'Извлеки из счёта данные и верни строго JSON без пояснений:\n{"supplier":"название поставщика","amount":число,"invoice_date":"YYYY-MM-DD или null","due_date":"YYYY-MM-DD или null","description":"Оплата по счёту №XXX от ДД.ММ.ГГГГ за [конкретное наименование товара/услуги из счёта]"}\n\nВ поле description ОБЯЗАТЕЛЬНО укажи номер счёта, дату и за что именно платёж (наименование товара/услуги/работ). Null только если поле совсем не найдено.',
               },
             ],
           },
