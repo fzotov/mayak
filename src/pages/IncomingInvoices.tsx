@@ -13,12 +13,23 @@ interface IncomingInvoice {
   status: string
   building_id: string | null
   created_at: string
+  approval_requested_to: string | null
+  approved_by: string | null
+  approved_at: string | null
+}
+
+interface StaffMember {
+  id: string
+  full_name: string
+  email: string
+  position: string | null
 }
 
 const STATUS_CONFIG: Record<string, { label: string; bg: string; color: string }> = {
-  NEW:      { label: 'Новый',      bg: '#eff3ff', color: '#4f6ef7' },
-  APPROVED: { label: 'Согласован', bg: '#f0fdf4', color: '#16a34a' },
-  PAID:     { label: 'Оплачен',    bg: '#dcfce7', color: '#15803d' },
+  NEW:              { label: 'Новый',           bg: '#eff3ff', color: '#4f6ef7' },
+  PENDING_APPROVAL: { label: 'На согласовании', bg: '#fffbeb', color: '#d97706' },
+  APPROVED:         { label: 'Согласован',      bg: '#f0fdf4', color: '#16a34a' },
+  PAID:             { label: 'Оплачен',         bg: '#dcfce7', color: '#15803d' },
 }
 
 function fmt(n: number) {
@@ -75,6 +86,12 @@ export default function IncomingInvoicesPage() {
   const [recognizing, setRecognizing] = useState(false)
   const [recognizeError, setRecognizeError] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+  // Approval modal
+  const [approvalInvoice, setApprovalInvoice] = useState<IncomingInvoice | null>(null)
+  const [staff, setStaff] = useState<StaffMember[]>([])
+  const [approvalEmail, setApprovalEmail] = useState('')
+  const [sendingApproval, setSendingApproval] = useState(false)
+  const [approvalSent, setApprovalSent] = useState(false)
 
   async function load() {
     setLoading(true)
@@ -86,7 +103,10 @@ export default function IncomingInvoicesPage() {
     setLoading(false)
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    load()
+    supabase.from('staff').select('id,full_name,email,position').eq('status','active').then(({ data }) => setStaff((data as StaffMember[]) || []))
+  }, [])
 
   function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -201,6 +221,33 @@ export default function IncomingInvoicesPage() {
     setInvoices(prev => prev.map(i => i.id === id ? { ...i, status } : i))
   }
 
+  async function sendApproval() {
+    if (!approvalInvoice || !approvalEmail) return
+    setSendingApproval(true)
+    const member = staff.find(s => s.email === approvalEmail)
+    const r = await fetch('/api/request-invoice-approval', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        invoiceId: approvalInvoice.id,
+        toEmail: approvalEmail,
+        toName: member?.full_name || '',
+        invoiceData: approvalInvoice,
+      }),
+    })
+    const d = await r.json().catch(() => ({ ok: false, error: 'Ошибка' }))
+    if (d.ok) {
+      setApprovalSent(true)
+      setInvoices(prev => prev.map(i => i.id === approvalInvoice.id
+        ? { ...i, status: 'PENDING_APPROVAL', approval_requested_to: approvalEmail }
+        : i
+      ))
+    } else {
+      alert('Ошибка: ' + d.error)
+    }
+    setSendingApproval(false)
+  }
+
   const filtered = filterStatus === 'ALL' ? invoices : invoices.filter(i => i.status === filterStatus)
   const total = filtered.reduce((s, i) => s + (i.amount || 0), 0)
   const pending = invoices.filter(i => i.status === 'NEW').reduce((s, i) => s + (i.amount || 0), 0)
@@ -237,7 +284,7 @@ export default function IncomingInvoicesPage() {
 
       {/* Filter tabs */}
       <div style={{ display: 'flex', gap: 4, marginBottom: 16 }}>
-        {[['ALL', 'Все'], ['NEW', 'Новые'], ['APPROVED', 'Согласованы'], ['PAID', 'Оплачены']].map(([k, l]) => (
+        {[['ALL', 'Все'], ['NEW', 'Новые'], ['PENDING_APPROVAL', 'На согласовании'], ['APPROVED', 'Согласованы'], ['PAID', 'Оплачены']].map(([k, l]) => (
           <button
             key={k}
             onClick={() => setFilterStatus(k)}
@@ -281,17 +328,50 @@ export default function IncomingInvoicesPage() {
                     <td style={{ padding: '10px 14px', color: '#374151', maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{inv.description || '—'}</td>
                     <td style={{ padding: '10px 14px' }}>
                       <span style={{ background: sc.bg, color: sc.color, padding: '3px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap' }}>{sc.label}</span>
+                      {inv.status === 'PENDING_APPROVAL' && inv.approval_requested_to && (
+                        <div style={{ fontSize: 11, color: GRAY, marginTop: 3 }}>→ {inv.approval_requested_to}</div>
+                      )}
+                      {inv.status === 'APPROVED' && inv.approved_by && (
+                        <div style={{ fontSize: 11, color: '#16a34a', marginTop: 3 }}>✓ {inv.approved_by}</div>
+                      )}
                     </td>
                     <td style={{ padding: '10px 14px', whiteSpace: 'nowrap' }}>
-                      {inv.status === 'NEW' && (
-                        <button onClick={() => updateStatus(inv.id, 'APPROVED')} style={{ marginRight: 6, padding: '4px 10px', borderRadius: 6, border: `1px solid ${BORDER}`, background: '#fff', color: TEXT, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>Согласовать</button>
-                      )}
-                      {inv.status === 'APPROVED' && (
-                        <button onClick={() => updateStatus(inv.id, 'PAID')} style={{ padding: '4px 10px', borderRadius: 6, border: 'none', background: '#dcfce7', color: '#15803d', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>✓ Оплачен</button>
-                      )}
-                      {inv.file_url && (
-                        <a href={inv.file_url} target="_blank" rel="noopener noreferrer" style={{ marginLeft: 6, color: ACCENT, fontSize: 12, textDecoration: 'none' }}>📎</a>
-                      )}
+                      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                        {/* Отправить на согласование */}
+                        {(inv.status === 'NEW' || inv.status === 'PENDING_APPROVAL') && (
+                          <button onClick={() => { setApprovalInvoice(inv); setApprovalEmail(''); setApprovalSent(false) }}
+                            style={{ padding: '4px 9px', borderRadius: 6, border: `1px solid ${BORDER}`, background: '#fff', color: '#d97706', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
+                            ✉ Согласовать
+                          </button>
+                        )}
+                        {/* Согласовать вручную */}
+                        {inv.status === 'NEW' && (
+                          <button onClick={() => updateStatus(inv.id, 'APPROVED')}
+                            style={{ padding: '4px 9px', borderRadius: 6, border: `1px solid #bbf7d0`, background: '#f0fdf4', color: '#16a34a', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
+                            ✓ Вручную
+                          </button>
+                        )}
+                        {/* Отметить оплаченным */}
+                        {inv.status === 'APPROVED' && (
+                          <button onClick={() => updateStatus(inv.id, 'PAID')}
+                            style={{ padding: '4px 9px', borderRadius: 6, border: 'none', background: '#dcfce7', color: '#15803d', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
+                            ₽ Оплачен
+                          </button>
+                        )}
+                        {/* Снять оплату */}
+                        {inv.status === 'PAID' && (
+                          <button onClick={() => updateStatus(inv.id, 'APPROVED')}
+                            style={{ padding: '4px 9px', borderRadius: 6, border: `1px solid ${BORDER}`, background: '#fff', color: GRAY, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>
+                            ↩ Отменить
+                          </button>
+                        )}
+                        {inv.file_url && (
+                          <a href={inv.file_url} target="_blank" rel="noopener noreferrer"
+                            style={{ padding: '4px 9px', borderRadius: 6, border: `1px solid ${BORDER}`, background: '#fff', color: ACCENT, fontSize: 11, textDecoration: 'none', fontWeight: 500 }}>
+                            📎
+                          </a>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 )
@@ -300,6 +380,59 @@ export default function IncomingInvoicesPage() {
           </table>
         )}
       </div>
+
+      {/* Approval modal */}
+      {approvalInvoice && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ background: '#fff', borderRadius: 14, padding: 28, width: 460, boxShadow: '0 20px 60px rgba(0,0,0,.2)' }}>
+            {approvalSent ? (
+              <div style={{ textAlign: 'center', padding: '16px 0' }}>
+                <div style={{ fontSize: 48, marginBottom: 16 }}>✉️</div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: TEXT, marginBottom: 8 }}>Запрос отправлен</div>
+                <div style={{ fontSize: 14, color: GRAY, marginBottom: 24 }}>Письмо отправлено на {approvalEmail}</div>
+                <button onClick={() => setApprovalInvoice(null)} style={{ padding: '10px 24px', borderRadius: 8, border: 'none', background: ACCENT, color: '#fff', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Закрыть</button>
+              </div>
+            ) : (
+              <>
+                <div style={{ fontSize: 18, fontWeight: 700, color: TEXT, marginBottom: 4 }}>Отправить на согласование</div>
+                <div style={{ fontSize: 13, color: GRAY, marginBottom: 20 }}>{approvalInvoice.supplier} — {fmt(approvalInvoice.amount)}</div>
+
+                <label style={labelStyle}>Выбрать сотрудника</label>
+                <select
+                  value={approvalEmail}
+                  onChange={e => setApprovalEmail(e.target.value)}
+                  style={{ ...inputStyle, marginBottom: 12 }}
+                >
+                  <option value="">— выберите сотрудника —</option>
+                  {staff.filter(s => s.email).map(s => (
+                    <option key={s.id} value={s.email}>{s.full_name}{s.position ? ` (${s.position})` : ''}</option>
+                  ))}
+                </select>
+
+                <label style={labelStyle}>или введите email вручную</label>
+                <input
+                  style={{ ...inputStyle, marginBottom: 20 }}
+                  type="email"
+                  value={approvalEmail}
+                  onChange={e => setApprovalEmail(e.target.value)}
+                  placeholder="employee@company.ru"
+                />
+
+                <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                  <button onClick={() => setApprovalInvoice(null)} style={{ padding: '9px 18px', borderRadius: 8, border: `1px solid ${BORDER}`, background: '#fff', color: GRAY, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>Отмена</button>
+                  <button
+                    onClick={sendApproval}
+                    disabled={sendingApproval || !approvalEmail}
+                    style={{ padding: '9px 20px', borderRadius: 8, border: 'none', background: ACCENT, color: '#fff', fontSize: 14, fontWeight: 600, cursor: sendingApproval || !approvalEmail ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: sendingApproval || !approvalEmail ? .6 : 1 }}
+                  >
+                    {sendingApproval ? 'Отправляю...' : '✉ Отправить'}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Add form modal */}
       {showForm && (

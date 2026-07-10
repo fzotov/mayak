@@ -102,9 +102,13 @@ function Dashboard() {
   const s = mockStats
   const [hotRepairs, setHotRepairs] = useState<any[]>([])
   const [repairsLoaded, setRepairsLoaded] = useState(false)
+  const [approvedInvoices, setApprovedInvoices] = useState<any[]>([])
 
   useEffect(() => {
     fetchHotRepairs().then(data => { setHotRepairs(data); setRepairsLoaded(true) })
+    supabase.from('incoming_invoices').select('id,supplier,amount,vat,description,due_date,approved_by,approved_at')
+      .eq('status', 'APPROVED').order('approved_at', { ascending: false })
+      .then(({ data }) => setApprovedInvoices(data || []))
   }, [])
 
   const REPAIR_STATUS: Record<string, { label: string; bg: string; color: string }> = {
@@ -195,6 +199,46 @@ function Dashboard() {
               )
             })}
           </div>
+        )}
+      </div>
+
+      {/* Согласованные счета к оплате */}
+      <div style={{ background: '#fff', border: '1px solid #e8ebf3', borderRadius: 9, padding: '13px 15px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: '#1a2240' }}>✅ Согласованные счета к оплате</div>
+          {approvedInvoices.length > 0 && (
+            <span style={{ background: '#4f6ef7', color: '#fff', fontSize: 11, fontWeight: 700, borderRadius: 10, padding: '2px 7px' }}>{approvedInvoices.length}</span>
+          )}
+          <span style={{ marginLeft: 'auto', fontSize: 14, fontWeight: 700, color: '#1a2240' }}>
+            {approvedInvoices.reduce((s, i) => s + (i.amount || 0), 0).toLocaleString('ru-RU', { minimumFractionDigits: 2 })} ₽
+          </span>
+          <button onClick={() => window.dispatchEvent(new CustomEvent('navigate', { detail: 'incoming-invoices' }))} style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid #e8ebf3', background: '#fff', color: '#4f6ef7', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>
+            Реестр →
+          </button>
+        </div>
+        {approvedInvoices.length === 0 ? (
+          <div style={{ color: '#8596b4', fontSize: 13, padding: '8px 0' }}>Нет счетов к оплате</div>
+        ) : (
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr style={{ background: '#f8f9fb' }}>
+                {['Поставщик', 'Сумма', 'НДС', 'Согласовал', 'Назначение'].map(h => (
+                  <th key={h} style={{ padding: '7px 10px', textAlign: 'left', fontWeight: 600, color: '#8596b4', borderBottom: '1px solid #e8ebf3' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {approvedInvoices.map((inv: any) => (
+                <tr key={inv.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                  <td style={{ padding: '8px 10px', fontWeight: 600, color: '#1a2240' }}>{inv.supplier}</td>
+                  <td style={{ padding: '8px 10px', fontWeight: 700, color: '#1a2240', whiteSpace: 'nowrap' }}>{Number(inv.amount).toLocaleString('ru-RU', { minimumFractionDigits: 2 })} ₽</td>
+                  <td style={{ padding: '8px 10px', color: '#8596b4', whiteSpace: 'nowrap', fontSize: 12 }}>{inv.vat ? Number(inv.vat).toLocaleString('ru-RU', { minimumFractionDigits: 2 }) + ' ₽' : 'без НДС'}</td>
+                  <td style={{ padding: '8px 10px', color: '#8596b4', fontSize: 12 }}>{inv.approved_by || '—'}</td>
+                  <td style={{ padding: '8px 10px', color: '#374151', maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{inv.description || '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
       </div>
 
