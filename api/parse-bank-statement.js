@@ -35,7 +35,7 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         model: 'claude-opus-4-8',
-        max_tokens: 16000,
+        max_tokens: 32000,
         messages: [{ role: 'user', content }],
       }),
     })
@@ -44,14 +44,27 @@ export default async function handler(req, res) {
     if (!resp.ok) return res.status(500).json({ ok: false, error: data?.error?.message || JSON.stringify(data) })
 
     const text = data.content?.[0]?.text || ''
-    const match = text.match(/\[[\s\S]*\]/)
-    if (!match) return res.status(200).json({ ok: false, error: 'Не удалось распознать транзакции', raw: text.slice(0, 500) })
 
-    let transactions
-    try {
-      transactions = JSON.parse(match[0])
-    } catch {
-      return res.status(200).json({ ok: false, error: 'JSON parse error', raw: text.slice(0, 500) })
+    // Try full array parse first
+    let transactions = null
+    const arrMatch = text.match(/\[[\s\S]*\]/)
+    if (arrMatch) {
+      try { transactions = JSON.parse(arrMatch[0]) } catch { /* try fallback */ }
+    }
+
+    // Fallback: extract individual objects even if array is truncated
+    if (!transactions) {
+      const objs = []
+      const re = /\{[^{}]*"date"[^{}]*"amount"[^{}]*\}/g
+      let m
+      while ((m = re.exec(text)) !== null) {
+        try { objs.push(JSON.parse(m[0])) } catch { /* skip malformed */ }
+      }
+      if (objs.length > 0) transactions = objs
+    }
+
+    if (!transactions || transactions.length === 0) {
+      return res.status(200).json({ ok: false, error: 'Не удалось распознать транзакции', raw: text.slice(0, 800) })
     }
 
     return res.status(200).json({ ok: true, transactions })
