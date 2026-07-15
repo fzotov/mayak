@@ -25,6 +25,8 @@ import CounterpartiesPage from './pages/Counterparties'
 import RepairsPage, { fetchHotRepairs } from './pages/Repairs'
 import IncomingInvoicesPage from './pages/IncomingInvoices'
 import PaymentCalendarPage from './pages/PaymentCalendar'
+import BankPage from './pages/Bank'
+import ReconcilePage from './pages/Reconcile'
 import { mockStats, mockTasks, mockOverdue, mockEvents, mockInvoices, mockTenants } from './lib/mockData'
 import { useRealTenants, useRealInvoices } from './lib/useRealData'
 
@@ -476,8 +478,8 @@ export default function App() {
           {page === 'contracts' && <ContractsPage />}
           {page === 'counterparties' && <CounterpartiesPage />}
           {page === 'letters' && <LettersPage />}
-          {page === 'bank' && <div style={{padding:20,color:'#8596b4',fontSize:14}}>Банк — в разработке</div>}
-          {page === 'reconcile' && <div style={{padding:20,color:'#8596b4',fontSize:14}}>Сверка — в разработке</div>}
+          {page === 'bank' && <BankPage />}
+          {page === 'reconcile' && <ReconcilePage />}
           {page === 'heat' && <HeatPage />}
           {page === 'meters' && <MetersPage />}
           {page === 'staff' && <StaffPage />}
