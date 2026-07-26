@@ -27,10 +27,11 @@ import IncomingInvoicesPage from './pages/IncomingInvoices'
 import PaymentCalendarPage from './pages/PaymentCalendar'
 import BankPage from './pages/Bank'
 import ReconcilePage from './pages/Reconcile'
+import ImportTenantsPage from './pages/ImportTenants'
 import { mockStats, mockTasks, mockOverdue, mockEvents, mockInvoices, mockTenants } from './lib/mockData'
 import { useRealTenants, useRealInvoices } from './lib/useRealData'
 
-type Page = 'dashboard' | 'tenants' | 'invoices' | 'tasks' | 'ai' | 'kb' | 'tenant-card' | 'reference' | 'billing' | 'invoice-detail' | 'settings' | 'tenant-new' | 'contracts' | 'letters' | 'floorplan' | 'units' | 'meters' | 'staff' | 'inventory' | 'services' | 'my-tasks' | 'repairs' | 'bank' | 'reconcile' | 'heat' | 'counterparties' | 'incoming-invoices' | 'payment-calendar'
+type Page = 'dashboard' | 'tenants' | 'invoices' | 'tasks' | 'ai' | 'kb' | 'tenant-card' | 'reference' | 'billing' | 'invoice-detail' | 'settings' | 'tenant-new' | 'contracts' | 'letters' | 'floorplan' | 'units' | 'meters' | 'staff' | 'inventory' | 'services' | 'my-tasks' | 'repairs' | 'bank' | 'reconcile' | 'heat' | 'counterparties' | 'incoming-invoices' | 'payment-calendar' | 'import-tenants'
 
 const NAV_GROUPS = [
   { label: '', items: [{ id: 'dashboard', label: 'Сводка дня', icon: '⊞' }, { id: 'floorplan', label: 'План этажей', icon: '🏢' },
@@ -319,7 +320,10 @@ function Tenants({ onOpenTenant, onAddTenant }: { onOpenTenant: () => void; onAd
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
         <div style={{ fontSize: 18, fontWeight: 600, color: '#1a2240' }}>Арендаторы</div>
-        <button onClick={onAddTenant} style={{ padding: '8px 16px', border: 'none', borderRadius: 8, background: '#4f6ef7', color: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>+ Добавить арендатора</button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={() => window.dispatchEvent(new CustomEvent('navigate', { detail: 'import-tenants' }))} style={{ padding: '8px 16px', border: '1px solid #4f6ef7', borderRadius: 8, background: '#eff3ff', color: '#4f6ef7', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>↑ Импорт из 1С</button>
+          <button onClick={onAddTenant} style={{ padding: '8px 16px', border: 'none', borderRadius: 8, background: '#4f6ef7', color: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>+ Добавить арендатора</button>
+        </div>
       </div>
     <div style={{ background: '#fff', border: '1px solid #e8ebf3', borderRadius: 9, overflow: 'hidden' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
@@ -487,6 +491,7 @@ export default function App() {
           {page === 'floorplan' && <FloorPlanPage />}
           {page === 'units' && <UnitsPage />}
           {page === 'invoice-detail' && selectedInvoice && <InvoiceDetailPage invoice={selectedInvoice} onBack={() => setPage('invoices')} />}
+          {page === 'import-tenants' && <ImportTenantsPage onDone={() => setPage('tenants')} />}
           {page === 'incoming-invoices' && <IncomingInvoicesPage />}
           {page === 'payment-calendar' && <PaymentCalendarPage />}
           {showSettings && <SettingsModal onClose={() => setShowSettings(false)} onLogout={() => { setShowSettings(false); setUser(null) }} />}
