@@ -34,7 +34,7 @@ export function TenantNewPage({ onBack, onSaved }: { onBack: () => void; onSaved
     if (!form.full_name) { setError('Введите наименование'); return }
     setSaving(true)
     try {
-      const { data: tenant, error: err } = await supabase.from('tenants').insert({ ...form, status: 'ACTIVE' }).select().single()
+      const { data: tenant, error: err } = await supabase.from('tenants').insert({ ...form, status: 'ACTIVE', monthly_rent: parseFloat(unit.rent) || null }).select().single()
       if (err) throw err
       if (unit.number && tenant) {
         const { data: u } = await supabase.from('units').insert({ tenant_id: tenant.id, number: unit.number, floor: parseInt(unit.floor), area: parseFloat(unit.area)||0, rent: parseFloat(unit.rent)||0, cleaning: parseFloat(unit.cleaning)||2500 }).select().single()
