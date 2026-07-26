@@ -18,6 +18,7 @@ interface BankTx {
 type Filter = 'all' | 'credit' | 'debit' | 'unmatched'
 
 const FMT = (n: number) => Number(n).toLocaleString('ru-RU', { minimumFractionDigits: 2 })
+const FMTD = (s: string) => new Date(s).toLocaleDateString('ru-RU', { day: '2-digit', month: 'short' })
 
 export default function BankPage() {
   const [txs, setTxs] = useState<BankTx[]>([])
@@ -26,6 +27,8 @@ export default function BankPage() {
   const [uploading, setUploading] = useState(false)
   const [parseError, setParseError] = useState('')
   const [search, setSearch] = useState('')
+  const [imports, setImports] = useState<string[]>([])
+  const [deletingImport, setDeletingImport] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => { load() }, [])
@@ -33,7 +36,10 @@ export default function BankPage() {
   async function load() {
     setLoading(true)
     const { data } = await supabase.from('bank_transactions').select('*').order('date', { ascending: false })
-    setTxs(data || [])
+    const rows = data || []
+    setTxs(rows)
+    const ids = [...new Set(rows.map(r => r.import_id).filter(Boolean))] as string[]
+    setImports(ids)
     setLoading(false)
   }
 
@@ -54,7 +60,7 @@ export default function BankPage() {
       })
       const data = await resp.json()
       if (!data.ok) {
-        setParseError(data.error + (data.raw ? '\n' + data.raw : ''))
+        setParseError(data.error + (data.raw ? '\n\n' + data.raw : ''))
         return
       }
 
@@ -79,6 +85,14 @@ export default function BankPage() {
     }
   }
 
+  async function deleteImport(importId: string) {
+    if (!confirm('Удалить все транзакции этого импорта?')) return
+    setDeletingImport(importId)
+    await supabase.from('bank_transactions').delete().eq('import_id', importId)
+    await load()
+    setDeletingImport(null)
+  }
+
   const filtered = txs.filter(t => {
     if (filter === 'credit' && t.direction !== 'credit') return false
     if (filter === 'debit' && t.direction !== 'debit') return false
@@ -93,6 +107,14 @@ export default function BankPage() {
   const totalCredit = txs.filter(t => t.direction === 'credit').reduce((s, t) => s + t.amount, 0)
   const totalDebit = txs.filter(t => t.direction === 'debit').reduce((s, t) => s + t.amount, 0)
   const unmatched = txs.filter(t => !t.matched_type).length
+
+  // Group by date
+  const byDate: Record<string, BankTx[]> = {}
+  for (const t of filtered) {
+    if (!byDate[t.date]) byDate[t.date] = []
+    byDate[t.date].push(t)
+  }
+  const dates = Object.keys(byDate).sort((a, b) => b.localeCompare(a))
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -112,7 +134,7 @@ export default function BankPage() {
       </div>
 
       {/* Toolbar */}
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', gap: 6 }}>
           {(['all', 'credit', 'debit', 'unmatched'] as Filter[]).map(f => (
             <button key={f} onClick={() => setFilter(f)} style={{
@@ -130,24 +152,35 @@ export default function BankPage() {
           placeholder="Поиск по контрагенту..."
           style={{ padding: '6px 12px', borderRadius: 7, border: '1px solid #e8ebf3', fontSize: 13, fontFamily: 'inherit', outline: 'none', width: 200 }}
         />
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
+          {imports.length > 0 && (
+            <select onChange={e => { if (e.target.value) deleteImport(e.target.value) }} defaultValue=""
+              style={{ padding: '6px 10px', borderRadius: 7, border: '1px solid #e8ebf3', fontSize: 12, fontFamily: 'inherit', color: '#8596b4', cursor: 'pointer' }}>
+              <option value="">Удалить импорт...</option>
+              {imports.map((id, i) => (
+                <option key={id} value={id} disabled={deletingImport === id}>
+                  {deletingImport === id ? 'Удаление...' : `Импорт ${imports.length - i} (${txs.filter(t => t.import_id === id).length} операций)`}
+                </option>
+              ))}
+            </select>
+          )}
           <input ref={fileRef} type="file" accept=".pdf,image/*" style={{ display: 'none' }}
             onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = '' }}
           />
           <button onClick={() => fileRef.current?.click()} disabled={uploading}
             style={{ padding: '7px 16px', borderRadius: 8, border: 'none', background: '#4f6ef7', color: '#fff', fontSize: 13, fontWeight: 600, cursor: uploading ? 'default' : 'pointer', opacity: uploading ? 0.7 : 1, fontFamily: 'inherit' }}>
-            {uploading ? 'Загрузка...' : '+ Загрузить выписку'}
+            {uploading ? '⏳ Распознаю...' : '+ Загрузить выписку'}
           </button>
         </div>
       </div>
 
       {parseError && (
-        <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', color: '#ef4444', fontSize: 13, whiteSpace: 'pre-wrap', fontFamily: 'monospace' }}>
+        <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', color: '#ef4444', fontSize: 12, whiteSpace: 'pre-wrap', fontFamily: 'monospace', maxHeight: 200, overflowY: 'auto' }}>
           {parseError}
         </div>
       )}
 
-      {/* Table */}
+      {/* Table grouped by date */}
       <div style={{ background: '#fff', border: '1px solid #e8ebf3', borderRadius: 9, overflow: 'hidden' }}>
         {loading ? (
           <div style={{ padding: 24, color: '#8596b4', fontSize: 14, textAlign: 'center' }}>Загрузка...</div>
@@ -165,40 +198,58 @@ export default function BankPage() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map(t => (
-                <tr key={t.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
-                  <td style={{ padding: '9px 12px', color: '#8596b4', whiteSpace: 'nowrap', fontSize: 12 }}>
-                    {new Date(t.date).toLocaleDateString('ru-RU')}
-                  </td>
-                  <td style={{ padding: '9px 12px', whiteSpace: 'nowrap' }}>
-                    <span style={{
-                      fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 8,
-                      background: t.direction === 'credit' ? '#dcfce7' : '#fee2e2',
-                      color: t.direction === 'credit' ? '#16a34a' : '#ef4444',
-                    }}>
-                      {t.direction === 'credit' ? '↓ Приход' : '↑ Расход'}
-                    </span>
-                  </td>
-                  <td style={{ padding: '9px 12px', fontWeight: 500, color: '#1a2240', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {t.counterparty || '—'}
-                  </td>
-                  <td style={{ padding: '9px 12px', color: '#374151', maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {t.description || '—'}
-                  </td>
-                  <td style={{ padding: '9px 12px', fontWeight: 700, whiteSpace: 'nowrap', color: t.direction === 'credit' ? '#16a34a' : '#ef4444' }}>
-                    {t.direction === 'credit' ? '+' : '−'}{FMT(t.amount)} ₽
-                  </td>
-                  <td style={{ padding: '9px 12px' }}>
-                    {t.matched_type ? (
-                      <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 8, background: '#eff3ff', color: '#4f6ef7', fontWeight: 600 }}>
-                        ✓ {t.matched_type === 'invoice' ? 'Счёт' : t.matched_type === 'tenant' ? 'Аренда' : t.matched_type}
-                      </span>
-                    ) : (
-                      <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 8, background: '#fffbeb', color: '#d97706', fontWeight: 600 }}>⚠ Не сопоставлено</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
+              {dates.map(date => {
+                const rows = byDate[date]
+                const dayCredit = rows.filter(r => r.direction === 'credit').reduce((s, r) => s + r.amount, 0)
+                const dayDebit = rows.filter(r => r.direction === 'debit').reduce((s, r) => s + r.amount, 0)
+                return [
+                  <tr key={'d-' + date} style={{ background: '#f8f9fb', borderBottom: '1px solid #e8ebf3' }}>
+                    <td colSpan={3} style={{ padding: '5px 12px', fontWeight: 700, color: '#1a2240', fontSize: 12 }}>
+                      {FMTD(date)}
+                    </td>
+                    <td colSpan={3} style={{ padding: '5px 12px', fontSize: 11, color: '#8596b4', textAlign: 'right' }}>
+                      {dayCredit > 0 && <span style={{ color: '#16a34a', marginRight: 10 }}>+{FMT(dayCredit)} ₽</span>}
+                      {dayDebit > 0 && <span style={{ color: '#ef4444' }}>−{FMT(dayDebit)} ₽</span>}
+                    </td>
+                  </tr>,
+                  ...rows.map(t => (
+                    <tr key={t.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                      <td style={{ padding: '8px 12px', color: '#bbc4d6', fontSize: 11, whiteSpace: 'nowrap', paddingLeft: 24 }}>
+                        {new Date(t.date).toLocaleDateString('ru-RU')}
+                      </td>
+                      <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>
+                        <span style={{
+                          fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 8,
+                          background: t.direction === 'credit' ? '#dcfce7' : '#fee2e2',
+                          color: t.direction === 'credit' ? '#16a34a' : '#ef4444',
+                        }}>
+                          {t.direction === 'credit' ? '↓ Приход' : '↑ Расход'}
+                        </span>
+                      </td>
+                      <td style={{ padding: '8px 12px', fontWeight: 500, color: '#1a2240', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {t.counterparty || '—'}
+                      </td>
+                      <td style={{ padding: '8px 12px', color: '#374151', maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {t.description || '—'}
+                      </td>
+                      <td style={{ padding: '8px 12px', fontWeight: 700, whiteSpace: 'nowrap', color: t.direction === 'credit' ? '#16a34a' : '#ef4444' }}>
+                        {t.direction === 'credit' ? '+' : '−'}{FMT(t.amount)} ₽
+                      </td>
+                      <td style={{ padding: '8px 12px' }}>
+                        {t.matched_type && t.matched_type !== 'ignored' ? (
+                          <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 8, background: '#eff3ff', color: '#4f6ef7', fontWeight: 600 }}>
+                            ✓ {t.matched_type === 'invoice' ? 'Счёт' : t.matched_type === 'tenant' ? 'Аренда' : t.matched_type}
+                          </span>
+                        ) : t.matched_type === 'ignored' ? (
+                          <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 8, background: '#f3f4f6', color: '#9ca3af', fontWeight: 600 }}>Пропущено</span>
+                        ) : (
+                          <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 8, background: '#fffbeb', color: '#d97706', fontWeight: 600 }}>⚠</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))
+                ]
+              })}
             </tbody>
           </table>
         )}
