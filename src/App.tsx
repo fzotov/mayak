@@ -28,10 +28,11 @@ import PaymentCalendarPage from './pages/PaymentCalendar'
 import BankPage from './pages/Bank'
 import ReconcilePage from './pages/Reconcile'
 import ImportTenantsPage from './pages/ImportTenants'
+import AdvertisingStele from './pages/AdvertisingStele'
 import { mockStats, mockTasks, mockOverdue, mockEvents, mockInvoices, mockTenants } from './lib/mockData'
 import { useRealTenants, useRealInvoices } from './lib/useRealData'
 
-type Page = 'dashboard' | 'tenants' | 'invoices' | 'tasks' | 'ai' | 'kb' | 'tenant-card' | 'reference' | 'billing' | 'invoice-detail' | 'settings' | 'tenant-new' | 'contracts' | 'letters' | 'floorplan' | 'units' | 'meters' | 'staff' | 'inventory' | 'services' | 'my-tasks' | 'repairs' | 'bank' | 'reconcile' | 'heat' | 'counterparties' | 'incoming-invoices' | 'payment-calendar' | 'import-tenants'
+type Page = 'dashboard' | 'tenants' | 'invoices' | 'tasks' | 'ai' | 'kb' | 'tenant-card' | 'reference' | 'billing' | 'invoice-detail' | 'settings' | 'tenant-new' | 'contracts' | 'letters' | 'floorplan' | 'units' | 'meters' | 'staff' | 'inventory' | 'services' | 'my-tasks' | 'repairs' | 'bank' | 'reconcile' | 'heat' | 'counterparties' | 'incoming-invoices' | 'payment-calendar' | 'import-tenants' | 'stele'
 
 const NAV_GROUPS = [
   { label: '', items: [{ id: 'dashboard', label: 'Сводка дня', icon: '⊞' }, { id: 'floorplan', label: 'План этажей', icon: '🏢' },
@@ -58,6 +59,7 @@ const NAV_GROUPS = [
   { label: 'ОБЪЕКТ', items: [
     { id: 'meters', label: 'Счётчики', icon: '⊙' },
     { id: 'heat', label: 'Тепло', icon: '🌡' },
+    { id: 'stele', label: 'Стела', icon: '📢' },
     { id: 'kb', label: 'База знаний', icon: '◉' },
   ] },
   { label: 'ПЕРСОНАЛ', items: [
@@ -329,21 +331,22 @@ function Tenants({ onOpenTenant, onAddTenant }: { onOpenTenant: () => void; onAd
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
         <thead>
           <tr style={{ background: '#f8f9fc', borderBottom: '1px solid #e8ebf3' }}>
-            {['Имя / компания', 'Тип', 'ИНН', 'Офис', 'Договор до', 'Статус'].map(h => (
-              <th key={h} style={{ padding: '9px 12px', textAlign: 'left', fontWeight: 500, color: '#8596b4', fontSize: 13 }}>{h}</th>
+            {['Арендатор', 'Тип', 'Офис', 'S факт.', 'Аренда ₽/мес', 'Вид деятельности', 'Договор до', ''].map(h => (
+              <th key={h} style={{ padding: '9px 12px', textAlign: 'left', fontWeight: 500, color: '#8596b4', fontSize: 13, whiteSpace: 'nowrap' }}>{h}</th>
             ))}
           </tr>
         </thead>
         <tbody>
           {useRealTenants().map(t => (
             <tr key={t.id} style={{ borderBottom: '1px solid #f0f2f8' }}>
-              <td style={{ padding: '9px 12px', fontWeight: 500, color: '#4f6ef7', cursor: 'pointer', textDecoration: 'underline' }} onClick={() => onOpenTenant()}>{t.fullName}</td>
-              <td style={{ padding: '9px 12px', color: '#6b7280' }}>{TYPE_LABEL[t.type]}</td>
-              <td style={{ padding: '9px 12px', fontFamily: 'monospace', color: '#8596b4', fontSize: 13 }}>{t.inn ?? '—'}</td>
-              <td style={{ padding: '9px 12px', color: '#374151' }}>{t.unitNumber}</td>
-              <td style={{ padding: '9px 12px', color: t.leaseStatus === 'DEBT' ? '#ef4444' : t.leaseStatus === 'EXPIRING' ? '#d97706' : '#6b7280' }}>{t.leaseEnd}</td>
-              <td style={{ padding: '9px 12px' }}><Badge s={t.leaseStatus} /></td>
-            <td style={{ padding: '9px 12px' }}><button onClick={() => onOpenTenant()} style={{ padding: '3px 10px', fontSize: 13, borderRadius: 5, border: '1px solid #e8ebf3', color: '#374151', background: '#f9fafb', cursor: 'pointer', marginRight: 4 }}>Открыть</button><button onClick={() => sendWelcomeEmail(t)} style={{ padding: '3px 10px', fontSize: 13, borderRadius: 5, border: '1px solid #4f6ef7', color: '#4f6ef7', background: '#eff3ff', cursor: 'pointer' }}>Email</button></td>
+              <td style={{ padding: '9px 12px', fontWeight: 500, color: '#4f6ef7', cursor: 'pointer', textDecoration: 'underline', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} onClick={() => onOpenTenant()}>{t.fullName}</td>
+              <td style={{ padding: '9px 12px', color: '#6b7280', whiteSpace: 'nowrap' }}>{TYPE_LABEL[t.type]}</td>
+              <td style={{ padding: '9px 12px', color: '#374151', fontSize: 13, whiteSpace: 'nowrap' }}>{t.unit_number || '—'}</td>
+              <td style={{ padding: '9px 12px', color: '#374151', fontSize: 13, whiteSpace: 'nowrap' }}>{t.area_actual ? `${t.area_actual} м²` : '—'}</td>
+              <td style={{ padding: '9px 12px', color: '#1a2240', fontWeight: 500, whiteSpace: 'nowrap' }}>{t.monthly_rent ? Number(t.monthly_rent).toLocaleString('ru-RU') + ' ₽' : '—'}</td>
+              <td style={{ padding: '9px 12px', color: '#6b7280', fontSize: 12, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.activity_type || '—'}</td>
+              <td style={{ padding: '9px 12px', color: t.contract_end_date ? '#374151' : '#8596b4', fontSize: 13, whiteSpace: 'nowrap' }}>{t.contract_end_date ? new Date(t.contract_end_date).toLocaleDateString('ru-RU') : '—'}</td>
+              <td style={{ padding: '9px 12px' }}><button onClick={() => onOpenTenant()} style={{ padding: '3px 10px', fontSize: 13, borderRadius: 5, border: '1px solid #e8ebf3', color: '#374151', background: '#f9fafb', cursor: 'pointer' }}>Открыть</button></td>
             </tr>
           ))}
         </tbody>
@@ -455,6 +458,7 @@ export default function App() {
               'staff': 'Сотрудники',
               'inventory': 'Инвентарь',
               'tenant-card': 'Карточка арендатора',
+              'stele': 'Рекламная стела',
             }[page] || 'Маяк'}
             </div>
             <div style={{ fontSize: 13, color: '#9ca3af', marginTop: 2 }}>Бизнес-центр Маяк</div>
@@ -492,6 +496,7 @@ export default function App() {
           {page === 'units' && <UnitsPage />}
           {page === 'invoice-detail' && selectedInvoice && <InvoiceDetailPage invoice={selectedInvoice} onBack={() => setPage('invoices')} />}
           {page === 'import-tenants' && <ImportTenantsPage onDone={() => setPage('tenants')} />}
+          {page === 'stele' && <AdvertisingStele />}
           {page === 'incoming-invoices' && <IncomingInvoicesPage />}
           {page === 'payment-calendar' && <PaymentCalendarPage />}
           {showSettings && <SettingsModal onClose={() => setShowSettings(false)} onLogout={() => { setShowSettings(false); setUser(null) }} />}

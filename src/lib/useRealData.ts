@@ -10,7 +10,8 @@ export function useRealTenants() {
           ...t,
           fullName: t.full_name,
           leaseStatus: t.status,
-          unit: t.units?.[0]?.number || '—',
+          unit: t.units?.[0]?.number || t.unit_number || '—',
+          unitNumber: t.unit_number || t.units?.[0]?.number || '—',
         }))
         setTenants(mapped)
       }
