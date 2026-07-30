@@ -68,8 +68,13 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
   const [portalAccess, setPortalAccess] = useState<any>(null)
   const [portalLoaded, setPortalLoaded] = useState(false)
   const [loadingTenant, setLoadingTenant] = useState(!!tenantId)
-  const [premises, setPremises] = useState<{ unitNumber: string; areaActual: number | null; monthlyRent: number | null; cleaningFee: number | null }>({ unitNumber: '', areaActual: null, monthlyRent: null, cleaningFee: null })
-  const [editingPremises, setEditingPremises] = useState(false)
+  type PremiseRent = { id: string; monthly_rent: number | null; cleaning_fee: number | null; valid_from: string | null; valid_to: string | null; notes: string | null }
+  type Premise = { id: string; unit_number: string; area_actual: number | null; area_bti: number | null; floor: number | null; rents: PremiseRent[] }
+  const [premisesList, setPremisesList] = useState<Premise[]>([])
+  const [premisesLoaded, setPremisesLoaded] = useState(false)
+  const [premiseModal, setPremiseModal] = useState<Partial<Premise> | null>(null)
+  const [rentModal, setRentModal] = useState<{ premiseId: string; rent: Partial<PremiseRent> } | null>(null)
+  const [savingPremise, setSavingPremise] = useState(false)
 
   useEffect(() => {
     if (!tenantId) return
@@ -97,12 +102,11 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
         setForm(mapped)
         setSaved(mapped)
         setDbId(tenantId)
-        setPremises({
-          unitNumber: data.unit_number || '',
-          areaActual: data.area_actual || null,
-          monthlyRent: data.monthly_rent || null,
-          cleaningFee: data.cleaning_fee || null,
-        })
+        supabase.from('tenant_premises').select('*, premise_rents(*)').eq('tenant_id', tenantId).order('unit_number')
+          .then(({ data: pd }) => {
+            setPremisesList((pd || []).map((p: any) => ({ ...p, rents: (p.premise_rents || []).sort((a: any, b: any) => (b.valid_from || '').localeCompare(a.valid_from || '')) })))
+            setPremisesLoaded(true)
+          })
         supabase.from('tenant_portal_access').select('*').eq('email', data.email || '').maybeSingle()
           .then(({ data: pa }) => { setPortalAccess(pa); setPortalLoaded(true) })
       }).finally(() => setLoadingTenant(false))
@@ -338,80 +342,217 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
         </>
       )}
 
-      {tab === 1 && (
-        <div style={s.card}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: '#374151', textTransform: 'uppercase', letterSpacing: '.5px' }}>Арендуемые помещения</div>
-            {!editingPremises
-              ? <button onClick={() => setEditingPremises(true)} style={{ padding: '5px 12px', border: '1px solid #e8ebf3', borderRadius: 6, background: '#fff', color: '#374151', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>Редактировать</button>
-              : <div style={{ display: 'flex', gap: 8 }}>
-                  <button onClick={() => setEditingPremises(false)} style={{ padding: '5px 12px', border: '1px solid #e8ebf3', borderRadius: 6, background: '#fff', color: '#6b7280', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>Отмена</button>
-                  <button onClick={async () => {
-                    if (dbId) {
-                      await supabase.from('tenants').update({ unit_number: premises.unitNumber, area_actual: premises.areaActual, monthly_rent: premises.monthlyRent, cleaning_fee: premises.cleaningFee }).eq('id', dbId)
-                      setSaved(p => ({ ...p, rent: premises.monthlyRent || 0 }))
-                    }
-                    setEditingPremises(false)
-                    setShowSuccess(true)
-                    setTimeout(() => setShowSuccess(false), 2500)
-                  }} style={{ padding: '5px 12px', border: 'none', borderRadius: 6, background: '#4f6ef7', color: '#fff', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500 }}>Сохранить</button>
-                </div>
-            }
-          </div>
-          {editingPremises ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div>
-                <div style={s.label}>Номер(а) офиса(ов)</div>
-                <input style={s.inp} value={premises.unitNumber} onChange={e => setPremises(p => ({ ...p, unitNumber: e.target.value }))} placeholder="например: 101, 102, 103" />
-                <div style={{ fontSize: 11, color: '#8596b4', marginTop: 4 }}>Несколько офисов — через запятую</div>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-                <div>
-                  <div style={s.label}>Площадь факт., м²</div>
-                  <input style={s.inp} type="number" value={premises.areaActual ?? ''} onChange={e => setPremises(p => ({ ...p, areaActual: e.target.value ? parseFloat(e.target.value) : null }))} placeholder="0" />
-                </div>
-                <div>
-                  <div style={s.label}>Аренда ₽/мес</div>
-                  <input style={s.inp} type="number" value={premises.monthlyRent ?? ''} onChange={e => setPremises(p => ({ ...p, monthlyRent: e.target.value ? parseFloat(e.target.value) : null }))} placeholder="0" />
-                </div>
-                <div>
-                  <div style={s.label}>Уборка ₽/мес</div>
-                  <input style={s.inp} type="number" value={premises.cleaningFee ?? ''} onChange={e => setPremises(p => ({ ...p, cleaningFee: e.target.value ? parseFloat(e.target.value) : null }))} placeholder="0" />
-                </div>
-              </div>
+      {tab === 1 && (() => {
+        const today = new Date().toISOString().slice(0, 10)
+        const isActive = (r: any) => !r.valid_to || r.valid_to >= today
+        const fmtDate = (d: string | null) => d ? new Date(d).toLocaleDateString('ru-RU') : '∞'
+        const fmtMoney = (n: number | null) => n != null ? n.toLocaleString('ru') + ' ₽' : '—'
+
+        async function savePremise() {
+          if (!premiseModal || !dbId) return
+          setSavingPremise(true)
+          if (premiseModal.id) {
+            await supabase.from('tenant_premises').update({ unit_number: premiseModal.unit_number, area_actual: premiseModal.area_actual, area_bti: premiseModal.area_bti, floor: premiseModal.floor }).eq('id', premiseModal.id)
+            setPremisesList(list => list.map(p => p.id === premiseModal.id ? { ...p, ...premiseModal } as any : p))
+          } else {
+            const { data } = await supabase.from('tenant_premises').insert({ tenant_id: dbId, unit_number: premiseModal.unit_number || '', area_actual: premiseModal.area_actual || null, area_bti: premiseModal.area_bti || null, floor: premiseModal.floor || null }).select('*').single()
+            if (data) setPremisesList(list => [...list, { ...data, rents: [] }])
+          }
+          setPremiseModal(null)
+          setSavingPremise(false)
+        }
+
+        async function deletePremise(id: string) {
+          await supabase.from('tenant_premises').delete().eq('id', id)
+          setPremisesList(list => list.filter(p => p.id !== id))
+        }
+
+        async function saveRent() {
+          if (!rentModal) return
+          setSavingPremise(true)
+          const { premiseId, rent } = rentModal
+          if (rent.id) {
+            await supabase.from('premise_rents').update({ monthly_rent: rent.monthly_rent, cleaning_fee: rent.cleaning_fee, valid_from: rent.valid_from || null, valid_to: rent.valid_to || null, notes: rent.notes || null }).eq('id', rent.id)
+            setPremisesList(list => list.map(p => p.id === premiseId ? { ...p, rents: p.rents.map(r => r.id === rent.id ? { ...r, ...rent } as any : r).sort((a, b) => (b.valid_from || '').localeCompare(a.valid_from || '')) } : p))
+          } else {
+            const { data } = await supabase.from('premise_rents').insert({ premise_id: premiseId, monthly_rent: rent.monthly_rent || null, cleaning_fee: rent.cleaning_fee || null, valid_from: rent.valid_from || null, valid_to: rent.valid_to || null, notes: rent.notes || null }).select('*').single()
+            if (data) setPremisesList(list => list.map(p => p.id === premiseId ? { ...p, rents: [data, ...p.rents].sort((a, b) => (b.valid_from || '').localeCompare(a.valid_from || '')) } : p))
+          }
+          setRentModal(null)
+          setSavingPremise(false)
+        }
+
+        async function deleteRent(premiseId: string, rentId: string) {
+          await supabase.from('premise_rents').delete().eq('id', rentId)
+          setPremisesList(list => list.map(p => p.id === premiseId ? { ...p, rents: p.rents.filter(r => r.id !== rentId) } : p))
+        }
+
+        return (
+          <>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#374151', textTransform: 'uppercase', letterSpacing: '.5px' }}>Арендуемые помещения</div>
+              <button onClick={() => setPremiseModal({ unit_number: '', area_actual: null, area_bti: null, floor: null })}
+                style={{ padding: '5px 14px', border: 'none', borderRadius: 6, background: '#4f6ef7', color: '#fff', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500 }}>
+                + Добавить помещение
+              </button>
             </div>
-          ) : (
-            <>
-              {premises.unitNumber ? (
-                <>
-                  <div style={{ fontSize: 13, color: '#8596b4', marginBottom: 6 }}>Офис(ы): <span style={{ color: '#1a2240', fontWeight: 500 }}>{premises.unitNumber}</span></div>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
-                    <thead><tr style={{ background: '#f8f9fc', borderBottom: '1px solid #e8ebf3' }}>
-                      {['Площадь, м²', 'Аренда ₽/мес', 'Уборка ₽/мес', 'Итого ₽/мес'].map(h => (
-                        <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 500, color: '#8596b4', fontSize: 13 }}>{h}</th>
-                      ))}
-                    </tr></thead>
-                    <tbody>
-                      <tr>
-                        <td style={{ padding: '9px 12px', color: '#6b7280' }}>{premises.areaActual != null ? premises.areaActual.toLocaleString('ru') : '—'}</td>
-                        <td style={{ padding: '9px 12px' }}>{premises.monthlyRent != null ? premises.monthlyRent.toLocaleString('ru') + ' ₽' : '—'}</td>
-                        <td style={{ padding: '9px 12px' }}>{premises.cleaningFee != null ? premises.cleaningFee.toLocaleString('ru') + ' ₽' : '—'}</td>
-                        <td style={{ padding: '9px 12px', fontWeight: 600, color: '#1a2240' }}>
-                          {(premises.monthlyRent != null || premises.cleaningFee != null)
-                            ? ((premises.monthlyRent || 0) + (premises.cleaningFee || 0)).toLocaleString('ru') + ' ₽'
-                            : '—'}
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </>
-              ) : (
-                <div style={{ color: '#8596b4', fontSize: 14, padding: '16px 0' }}>Помещения не указаны. Нажмите «Редактировать» для заполнения.</div>
-              )}
-            </>
-          )}
-        </div>
-      )}
+
+            {!premisesLoaded ? (
+              <div style={{ color: '#8596b4', fontSize: 14, padding: '16px 0' }}>Загрузка...</div>
+            ) : premisesList.length === 0 ? (
+              <div style={{ color: '#8596b4', fontSize: 14, padding: '20px 0', textAlign: 'center' }}>
+                Помещения не добавлены. Нажмите «+ Добавить помещение».
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {premisesList.map(p => {
+                  const activeRent = p.rents.find(r => isActive(r))
+                  return (
+                    <div key={p.id} style={{ border: '1px solid #e8ebf3', borderRadius: 10, overflow: 'hidden' }}>
+                      {/* Premise header */}
+                      <div style={{ background: '#f8f9fc', padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <div style={{ flex: 1 }}>
+                          <span style={{ fontSize: 14, fontWeight: 600, color: '#1a2240' }}>Офис № {p.unit_number}</span>
+                          {p.floor && <span style={{ fontSize: 12, color: '#8596b4', marginLeft: 10 }}>{p.floor} этаж</span>}
+                          {p.area_actual && <span style={{ fontSize: 12, color: '#6b7280', marginLeft: 10 }}>{p.area_actual} м² (факт.)</span>}
+                          {p.area_bti && <span style={{ fontSize: 12, color: '#6b7280', marginLeft: 6 }}>{p.area_bti} м² (БТИ)</span>}
+                        </div>
+                        {activeRent && (
+                          <div style={{ fontSize: 13, color: '#059669', fontWeight: 600 }}>
+                            {fmtMoney((activeRent.monthly_rent || 0) + (activeRent.cleaning_fee || 0))}/мес
+                          </div>
+                        )}
+                        <button onClick={() => setPremiseModal({ ...p })}
+                          style={{ padding: '4px 10px', border: '1px solid #e8ebf3', borderRadius: 5, background: '#fff', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', color: '#374151' }}>✎</button>
+                        <button onClick={() => deletePremise(p.id)}
+                          style={{ padding: '4px 8px', border: '1px solid #fee2e2', borderRadius: 5, background: '#fff', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', color: '#ef4444' }}>×</button>
+                      </div>
+                      {/* Rent history */}
+                      <div style={{ padding: '10px 16px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                          <div style={{ fontSize: 12, fontWeight: 500, color: '#8596b4', textTransform: 'uppercase', letterSpacing: '.4px' }}>История ставок</div>
+                          <button onClick={() => setRentModal({ premiseId: p.id, rent: { monthly_rent: null, cleaning_fee: null, valid_from: null, valid_to: null } })}
+                            style={{ padding: '3px 10px', border: '1px solid #4f6ef7', borderRadius: 5, background: '#fff', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', color: '#4f6ef7' }}>
+                            + Период
+                          </button>
+                        </div>
+                        {p.rents.length === 0 ? (
+                          <div style={{ fontSize: 13, color: '#8596b4', padding: '4px 0 6px' }}>Ставки не указаны</div>
+                        ) : (
+                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                            <thead>
+                              <tr style={{ borderBottom: '1px solid #f0f2f8' }}>
+                                {['Действует с', 'Действует до', 'Аренда ₽/мес', 'Уборка ₽/мес', 'Итого', 'Статус', ''].map(h => (
+                                  <th key={h} style={{ padding: '5px 8px', textAlign: 'left', fontWeight: 500, color: '#8596b4', fontSize: 12 }}>{h}</th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {p.rents.map(r => (
+                                <tr key={r.id} style={{ borderBottom: '1px solid #f8f9fc' }}>
+                                  <td style={{ padding: '6px 8px', color: '#374151' }}>{fmtDate(r.valid_from)}</td>
+                                  <td style={{ padding: '6px 8px', color: r.valid_to ? '#374151' : '#8596b4' }}>{fmtDate(r.valid_to)}</td>
+                                  <td style={{ padding: '6px 8px' }}>{fmtMoney(r.monthly_rent)}</td>
+                                  <td style={{ padding: '6px 8px', color: '#6b7280' }}>{fmtMoney(r.cleaning_fee)}</td>
+                                  <td style={{ padding: '6px 8px', fontWeight: 600, color: '#1a2240' }}>{fmtMoney((r.monthly_rent || 0) + (r.cleaning_fee || 0))}</td>
+                                  <td style={{ padding: '6px 8px' }}>
+                                    {isActive(r)
+                                      ? <span style={{ fontSize: 11, background: '#dcfce7', color: '#16a34a', padding: '2px 7px', borderRadius: 4, fontWeight: 600 }}>Текущая</span>
+                                      : <span style={{ fontSize: 11, background: '#f3f4f6', color: '#6b7280', padding: '2px 7px', borderRadius: 4 }}>Архив</span>}
+                                  </td>
+                                  <td style={{ padding: '6px 8px' }}>
+                                    <button onClick={() => setRentModal({ premiseId: p.id, rent: { ...r } })}
+                                      style={{ padding: '2px 7px', border: '1px solid #e8ebf3', borderRadius: 4, background: '#fff', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', color: '#374151', marginRight: 4 }}>✎</button>
+                                    <button onClick={() => deleteRent(p.id, r.id)}
+                                      style={{ padding: '2px 6px', border: '1px solid #fee2e2', borderRadius: 4, background: '#fff', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', color: '#ef4444' }}>×</button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
+            {/* Premise add/edit modal */}
+            {premiseModal !== null && (
+              <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }}
+                onClick={e => { if (e.target === e.currentTarget) setPremiseModal(null) }}>
+                <div style={{ background: '#fff', borderRadius: 12, padding: 28, width: 440, boxShadow: '0 8px 32px rgba(0,0,0,0.15)' }}>
+                  <div style={{ fontSize: 15, fontWeight: 600, color: '#1a2240', marginBottom: 20 }}>{premiseModal.id ? 'Редактировать помещение' : 'Добавить помещение'}</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+                    <div style={{ gridColumn: '1 / -1' }}>
+                      <div style={s.label}>Номер офиса</div>
+                      <input style={s.inp} value={premiseModal.unit_number || ''} onChange={e => setPremiseModal(p => p ? { ...p, unit_number: e.target.value } : p)} placeholder="например: 204" />
+                    </div>
+                    <div>
+                      <div style={s.label}>Площадь факт., м²</div>
+                      <input style={s.inp} type="number" value={premiseModal.area_actual ?? ''} onChange={e => setPremiseModal(p => p ? { ...p, area_actual: e.target.value ? parseFloat(e.target.value) : null } : p)} placeholder="0" />
+                    </div>
+                    <div>
+                      <div style={s.label}>Площадь по БТИ, м²</div>
+                      <input style={s.inp} type="number" value={premiseModal.area_bti ?? ''} onChange={e => setPremiseModal(p => p ? { ...p, area_bti: e.target.value ? parseFloat(e.target.value) : null } : p)} placeholder="0" />
+                    </div>
+                    <div>
+                      <div style={s.label}>Этаж</div>
+                      <input style={s.inp} type="number" value={premiseModal.floor ?? ''} onChange={e => setPremiseModal(p => p ? { ...p, floor: e.target.value ? parseInt(e.target.value) : null } : p)} placeholder="1" />
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                    <button onClick={() => setPremiseModal(null)} style={{ flex: 1, padding: '9px', border: '1px solid #e8ebf3', borderRadius: 7, background: '#fff', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', color: '#6b7280' }}>Отмена</button>
+                    <button onClick={savePremise} disabled={savingPremise} style={{ flex: 1, padding: '9px', border: 'none', borderRadius: 7, background: '#4f6ef7', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', color: '#fff', opacity: savingPremise ? 0.7 : 1 }}>
+                      {savingPremise ? 'Сохранение...' : 'Сохранить'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Rent period add/edit modal */}
+            {rentModal !== null && (
+              <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }}
+                onClick={e => { if (e.target === e.currentTarget) setRentModal(null) }}>
+                <div style={{ background: '#fff', borderRadius: 12, padding: 28, width: 440, boxShadow: '0 8px 32px rgba(0,0,0,0.15)' }}>
+                  <div style={{ fontSize: 15, fontWeight: 600, color: '#1a2240', marginBottom: 4 }}>{rentModal.rent.id ? 'Редактировать период' : 'Добавить период аренды'}</div>
+                  <div style={{ fontSize: 13, color: '#8596b4', marginBottom: 20 }}>Оставьте «Действует до» пустым, если договор бессрочный</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+                    <div>
+                      <div style={s.label}>Действует с</div>
+                      <input style={s.inp} type="date" value={rentModal.rent.valid_from || ''} onChange={e => setRentModal(m => m ? { ...m, rent: { ...m.rent, valid_from: e.target.value || null } } : m)} />
+                    </div>
+                    <div>
+                      <div style={s.label}>Действует до (пусто = бессрочно)</div>
+                      <input style={s.inp} type="date" value={rentModal.rent.valid_to || ''} onChange={e => setRentModal(m => m ? { ...m, rent: { ...m.rent, valid_to: e.target.value || null } } : m)} />
+                    </div>
+                    <div>
+                      <div style={s.label}>Аренда ₽/мес</div>
+                      <input style={s.inp} type="number" value={rentModal.rent.monthly_rent ?? ''} onChange={e => setRentModal(m => m ? { ...m, rent: { ...m.rent, monthly_rent: e.target.value ? parseFloat(e.target.value) : null } } : m)} placeholder="0" />
+                    </div>
+                    <div>
+                      <div style={s.label}>Уборка ₽/мес</div>
+                      <input style={s.inp} type="number" value={rentModal.rent.cleaning_fee ?? ''} onChange={e => setRentModal(m => m ? { ...m, rent: { ...m.rent, cleaning_fee: e.target.value ? parseFloat(e.target.value) : null } } : m)} placeholder="0" />
+                    </div>
+                    <div style={{ gridColumn: '1 / -1' }}>
+                      <div style={s.label}>Примечание</div>
+                      <input style={s.inp} value={rentModal.rent.notes || ''} onChange={e => setRentModal(m => m ? { ...m, rent: { ...m.rent, notes: e.target.value || null } } : m)} placeholder="например: индексация по доп. соглашению" />
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button onClick={() => setRentModal(null)} style={{ flex: 1, padding: '9px', border: '1px solid #e8ebf3', borderRadius: 7, background: '#fff', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', color: '#6b7280' }}>Отмена</button>
+                    <button onClick={saveRent} disabled={savingPremise} style={{ flex: 1, padding: '9px', border: 'none', borderRadius: 7, background: '#4f6ef7', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', color: '#fff', opacity: savingPremise ? 0.7 : 1 }}>
+                      {savingPremise ? 'Сохранение...' : 'Сохранить'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </>
+        )
+      })()}
 
       {tab === 2 && (
         <div style={s.card}>
