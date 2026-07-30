@@ -317,7 +317,7 @@ async function sendWelcomeEmail(tenant: any) {
   const data = await res.json()
   alert(data.ok ? 'Email sent!' : 'Error: ' + data.error)
 }
-function Tenants({ onOpenTenant, onAddTenant }: { onOpenTenant: () => void; onAddTenant: () => void }) {
+function Tenants({ onOpenTenant, onAddTenant }: { onOpenTenant: (id: string) => void; onAddTenant: () => void }) {
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
@@ -339,14 +339,14 @@ function Tenants({ onOpenTenant, onAddTenant }: { onOpenTenant: () => void; onAd
         <tbody>
           {useRealTenants().map(t => (
             <tr key={t.id} style={{ borderBottom: '1px solid #f0f2f8' }}>
-              <td style={{ padding: '9px 12px', fontWeight: 500, color: '#4f6ef7', cursor: 'pointer', textDecoration: 'underline', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} onClick={() => onOpenTenant()}>{t.fullName}</td>
+              <td style={{ padding: '9px 12px', fontWeight: 500, color: '#4f6ef7', cursor: 'pointer', textDecoration: 'underline', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} onClick={() => onOpenTenant(t.id)}>{t.fullName}</td>
               <td style={{ padding: '9px 12px', color: '#6b7280', whiteSpace: 'nowrap' }}>{TYPE_LABEL[t.type]}</td>
               <td style={{ padding: '9px 12px', color: '#374151', fontSize: 13, whiteSpace: 'nowrap' }}>{t.unit_number || '—'}</td>
               <td style={{ padding: '9px 12px', color: '#374151', fontSize: 13, whiteSpace: 'nowrap' }}>{t.area_actual ? `${t.area_actual} м²` : '—'}</td>
               <td style={{ padding: '9px 12px', color: '#1a2240', fontWeight: 500, whiteSpace: 'nowrap' }}>{t.monthly_rent ? Number(t.monthly_rent).toLocaleString('ru-RU') + ' ₽' : '—'}</td>
               <td style={{ padding: '9px 12px', color: '#6b7280', fontSize: 12, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.activity_type || '—'}</td>
               <td style={{ padding: '9px 12px', color: t.contract_end_date ? '#374151' : '#8596b4', fontSize: 13, whiteSpace: 'nowrap' }}>{t.contract_end_date ? new Date(t.contract_end_date).toLocaleDateString('ru-RU') : '—'}</td>
-              <td style={{ padding: '9px 12px' }}><button onClick={() => onOpenTenant()} style={{ padding: '3px 10px', fontSize: 13, borderRadius: 5, border: '1px solid #e8ebf3', color: '#374151', background: '#f9fafb', cursor: 'pointer' }}>Открыть</button></td>
+              <td style={{ padding: '9px 12px' }}><button onClick={() => onOpenTenant(t.id)} style={{ padding: '3px 10px', fontSize: 13, borderRadius: 5, border: '1px solid #e8ebf3', color: '#374151', background: '#f9fafb', cursor: 'pointer' }}>Открыть</button></td>
             </tr>
           ))}
         </tbody>
@@ -377,6 +377,7 @@ function Tasks() {
 export default function App() {
   const [page, setPage] = useState<Page>('dashboard')
   const [selectedInvoice, setSelectedInvoice] = useState<any>(null)
+  const [selectedTenantId, setSelectedTenantId] = useState<string | null>(null)
   const [showSettings, setShowSettings] = useState(false)
   const [user, setUser] = useState<any>(null)
   const [loading, setLoading] = useState(true)
@@ -472,11 +473,11 @@ export default function App() {
         <main style={{ flex: 1, overflowY: 'auto', padding: 24 }}>
           {page === 'dashboard' && <Dashboard />}
           {page === 'invoices' && <InvoicesPage onOpenInvoice={(inv) => { setSelectedInvoice(inv); setPage('invoice-detail') }} />}
-          {page === 'tenants' && <Tenants onOpenTenant={() => setPage('tenant-card')} onAddTenant={() => setPage('tenant-new')} />}
+          {page === 'tenants' && <Tenants onOpenTenant={(id) => { setSelectedTenantId(id); setPage('tenant-card') }} onAddTenant={() => setPage('tenant-new')} />}
           {page === 'tasks' && <TasksPage />}
           {page === 'ai' && <AIAssistantPage />}
           {page === 'kb' && <KnowledgeBasePage />}
-          {page === 'tenant-card' && <TenantCardPage onBack={() => setPage('tenants')} onCreateInvoice={() => setPage('billing')} />}
+          {page === 'tenant-card' && <TenantCardPage tenantId={selectedTenantId} onBack={() => setPage('tenants')} onCreateInvoice={() => setPage('billing')} />}
           {page === 'reference' && <SettingsReferencePage />}
           {page === 'services' && <ServicesPage />}
           {page === 'billing' && <BillingPage />}

@@ -57,17 +57,51 @@ function SuccessToast() {
   )
 }
 
-export function TenantCardPage({ onBack, onCreateInvoice }: { onBack: () => void; onCreateInvoice?: () => void }) {
+export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId?: string | null; onBack: () => void; onCreateInvoice?: () => void }) {
   const [tab, setTab] = useState(0)
   const [editing, setEditing] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
   const [showSuccess, setShowSuccess] = useState(false)
   const [form, setForm] = useState(initial)
   const [saved, setSaved] = useState(initial)
+  const [dbId, setDbId] = useState<string | null>(null)
   const [portalAccess, setPortalAccess] = useState<any>(null)
   const [portalLoaded, setPortalLoaded] = useState(false)
+  const [loadingTenant, setLoadingTenant] = useState(!!tenantId)
 
   useEffect(() => {
+    if (!tenantId) return
+    setLoadingTenant(true)
+    supabase.from('tenants').select('*').eq('id', tenantId).single()
+      .then(({ data }) => {
+        if (!data) return
+        const mapped = {
+          fullName: data.full_name || '',
+          type: data.type || 'COMPANY',
+          inn: data.inn || '',
+          kpp: data.kpp || '',
+          ogrn: data.ogrn || '',
+          email: data.email || '',
+          phone: data.phone || '',
+          legalAddress: data.legal_address || '',
+          bankAccount: data.bank_account || '',
+          bik: data.bik || '',
+          bank: data.bank_name || '',
+          leaseStart: '',
+          leaseEnd: data.contract_end_date ? new Date(data.contract_end_date).toLocaleDateString('ru-RU') : '',
+          rent: data.monthly_rent || 0,
+          deposit: 0,
+        }
+        setForm(mapped)
+        setSaved(mapped)
+        setDbId(tenantId)
+        supabase.from('tenant_portal_access').select('*').eq('email', data.email || '').maybeSingle()
+          .then(({ data: pa }) => { setPortalAccess(pa); setPortalLoaded(true) })
+      }).finally(() => setLoadingTenant(false))
+  }, [tenantId])
+
+  useEffect(() => {
+    if (tenantId) return
     supabase.from('tenant_portal_access').select('*').eq('email', initial.email).maybeSingle()
       .then(({ data }) => { setPortalAccess(data); setPortalLoaded(true) })
   }, [])
@@ -109,7 +143,22 @@ export function TenantCardPage({ onBack, onCreateInvoice }: { onBack: () => void
   const f = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => setForm(p => ({ ...p, [k]: e.target.value }))
 
   const handleSave = () => setShowConfirm(true)
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
+    if (dbId) {
+      await supabase.from('tenants').update({
+        full_name: form.fullName,
+        inn: form.inn || null,
+        kpp: form.kpp || null,
+        ogrn: form.ogrn || null,
+        email: form.email || null,
+        phone: form.phone || null,
+        legal_address: form.legalAddress || null,
+        bank_account: form.bankAccount || null,
+        bik: form.bik || null,
+        bank_name: form.bank || null,
+        monthly_rent: form.rent || null,
+      }).eq('id', dbId)
+    }
     setSaved(form)
     setShowConfirm(false)
     setEditing(false)
@@ -132,6 +181,10 @@ export function TenantCardPage({ onBack, onCreateInvoice }: { onBack: () => void
         ? <input style={s.inp} type={type} defaultValue={String(form[k])} onBlur={e => setForm(p => ({ ...p, [k]: e.target.value }))} key={k} />
         : <div style={s.value}>{String(saved[k]) || '—'}</div>}
     </div>
+  )
+
+  if (loadingTenant) return (
+    <div style={{ padding: 40, color: '#8596b4', fontSize: 14 }}>Загрузка...</div>
   )
 
   return (

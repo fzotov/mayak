@@ -106,24 +106,24 @@ export default function AdvertisingStele() {
     const lbl = slotLabel(s)
     return (
       <div onClick={() => openEdit(s)} style={{
-        background: slotBg(s), border: `1px solid ${slotBorder(s)}`, borderRadius: 8,
-        padding: '10px 14px', cursor: 'pointer',
-        display: 'flex', alignItems: 'center', gap: 10,
+        background: slotBg(s), border: `1px solid ${slotBorder(s)}`, borderRadius: 7,
+        padding: '7px 10px', cursor: 'pointer',
+        display: 'flex', alignItems: 'center', gap: 8,
       }}>
-        <div style={{ width: 28, height: 28, borderRadius: 6, background: '#f0f2f8', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, color: '#8596b4', flexShrink: 0 }}>
+        <div style={{ width: 24, height: 24, borderRadius: 5, background: '#f0f2f8', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: '#8596b4', flexShrink: 0 }}>
           {s.slot_number}
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: lbl.color, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lbl.text}</div>
-          <div style={{ display: 'flex', gap: 8, marginTop: 2, alignItems: 'center' }}>
-            {s.code_1c && <span style={{ fontSize: 11, color: '#8596b4' }}>{s.code_1c}</span>}
-            {s.monthly_fee && !s.is_our_ad && !s.is_free && (
-              <span style={{ fontSize: 11, color: '#059669', fontWeight: 600 }}>{FMT(s.monthly_fee)} ₽/мес</span>
-            )}
-            {s.contract_end_date && !s.is_our_ad && !s.is_free && (
-              <span style={{ fontSize: 11, color: '#d97706' }}>до {new Date(s.contract_end_date).toLocaleDateString('ru-RU')}</span>
-            )}
-          </div>
+          <div style={{ fontSize: 12, fontWeight: 600, color: lbl.color, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lbl.text}</div>
+          {(!s.is_our_ad && !s.is_free) && (
+            <div style={{ display: 'flex', gap: 6, marginTop: 1, alignItems: 'center' }}>
+              {s.monthly_fee && <span style={{ fontSize: 10, color: '#059669', fontWeight: 600 }}>{FMT(s.monthly_fee)} ₽/мес</span>}
+              {s.contract_end_date && <span style={{ fontSize: 10, color: '#d97706' }}>до {new Date(s.contract_end_date).toLocaleDateString('ru-RU')}</span>}
+            </div>
+          )}
+          {(s.is_our_ad || s.is_free) && s.code_1c && (
+            <div style={{ fontSize: 10, color: '#8596b4', marginTop: 1 }}>{s.code_1c}</div>
+          )}
         </div>
       </div>
     )
@@ -159,14 +159,14 @@ export default function AdvertisingStele() {
       {loading ? (
         <div style={{ color: '#8596b4', fontSize: 14, padding: 24 }}>Загрузка...</div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
           {(['parking', 'roundabout'] as const).map(side => {
             const list = side === 'parking' ? parking : roundabout
             return (
               <div key={side}>
-                <div style={{ fontSize: 14, fontWeight: 600, color: '#374151', marginBottom: 10 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 8 }}>
                   {SIDE_LABEL[side]}
-                  <span style={{ fontSize: 12, color: '#8596b4', marginLeft: 8 }}>(коробы сверху вниз)</span>
+                  <span style={{ fontSize: 11, color: '#8596b4', marginLeft: 6 }}>(сверху вниз)</span>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   {list.map(s => <SlotCard key={s.id} s={s} />)}
