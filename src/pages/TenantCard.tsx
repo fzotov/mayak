@@ -3,24 +3,57 @@ import { supabase } from '../lib/supabase'
 
 // Tabs: Онбординг | Общие | Помещения | Счётчики | Счета | Документы | Договоры
 const TABS = ['Онбординг', 'Общие', 'Помещения', 'Счётчики', 'Счета', 'Документы', 'Договоры']
-const TYPE_LABELS: Record<string, string> = { COMPANY: 'Юрлицо', IP: 'ИП', INDIVIDUAL: 'Физлицо' }
+const TYPE_LABELS: Record<string, string> = { COMPANY: 'Юрлицо', IP: 'ИП', INDIVIDUAL: 'Физлицо', SELF_EMPLOYED: 'Самозанятый' }
 const METER_LABELS: Record<string, string> = { electricity: 'Электричество', cold_water: 'Холодная вода', hot_water: 'Горячая вода' }
 const METER_UNITS: Record<string, string> = { electricity: 'кВт·ч', cold_water: 'м³', hot_water: 'м³' }
 
-const DOC_TYPES = [
-  { key: 'ogrn', label: 'ОГРН / ОГРНИП', icon: '📋' },
-  { key: 'charter', label: 'Устав', icon: '📖' },
-  { key: 'passport', label: 'Паспорт директора', icon: '🪪' },
-  { key: 'poa', label: 'Доверенность', icon: '📝' },
-  { key: 'inn_doc', label: 'Свидетельство ИНН', icon: '📄' },
-  { key: 'other', label: 'Прочее', icon: '📎' },
+// Перечень документов по типу — точно по внутреннему перечню БЦ «Маяк»
+const DOC_TYPES_COMPANY = [
+  { key: 'card', label: 'Карточка предприятия (реквизиты)', icon: '🏢', required: true },
+  { key: 'charter', label: 'Устав (заверен подписью и печатью)', icon: '📖', required: true },
+  { key: 'egrul', label: 'Выписка из ЕГРЮЛ (не старше 1 нед.)', icon: '📄', required: true },
+  { key: 'inn_doc', label: 'Копия ИНН (заверен)', icon: '📄', required: true },
+  { key: 'director_order', label: 'Приказ о назначении руководителя', icon: '📝', required: true },
+  { key: 'passport', label: 'Паспорт руководителя (фото + прописка)', icon: '🪪', required: true },
+  { key: 'poa', label: 'Доверенность (если подписывает не директор)', icon: '📝', required: false },
+  { key: 'license', label: 'Лицензии/разрешения (если лицензируется)', icon: '📋', required: false },
+  { key: 'brand_doc', label: 'Права на товарный знак / бренд', icon: '™️', required: false },
+  { key: 'opd_consent', label: 'Согласие на обработку ПД', icon: '✍️', required: true },
 ]
+const DOC_TYPES_IP = [
+  { key: 'passport', label: 'Паспорт ИП (фото + прописка)', icon: '🪪', required: true },
+  { key: 'inn_doc', label: 'Копия ИНН', icon: '📄', required: true },
+  { key: 'ogrn', label: 'Свидетельство ОГРНИП', icon: '📋', required: true },
+  { key: 'poa', label: 'Доверенность (если подписывает не ИП)', icon: '📝', required: false },
+  { key: 'license', label: 'Лицензии/разрешения (галерея)', icon: '📋', required: false },
+  { key: 'brand_doc', label: 'Права на товарный знак / бренд', icon: '™️', required: false },
+  { key: 'opd_consent', label: 'Согласие на обработку ПД', icon: '✍️', required: true },
+]
+const DOC_TYPES_INDIVIDUAL = [
+  { key: 'passport', label: 'Паспорт (фото + прописка, или ВНЖ)', icon: '🪪', required: true },
+  { key: 'inn_doc', label: 'ИНН (при наличии)', icon: '📄', required: false },
+  { key: 'opd_consent', label: 'Согласие на обработку ПД', icon: '✍️', required: true },
+]
+const DOC_TYPES_SELF_EMPLOYED = [
+  { key: 'passport', label: 'Паспорт (фото + прописка, или ВНЖ)', icon: '🪪', required: true },
+  { key: 'self_employed_cert', label: 'Справка о постановке на учёт (Мой налог / ФНС)', icon: '📋', required: true },
+  { key: 'utility_bill', label: 'Квитанция ЖКХ по месту регистрации (посл. мес.)', icon: '🧾', required: true },
+  { key: 'bank_details', label: 'Банковские реквизиты', icon: '🏦', required: true },
+  { key: 'opd_consent', label: 'Согласие на обработку ПД', icon: '✍️', required: true },
+]
+function getDocTypes(tenantType: string) {
+  if (tenantType === 'IP') return DOC_TYPES_IP
+  if (tenantType === 'INDIVIDUAL') return DOC_TYPES_INDIVIDUAL
+  if (tenantType === 'SELF_EMPLOYED') return DOC_TYPES_SELF_EMPLOYED
+  return DOC_TYPES_COMPANY
+}
 
 const CONTRACT_TYPES = [
   { key: 'lease', label: 'Договор аренды' },
   { key: 'handover', label: 'Акт приёма-передачи' },
   { key: 'addendum_rent', label: 'Доп. соглашение (аренда)' },
   { key: 'addendum_ad', label: 'Доп. соглашение (реклама)' },
+  { key: 'elevator_letter', label: 'Письмо о пользовании лифтом' },
 ]
 
 const emptyForm = {
@@ -88,9 +121,35 @@ function printContract(type: string, tenant: typeof emptyForm, contractNumber: s
   <td>${tenant.fullName}<br>ИНН: ${tenant.inn}<br>КПП: ${tenant.kpp}<br>р/с: ${tenant.bankAccount}<br>Банк: ${tenant.bank}<br>БИК: ${tenant.bik}</td></tr></table>
   <div class="sign"><div>Арендодатель: ______________</div><div>Арендатор: ______________</div></div>
   ` : type === 'handover' ? `
-  <p>Арендодатель передаёт, а Арендатор принимает нежилые помещения: ${premisesText || '____'}.</p>
-  <p>Помещения переданы в состоянии, пригодном для использования. Претензий нет.</p>
-  <div class="sign"><div>Передал: ______________</div><div>Принял: ______________</div></div>
+  <p>Арендодатель передаёт, а Арендатор принимает нежилые помещения: <b>${premisesText || '____'}</b>, расположенные по адресу: г. Москва, Дмитровское ш., д. 107.</p>
+  <p>Помещения переданы в технически исправном состоянии, пригодном для использования.</p>
+  <h3>Имущество, передаваемое вместе с помещением:</h3>
+  <table>
+    <tr><th>Наименование</th><th>Кол-во</th><th>Стоимость при утере/порче</th></tr>
+    <tr><td>Жалюзи (цвет: ____)</td><td>____</td><td>3 000 ₽ за шт.</td></tr>
+    <tr><td>Пульт от кондиционера</td><td>____</td><td>3 000 ₽ за шт.</td></tr>
+    <tr><td>Ключи от офиса</td><td>____</td><td>1 000 ₽ за шт.</td></tr>
+    <tr><td>Брелок (Галерея)</td><td>____</td><td>1 000 ₽ за шт.</td></tr>
+    <tr><td>Рулонная штора (Галерея)</td><td>____</td><td>5 000 ₽ за шт.</td></tr>
+    <tr><td><b>ИТОГО</b></td><td></td><td><b>______ ₽</b></td></tr>
+  </table>
+  <p>Возможные дефекты/повреждения в помещении на момент передачи: ____________________________________________</p>
+  <p>Стороны претензий друг к другу не имеют.</p>
+  <div class="sign"><div>Передал (Арендодатель): ______________<br><small>_________________ / _____________</small></div><div>Принял (Арендатор): ______________<br><small>_________________ / _____________</small></div></div>
+  ` : type === 'elevator_letter' ? `
+  <h2>УВЕДОМЛЕНИЕ О ПРАВИЛАХ ПОЛЬЗОВАНИЯ ЛИФТОМ</h2>
+  <p>Уважаемый Арендатор!</p>
+  <p>В целях обеспечения безопасности и надлежащей эксплуатации лифтового оборудования Бизнес-центра «МАЯК» просим Вас ознакомиться с правилами пользования лифтом.</p>
+  <p>Настоящим подтверждаем, что лифтовое оборудование предназначено для перевозки пассажиров. Перевозка крупногабаритных грузов возможна только через пожарный выход с предварительным согласованием с администрацией.</p>
+  <p>Нарушение правил эксплуатации лифта влечёт материальную ответственность виновной стороны.</p>
+  <br>
+  <p>Арендатор: <b>${tenant.fullName}</b></p>
+  <p>Помещение: ${premisesText || '____'}</p>
+  <br>
+  <table style="width:100%"><tr>
+    <td>Ознакомлен: ______________<br><small>подпись / дата</small></td>
+    <td>Арендодатель: ______________<br><small>подпись / дата</small></td>
+  </tr></table>
   ` : `
   <p>Стороны пришли к соглашению внести следующие изменения в Договор аренды № ${contractNumber}:</p>
   <p>С ${startDate || '«___»'} арендная плата составляет: ${totalRent.toLocaleString('ru')} руб./мес.</p>
@@ -232,24 +291,46 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
   }
   const handleCancel = () => { setForm(saved); setEditing(false) }
 
-  // Onboarding step checks
+  // Onboarding step checks — зависят от типа арендатора
+  const docTypes = getDocTypes(saved.type)
+  const requiredDocKeys = docTypes.filter(d => d.required).map(d => d.key)
+  const uploadedDocKeys = new Set(documents.map((d: any) => d.doc_type))
+  const allRequiredDocsUploaded = requiredDocKeys.every(k => uploadedDocKeys.has(k))
+  const uploadedRequiredCount = requiredDocKeys.filter(k => uploadedDocKeys.has(k)).length
+
+  const needsDirector = saved.type !== 'INDIVIDUAL'
   const onboardingSteps = [
     {
       label: 'Реквизиты',
-      desc: 'ИНН, ОГРН, банковские реквизиты',
-      done: !!(saved.inn && saved.ogrn && saved.bank && saved.bankAccount && saved.bik),
+      desc: saved.type === 'INDIVIDUAL'
+        ? 'ФИО, email, телефон'
+        : 'ИНН, ОГРН, банковские реквизиты',
+      done: saved.type === 'INDIVIDUAL'
+        ? !!(saved.fullName && saved.phone)
+        : !!(saved.inn && saved.ogrn && saved.bank && saved.bankAccount && saved.bik),
       tab: 1,
     },
-    {
+    ...(needsDirector ? [{
       label: 'Руководитель и паспорт',
       desc: 'ФИО, должность, паспортные данные',
       done: !!(saved.directorName && saved.passportSeries && saved.passportNumber),
       tab: 1,
-    },
+    }] : [{
+      label: 'Паспортные данные',
+      desc: 'Серия, номер, кем выдан',
+      done: !!(saved.passportSeries && saved.passportNumber),
+      tab: 1,
+    }]),
     {
       label: 'Документы',
-      desc: 'ОГРН, устав, паспорт директора',
-      done: documents.length > 0,
+      desc: `Обязательные: ${uploadedRequiredCount}/${requiredDocKeys.length} загружено`,
+      done: allRequiredDocsUploaded && documents.length > 0,
+      tab: 5,
+    },
+    {
+      label: 'Согласие на обработку ПД',
+      desc: 'Подписанное согласие на ОПД получено',
+      done: uploadedDocKeys.has('opd_consent'),
       tab: 5,
     },
     {
@@ -260,13 +341,13 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
     },
     {
       label: 'Договор аренды',
-      desc: 'Договор создан и подписан',
+      desc: 'Договор подписан сторонами',
       done: contracts.some(c => c.contract_type === 'lease'),
       tab: 6,
     },
     {
       label: 'Акт приёма-передачи',
-      desc: 'Помещение передано арендатору',
+      desc: 'Ключи переданы арендатору',
       done: contracts.some(c => c.contract_type === 'handover'),
       tab: 6,
     },
@@ -487,9 +568,10 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
                 <div style={s.label}>Тип</div>
                 {editing
                   ? <select style={s.inp} value={form.type} onChange={f('type') as any}>
-                      <option value="COMPANY">Юрлицо</option>
+                      <option value="COMPANY">Юрлицо (ООО, АО)</option>
                       <option value="IP">ИП</option>
                       <option value="INDIVIDUAL">Физлицо</option>
+                      <option value="SELF_EMPLOYED">Самозанятый</option>
                     </select>
                   : <div style={s.value}>{TYPE_LABELS[saved.type]}</div>}
               </div>
@@ -784,44 +866,67 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
       )}
 
       {/* ─── TAB 5: ДОКУМЕНТЫ ─── */}
-      {tab === 5 && (
-        <div>
-          <div style={{ fontSize: 14, color: '#8596b4', marginBottom: 16 }}>
-            Загрузите документы арендатора по категориям
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            {DOC_TYPES.map(dt => {
-              const existing = documents.filter(d => d.doc_type === dt.key)
-              return (
-                <div key={dt.key} style={{ background: '#fff', border: '1px solid #e8ebf3', borderRadius: 10, padding: 14 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-                    <span style={{ fontSize: 20 }}>{dt.icon}</span>
-                    <div>
-                      <div style={{ fontSize: 14, fontWeight: 600, color: '#1a2240' }}>{dt.label}</div>
-                      <div style={{ fontSize: 12, color: '#8596b4' }}>{existing.length > 0 ? `${existing.length} файл(ов)` : 'Не загружено'}</div>
-                    </div>
-                    {existing.length > 0 && <span style={{ marginLeft: 'auto', fontSize: 18 }}>✓</span>}
-                  </div>
-                  {existing.map(doc => (
-                    <div key={doc.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 8px', background: '#f8f9fc', borderRadius: 6, marginBottom: 6, fontSize: 13 }}>
-                      <span style={{ color: '#374151', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 160 }}>{doc.file_name}</span>
-                      <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                        {doc.file_url && <a href={doc.file_url} target="_blank" rel="noopener noreferrer" style={{ color: '#4f6ef7', fontSize: 12, textDecoration: 'none' }}>↓</a>}
-                        <button onClick={() => deleteDoc(doc.id)} style={{ border: 'none', background: 'none', color: '#ef4444', fontSize: 12, cursor: 'pointer', padding: '0 4px' }}>×</button>
-                      </div>
-                    </div>
-                  ))}
-                  <label style={{ display: 'block', width: '100%', padding: '6px 0', border: '1px dashed #e8ebf3', borderRadius: 7, background: 'transparent', color: uploadingDoc === dt.key ? '#8596b4' : '#4f6ef7', fontSize: 13, cursor: 'pointer', textAlign: 'center', boxSizing: 'border-box' }}>
-                    {uploadingDoc === dt.key ? 'Загрузка...' : '+ Загрузить'}
-                    <input type="file" style={{ display: 'none' }} disabled={uploadingDoc === dt.key}
-                      onChange={e => { if (e.target.files?.[0]) handleDocUpload(dt.key, e.target.files[0]); e.target.value = '' }} />
-                  </label>
+      {tab === 5 && (() => {
+        const currentDocTypes = getDocTypes(saved.type)
+        const requiredCount = currentDocTypes.filter(d => d.required).length
+        const uploadedReqCount = currentDocTypes.filter(d => d.required && uploadedDocKeys.has(d.key)).length
+        return (
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <div>
+                <div style={{ fontSize: 14, color: '#1a2240', fontWeight: 500 }}>
+                  Перечень документов — {TYPE_LABELS[saved.type]}
                 </div>
-              )
-            })}
+                <div style={{ fontSize: 13, color: '#8596b4', marginTop: 2 }}>
+                  Обязательных: {uploadedReqCount}/{requiredCount} загружено
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ width: 100, height: 5, background: '#f0f2f8', borderRadius: 3, overflow: 'hidden' }}>
+                  <div style={{ width: `${requiredCount > 0 ? (uploadedReqCount / requiredCount) * 100 : 0}%`, height: '100%', background: uploadedReqCount === requiredCount ? '#22c55e' : '#4f6ef7', borderRadius: 3 }} />
+                </div>
+              </div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              {currentDocTypes.map(dt => {
+                const existing = documents.filter((d: any) => d.doc_type === dt.key)
+                const isDone = existing.length > 0
+                return (
+                  <div key={dt.key} style={{ background: '#fff', border: `1px solid ${isDone ? '#bbf7d0' : dt.required ? '#fde68a' : '#e8ebf3'}`, borderRadius: 10, padding: 14 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                      <span style={{ fontSize: 20 }}>{dt.icon}</span>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 14, fontWeight: 600, color: '#1a2240' }}>
+                          {dt.label}
+                          {dt.required && !isDone && <span style={{ marginLeft: 6, fontSize: 11, color: '#d97706', fontWeight: 400 }}>обязательно</span>}
+                        </div>
+                        <div style={{ fontSize: 12, color: isDone ? '#16a34a' : '#8596b4' }}>
+                          {isDone ? `${existing.length} файл(ов) загружено` : 'Не загружено'}
+                        </div>
+                      </div>
+                      {isDone && <span style={{ color: '#16a34a', fontSize: 18 }}>✓</span>}
+                    </div>
+                    {existing.map((doc: any) => (
+                      <div key={doc.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 8px', background: '#f8f9fc', borderRadius: 6, marginBottom: 6, fontSize: 13 }}>
+                        <span style={{ color: '#374151', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 160 }}>{doc.file_name}</span>
+                        <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                          {doc.file_url && <a href={doc.file_url} target="_blank" rel="noopener noreferrer" style={{ color: '#4f6ef7', fontSize: 12, textDecoration: 'none' }}>↓</a>}
+                          <button onClick={() => deleteDoc(doc.id)} style={{ border: 'none', background: 'none', color: '#ef4444', fontSize: 12, cursor: 'pointer', padding: '0 4px' }}>×</button>
+                        </div>
+                      </div>
+                    ))}
+                    <label style={{ display: 'block', width: '100%', padding: '6px 0', border: `1px dashed ${isDone ? '#bbf7d0' : '#e8ebf3'}`, borderRadius: 7, background: 'transparent', color: uploadingDoc === dt.key ? '#8596b4' : '#4f6ef7', fontSize: 13, cursor: 'pointer', textAlign: 'center', boxSizing: 'border-box' as const }}>
+                      {uploadingDoc === dt.key ? 'Загрузка...' : isDone ? '+ Добавить ещё' : '+ Загрузить'}
+                      <input type="file" style={{ display: 'none' }} disabled={uploadingDoc === dt.key}
+                        onChange={e => { if (e.target.files?.[0]) handleDocUpload(dt.key, e.target.files[0]); e.target.value = '' }} />
+                    </label>
+                  </div>
+                )
+              })}
+            </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
 
       {/* ─── TAB 6: ДОГОВОРЫ ─── */}
       {tab === 6 && (
