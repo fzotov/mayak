@@ -91,11 +91,11 @@ function UnitForm({ unit, onBack }: { unit: any; onBack: () => void }) {
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
           <div><label style={SL}>Кол-во комнат</label><input style={SI} type="number" value={form.rooms_count} onChange={e => set('rooms_count', Number(e.target.value))} /></div>
-          <div><label style={SL}>Аренда (₽/мес)</label><input style={SI} type="number" value={form.rent_rate || ''} onChange={e => set('rent_rate', Number(e.target.value))} /></div>
+          <div><label style={SL}>Ставка (₽/м²)</label><input style={SI} type="number" value={form.rent_rate || ''} onChange={e => set('rent_rate', Number(e.target.value))} /></div>
           <div>
-            <label style={SL}>Ставка (₽/м²)</label>
-            <div style={{ ...SI, background: '#f9fafb', color: form.area && form.rent_rate ? '#1a2240' : '#9ca3af', fontWeight: form.area && form.rent_rate ? 500 : 400 }}>
-              {form.area && form.rent_rate ? Math.round(form.rent_rate / form.area).toLocaleString('ru') + ' ₽' : '—'}
+            <label style={SL}>Аренда (₽/мес)</label>
+            <div style={{ ...SI, background: '#f9fafb', color: form.area && form.rent_rate ? '#1a2240' : '#9ca3af', fontWeight: form.area && form.rent_rate ? 600 : 400 }}>
+              {form.area && form.rent_rate ? Math.round(form.area * form.rent_rate).toLocaleString('ru') + ' ₽' : '—'}
             </div>
           </div>
         </div>
@@ -215,8 +215,8 @@ export default function UnitsPage() {
                     <td style={{ padding: '10px 14px', color: '#1a2240', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.tenants?.full_name || <span style={{ color: '#9ca3af' }}>—</span>}</td>
                     <td style={{ padding: '10px 14px' }}>{t.icon} {t.label}</td>
                     <td style={{ padding: '10px 14px', color: '#374151' }}>{u.area ? `${u.area} м²` : '—'}</td>
-                    <td style={{ padding: '10px 14px', color: '#374151' }}>{u.area && u.rent_rate ? Math.round(u.rent_rate / u.area).toLocaleString('ru') + ' ₽' : '—'}</td>
-                    <td style={{ padding: '10px 14px', color: '#1a2240', fontWeight: 500 }}>{u.rent_rate ? u.rent_rate.toLocaleString('ru', { maximumFractionDigits: 0 }) + ' ₽' : '—'}</td>
+                    <td style={{ padding: '10px 14px', color: '#374151' }}>{u.rent_rate ? u.rent_rate.toLocaleString('ru', { maximumFractionDigits: 0 }) + ' ₽' : '—'}</td>
+                    <td style={{ padding: '10px 14px', color: '#1a2240', fontWeight: 500 }}>{u.area && u.rent_rate ? Math.round(u.area * u.rent_rate).toLocaleString('ru') + ' ₽' : '—'}</td>
                     <td style={{ padding: '10px 14px' }}>
                       <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 10, background: st.bg, color: st.color }}>{st.label}</span>
                     </td>
