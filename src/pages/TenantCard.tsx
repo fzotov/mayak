@@ -85,6 +85,59 @@ function SuccessToast() {
   )
 }
 
+function printOPD(tenant: typeof emptyForm) {
+  // Оператор — ИП Зотова Екатерина Викторовна, согласно реальному бланку
+  const subject = tenant.type === 'COMPANY' ? tenant.directorName : tenant.fullName
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Согласие на обработку ПД</title>
+  <style>body{font-family:'Times New Roman',serif;font-size:13pt;margin:2cm;line-height:1.6}
+  h2{text-align:center;font-size:14pt}
+  .blank{border-bottom:1px solid #000;display:inline-block;min-width:200px;text-align:center}
+  .sign-row{display:flex;gap:40px;margin-top:30px}
+  .sign-block{flex:1;border-top:1px solid #000;padding-top:4px;font-size:11pt;text-align:center}
+  @media print{body{margin:1.5cm}}</style></head><body>
+  <h2>СОГЛАСИЕ<br>на обработку персональных данных</h2>
+  <p>Я (далее — Субъект), <span class="blank"><b>${subject || '___________________________'}</b></span>,<br>
+  <small>(фамилия, имя, отчество субъекта персональных данных)</small></p>
+  <p>Паспорт РФ <span class="blank">${tenant.passportSeries || '______'}</span> № <span class="blank">${tenant.passportNumber || '____________'}</span>,
+  выдан <span class="blank">${tenant.passportIssuedBy || '___________________________'}</span>
+  «___» _____________ года,</p>
+  <p>зарегистрирован(а) по адресу: <span class="blank" style="min-width:350px">${tenant.legalAddress || '___________________________________'}</span>,</p>
+  <p>даю своё согласие <b>Индивидуальному предпринимателю Зотовой Екатерине Викторовне</b>,
+  находящейся по адресу: Московская область, г. Дмитров, мкр. Владимира Махалина, д. 20
+  (далее — Оператор), на обработку своих персональных данных на следующих условиях:</p>
+  <p><b>1. Перечень персональных данных, передаваемых Оператору на обработку:</b></p>
+  <ul>
+    <li>фамилия, имя, отчество;</li>
+    <li>паспортные данные (копия паспорта РФ);</li>
+    <li>адрес постоянного места жительства и/или преимущественного пребывания.</li>
+  </ul>
+  <p><b>2.</b> Субъект даёт согласие на обработку Оператором своих персональных данных, то есть совершение,
+  в том числе, следующих действий: сбор, систематизация, накопление, хранение, уточнение, использование,
+  распространение, обезличивание, блокирование, уничтожение персональных данных, а также иных действий,
+  необходимых для обработки персональных данных в соответствии с законодательством Российской Федерации,
+  в том числе в автоматизированном режиме.</p>
+  <p><b>3.</b> Настоящее согласие действует бессрочно.</p>
+  <p><b>4.</b> Настоящее согласие может быть отозвано Субъектом в любой момент по соглашению сторон.
+  В случае неправомерного использования предоставленных данных соглашение отзывается письменным заявлением субъекта персональных данных.</p>
+  <p><b>5.</b> Субъект по письменному запросу имеет право на получение информации, касающейся обработки его персональных данных
+  (в соответствии со ст. 9, п. 4 ст. 14 Федерального закона от 27.07.2006 № 152-ФЗ).</p>
+  <div class="sign-row">
+    <div class="sign-block">подпись</div>
+    <div class="sign-block">ФИО</div>
+    <div class="sign-block">дата</div>
+  </div>
+  <p style="margin-top:24px">Подтверждаю, что ознакомлен(а) с положениями Федерального закона от 27.07.2006 № 152-ФЗ
+  «О персональных данных», права и обязанности в области защиты персональных данных мне разъяснены.</p>
+  <div class="sign-row">
+    <div class="sign-block">подпись</div>
+    <div class="sign-block">ФИО</div>
+    <div class="sign-block">дата</div>
+  </div>
+  </body></html>`
+  const w = window.open('', '_blank')
+  if (w) { w.document.write(html); w.document.close(); setTimeout(() => w.print(), 400) }
+}
+
 function printContract(type: string, tenant: typeof emptyForm, contractNumber: string, startDate: string, endDate: string, premises: any[]) {
   const typeLabel = CONTRACT_TYPES.find(c => c.key === type)?.label || type
   const premisesText = premises.map(p => `офис ${p.unit_number} (${p.area_actual || '—'} м²)`).join(', ')
@@ -915,11 +968,19 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
                         </div>
                       </div>
                     ))}
-                    <label style={{ display: 'block', width: '100%', padding: '6px 0', border: `1px dashed ${isDone ? '#bbf7d0' : '#e8ebf3'}`, borderRadius: 7, background: 'transparent', color: uploadingDoc === dt.key ? '#8596b4' : '#4f6ef7', fontSize: 13, cursor: 'pointer', textAlign: 'center', boxSizing: 'border-box' as const }}>
-                      {uploadingDoc === dt.key ? 'Загрузка...' : isDone ? '+ Добавить ещё' : '+ Загрузить'}
-                      <input type="file" style={{ display: 'none' }} disabled={uploadingDoc === dt.key}
-                        onChange={e => { if (e.target.files?.[0]) handleDocUpload(dt.key, e.target.files[0]); e.target.value = '' }} />
-                    </label>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      {dt.key === 'opd_consent' && (
+                        <button onClick={() => printOPD(saved)}
+                          style={{ flex: 1, padding: '6px 0', border: '1px solid #e8ebf3', borderRadius: 7, background: '#f8f9fc', color: '#374151', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>
+                          📄 Распечатать бланк
+                        </button>
+                      )}
+                      <label style={{ flex: 1, display: 'block', padding: '6px 0', border: `1px dashed ${isDone ? '#bbf7d0' : '#e8ebf3'}`, borderRadius: 7, background: 'transparent', color: uploadingDoc === dt.key ? '#8596b4' : '#4f6ef7', fontSize: 13, cursor: 'pointer', textAlign: 'center', boxSizing: 'border-box' as const }}>
+                        {uploadingDoc === dt.key ? 'Загрузка...' : isDone ? '+ Ещё' : '+ Загрузить'}
+                        <input type="file" style={{ display: 'none' }} disabled={uploadingDoc === dt.key}
+                          onChange={e => { if (e.target.files?.[0]) handleDocUpload(dt.key, e.target.files[0]); e.target.value = '' }} />
+                      </label>
+                    </div>
                   </div>
                 )
               })}
