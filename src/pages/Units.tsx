@@ -13,6 +13,8 @@ interface Unit {
   rent_rate: number
   panorama_url: string
   description: string
+  tenant_id: string | null
+  tenants?: { id: string; full_name: string } | null
 }
 
 const TYPES: Record<string, { label: string; icon: string }> = {
@@ -87,9 +89,15 @@ function UnitForm({ unit, onBack }: { unit: any; onBack: () => void }) {
             </select>
           </div>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
           <div><label style={SL}>Кол-во комнат</label><input style={SI} type="number" value={form.rooms_count} onChange={e => set('rooms_count', Number(e.target.value))} /></div>
-          <div><label style={SL}>Арендная ставка (₽/м²)</label><input style={SI} type="number" value={form.rent_rate || ''} onChange={e => set('rent_rate', Number(e.target.value))} /></div>
+          <div><label style={SL}>Аренда (₽/мес)</label><input style={SI} type="number" value={form.rent_rate || ''} onChange={e => set('rent_rate', Number(e.target.value))} /></div>
+          <div>
+            <label style={SL}>Ставка (₽/м²)</label>
+            <div style={{ ...SI, background: '#f9fafb', color: form.area && form.rent_rate ? '#1a2240' : '#9ca3af', fontWeight: form.area && form.rent_rate ? 500 : 400 }}>
+              {form.area && form.rent_rate ? Math.round(form.rent_rate / form.area).toLocaleString('ru') + ' ₽' : '—'}
+            </div>
+          </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <input type="checkbox" id="window" checked={form.has_window} onChange={e => set('has_window', e.target.checked)} style={{ width: 16, height: 16, cursor: 'pointer' }} />
@@ -122,7 +130,7 @@ export default function UnitsPage() {
 
   async function load() {
     setLoading(true)
-    const { data } = await supabase.from('units').select('*').order('floor').order('number')
+    const { data } = await supabase.from('units').select('*, tenants(id, full_name)').order('floor').order('number')
     setUnits(data || [])
     setLoading(false)
   }
@@ -189,7 +197,7 @@ export default function UnitsPage() {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
             <thead>
               <tr style={{ background: '#f9fafb', borderBottom: '1px solid #e5e7eb' }}>
-                {['№', 'Этаж', 'Тип', 'Площадь', 'Комнат', 'Окно', 'Ставка', 'Статус', ''].map(h => (
+                {['№', 'Этаж', 'Арендатор', 'Тип', 'Площадь', '₽/м²', 'Сумма/мес', 'Статус', ''].map(h => (
                   <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 500, color: '#6b7280', fontSize: 12 }}>{h}</th>
                 ))}
               </tr>
@@ -204,11 +212,11 @@ export default function UnitsPage() {
                     onMouseLeave={e => (e.currentTarget.style.background = '#fff')}>
                     <td style={{ padding: '10px 14px', fontWeight: 600, color: '#111' }}>{u.number}</td>
                     <td style={{ padding: '10px 14px', color: '#6b7280' }}>{u.floor || '—'}</td>
+                    <td style={{ padding: '10px 14px', color: '#1a2240', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.tenants?.full_name || <span style={{ color: '#9ca3af' }}>—</span>}</td>
                     <td style={{ padding: '10px 14px' }}>{t.icon} {t.label}</td>
                     <td style={{ padding: '10px 14px', color: '#374151' }}>{u.area ? `${u.area} м²` : '—'}</td>
-                    <td style={{ padding: '10px 14px', color: '#374151' }}>{u.rooms_count || 1}</td>
-                    <td style={{ padding: '10px 14px' }}>{u.has_window ? '✓' : '—'}</td>
-                    <td style={{ padding: '10px 14px', color: '#374151' }}>{u.rent_rate ? `${u.rent_rate.toLocaleString('ru')} ₽` : '—'}</td>
+                    <td style={{ padding: '10px 14px', color: '#374151' }}>{u.area && u.rent_rate ? Math.round(u.rent_rate / u.area).toLocaleString('ru') + ' ₽' : '—'}</td>
+                    <td style={{ padding: '10px 14px', color: '#1a2240', fontWeight: 500 }}>{u.rent_rate ? u.rent_rate.toLocaleString('ru', { maximumFractionDigits: 0 }) + ' ₽' : '—'}</td>
                     <td style={{ padding: '10px 14px' }}>
                       <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 10, background: st.bg, color: st.color }}>{st.label}</span>
                     </td>
