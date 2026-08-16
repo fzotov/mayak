@@ -61,6 +61,7 @@ const emptyForm = {
   legalAddress: '', bankAccount: '', correspondentAccount: '', bik: '', bank: '',
   directorName: '', directorPosition: 'Директор', directorBasis: 'Устав',
   passportSeries: '', passportNumber: '', passportIssuedBy: '', passportIssuedDate: '',
+  contactName: '', contactPhone: '', contactEmail: '',
   contractNumber: '', contractStartDate: '', contractEndDate: '',
   rent: 0, onboardingStatus: 'not_started',
 }
@@ -283,6 +284,9 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
           passportNumber: data.passport_number || '',
           passportIssuedBy: data.passport_issued_by || '',
           passportIssuedDate: data.passport_issued_date || '',
+          contactName: data.contact_name || '',
+          contactPhone: data.contact_phone || '',
+          contactEmail: data.contact_email || '',
           contractNumber: data.contract_number || '',
           contractStartDate: data.contract_start_date || '',
           contractEndDate: data.contract_end_date || '',
@@ -332,6 +336,9 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
       passport_number: form.passportNumber || null,
       passport_issued_by: form.passportIssuedBy || null,
       passport_issued_date: form.passportIssuedDate || null,
+      contact_name: form.contactName || null,
+      contact_phone: form.contactPhone || null,
+      contact_email: form.contactEmail || null,
       contract_number: form.contractNumber || null,
       contract_start_date: form.contractStartDate || null,
       contract_end_date: form.contractEndDate || null,
@@ -641,18 +648,41 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
             </div>
           </div>
 
-          <div style={s.card}>
-            <div style={s.sectionTitle}>Руководитель</div>
-            <div style={s.grid3}>
-              <Field label="ФИО директора" k="directorName" />
-              <Field label="Должность" k="directorPosition" />
-              <Field label="Действует на основании" k="directorBasis" />
+          {(form.type === 'COMPANY') && (
+            <div style={s.card}>
+              <div style={s.sectionTitle}>Руководитель</div>
+              <div style={s.grid3}>
+                <Field label="ФИО директора" k="directorName" />
+                <Field label="Должность" k="directorPosition" />
+                <Field label="Действует на основании" k="directorBasis" />
+              </div>
+              <div style={{ ...s.grid4, marginTop: 12 }}>
+                <Field label="Серия паспорта" k="passportSeries" />
+                <Field label="Номер паспорта" k="passportNumber" />
+                <Field label="Дата выдачи" k="passportIssuedDate" type="date" />
+                <Field label="Кем выдан" k="passportIssuedBy" />
+              </div>
             </div>
-            <div style={{ ...s.grid4, marginTop: 12 }}>
-              <Field label="Серия паспорта" k="passportSeries" />
-              <Field label="Номер паспорта" k="passportNumber" />
-              <Field label="Дата выдачи" k="passportIssuedDate" type="date" />
-              <Field label="Кем выдан" k="passportIssuedBy" />
+          )}
+
+          {(form.type === 'IP' || form.type === 'INDIVIDUAL' || form.type === 'SELF_EMPLOYED') && (
+            <div style={s.card}>
+              <div style={s.sectionTitle}>Паспортные данные</div>
+              <div style={s.grid4}>
+                <Field label="Серия паспорта" k="passportSeries" />
+                <Field label="Номер паспорта" k="passportNumber" />
+                <Field label="Дата выдачи" k="passportIssuedDate" type="date" />
+                <Field label="Кем выдан" k="passportIssuedBy" />
+              </div>
+            </div>
+          )}
+
+          <div style={s.card}>
+            <div style={s.sectionTitle}>Контактное лицо</div>
+            <div style={s.grid3}>
+              <Field label="ФИО контактного лица" k="contactName" />
+              <Field label="Телефон" k="contactPhone" type="tel" />
+              <Field label="Email" k="contactEmail" type="email" />
             </div>
           </div>
 
