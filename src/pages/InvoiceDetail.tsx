@@ -29,11 +29,17 @@ export function InvoiceDetailPage({ invoice, onBack }: { invoice: any; onBack: (
 
     const qrDataUrl = await QRCode.toDataURL(qrString, { width: 120, margin: 1, errorCorrectionLevel: 'M' })
 
-    const lines = [
-      { name: 'Аренда нежилого помещения № ' + unit + ' за ' + (invoice.periodStart?.slice(0,7) || ''), amount: Math.round(total * 0.85) },
-      { name: 'Уборка помещения', amount: 2500 },
-      { name: 'Электроэнергия (по показаниям приборов учёта)', amount: Math.round(total * 0.1) },
-    ]
+    const buildLines = () => {
+      const r = invoice.rentAmount || 0, c = invoice.cleaningAmount || 0, u = invoice.utilitiesAmount || 0, sv = invoice.servicesAmount || 0
+      if (!r && !c && !u && !sv) return [{ name: 'Аренда нежилого помещения № ' + unit, amount: total }]
+      return [
+        r > 0 && { name: 'Аренда нежилого помещения № ' + unit + ' за ' + (invoice.periodStart?.slice(0,7) || ''), amount: r },
+        c > 0 && { name: 'Уборка помещения', amount: c },
+        u > 0 && { name: 'Электроэнергия (по показаниям приборов учёта)', amount: u },
+        sv > 0 && { name: 'Дополнительные услуги', amount: sv },
+      ].filter(Boolean) as { name: string; amount: number }[]
+    }
+    const lines = buildLines()
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Счёт ${num}</title>
     <style>
       *{margin:0;padding:0;box-sizing:border-box}
@@ -156,12 +162,17 @@ export function InvoiceDetailPage({ invoice, onBack }: { invoice: any; onBack: (
     label: { fontSize: 11, color: '#8596b4', marginBottom: 3 } as React.CSSProperties,
     value: { fontSize: 13, color: '#1a2240', fontWeight: 500 } as React.CSSProperties,
   }
-  const lines = [
-    { name: 'Аренда (постоянная часть)', amount: Math.round(invoice.total * 0.85) },
-    { name: 'Уборка помещения', amount: 2500 },
-    { name: 'Электроэнергия', amount: Math.round(invoice.total * 0.1) },
-    { name: 'Доп. услуги', amount: Math.round(invoice.total * 0.05) },
-  ]
+  const buildLines = () => {
+    const r = invoice.rentAmount || 0, c = invoice.cleaningAmount || 0, u = invoice.utilitiesAmount || 0, sv = invoice.servicesAmount || 0
+    if (!r && !c && !u && !sv) return [{ name: 'Аренда нежилого помещения', amount: invoice.total }]
+    return [
+      r > 0 && { name: 'Аренда (постоянная часть)', amount: r },
+      c > 0 && { name: 'Уборка помещения', amount: c },
+      u > 0 && { name: 'Электроэнергия', amount: u },
+      sv > 0 && { name: 'Дополнительные услуги', amount: sv },
+    ].filter(Boolean) as { name: string; amount: number }[]
+  }
+  const lines = buildLines()
   return (
     <div style={{ maxWidth: 700 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>

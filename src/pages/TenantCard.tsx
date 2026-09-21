@@ -252,10 +252,12 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
   const [creating, setCreating] = useState(false)
   const [invoiceCreated, setInvoiceCreated] = useState(false)
   const MONTHS = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь']
-  const [meters] = useState([
-    { type: 'electricity', serial: 'ЭЛ-12345', tariff: 6.38, lastReading: 15420, date: '01.06.2025' },
-    { type: 'cold_water', serial: 'ХВ-67890', tariff: 45.2, lastReading: 234, date: '01.06.2025' },
-  ])
+  const [meters, setMeters] = useState<any[]>([])
+  const [metersLoaded, setMetersLoaded] = useState(false)
+  const [meterReadings, setMeterReadings] = useState<Record<string, string>>({})
+  const [savingMeter, setSavingMeter] = useState<string | null>(null)
+  const [tenantInvoices, setTenantInvoices] = useState<any[]>([])
+  const [invoicesLoaded, setInvoicesLoaded] = useState(false)
 
   useEffect(() => {
     if (!tenantId) return
@@ -310,6 +312,23 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
         supabase.from('tenant_contracts').select('*').eq('tenant_id', tenantId).order('created_at', { ascending: false })
           .then(({ data: cts }) => { setContracts(cts || []); setContractsLoaded(true) })
           .catch(() => { setContracts([]); setContractsLoaded(true) })
+        // Load invoices
+        supabase.from('invoices').select('id,number,period,total_amount,status,units(number)').eq('tenant_id', tenantId).order('created_at', { ascending: false })
+          .then(({ data: invs }) => { setTenantInvoices(invs || []); setInvoicesLoaded(true) })
+          .catch(() => { setTenantInvoices([]); setInvoicesLoaded(true) })
+        // Load meters via premises units
+        supabase.from('tenant_premises').select('unit_number').eq('tenant_id', tenantId)
+          .then(async ({ data: prems }) => {
+            const unitNums = (prems || []).map((p: any) => p.unit_number).filter(Boolean)
+            if (!unitNums.length) { setMeters([]); setMetersLoaded(true); return }
+            const { data: units } = await supabase.from('units').select('id').in('number', unitNums)
+            const unitIds = (units || []).map((u: any) => u.id)
+            if (!unitIds.length) { setMeters([]); setMetersLoaded(true); return }
+            const { data: ms } = await supabase.from('meters').select('id,number,serial,type,tariff,heat_tariff,location,meter_readings(period,curr_value,created_at)').in('unit_id', unitIds)
+            setMeters(ms || [])
+            setMetersLoaded(true)
+          })
+          .catch(() => { setMeters([]); setMetersLoaded(true) })
       }).finally(() => setLoadingTenant(false))
   }, [tenantId])
 
@@ -892,25 +911,62 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
       {tab === 3 && (
         <div style={s.card}>
           <div style={s.sectionTitle}>Приборы учёта</div>
-          {meters.map((m, i) => (
-            <div key={i} style={{ padding: 12, background: '#f8f9fc', borderRadius: 8, marginBottom: 10 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                <div>
-                  <div style={{ fontSize: 14, fontWeight: 500, color: '#1a2240' }}>{METER_LABELS[m.type]}</div>
-                  <div style={{ fontSize: 13, color: '#8596b4', marginTop: 2 }}>№ {m.serial} · тариф {m.tariff} ₽/{METER_UNITS[m.type]}</div>
+          {!metersLoaded ? (
+            <div style={{ color: '#8596b4', fontSize: 13 }}>Загрузка...</div>
+          ) : meters.length === 0 ? (
+            <div style={{ color: '#8596b4', fontSize: 13, padding: '12px 0' }}>Счётчики не найдены для помещений арендатора</div>
+          ) : meters.map((m: any) => {
+            const readings = (m.meter_readings || []).sort((a: any, b: any) => (b.created_at || '').localeCompare(a.created_at || ''))
+            const last = readings[0]
+            const tariff = m.heat_tariff || m.tariff
+            return (
+              <div key={m.id} style={{ padding: 12, background: '#f8f9fc', borderRadius: 8, marginBottom: 10 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 500, color: '#1a2240' }}>{METER_LABELS[m.type] || m.type}{m.number ? ` · #${m.number}` : ''}</div>
+                    <div style={{ fontSize: 13, color: '#8596b4', marginTop: 2 }}>№ {m.serial || '—'}{tariff ? ` · тариф ${tariff} ₽/${METER_UNITS[m.type] || 'ед.'}` : ''}{m.location ? ` · ${m.location}` : ''}</div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    {last ? (
+                      <>
+                        <div style={{ fontSize: 14, fontWeight: 600, color: '#1a2240' }}>{last.curr_value} {METER_UNITS[m.type] || 'ед.'}</div>
+                        <div style={{ fontSize: 13, color: '#8596b4' }}>за {last.period || new Date(last.created_at).toLocaleDateString('ru')}</div>
+                      </>
+                    ) : <div style={{ fontSize: 13, color: '#8596b4' }}>Нет показаний</div>}
+                  </div>
                 </div>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: '#1a2240' }}>{m.lastReading} {METER_UNITS[m.type]}</div>
-                  <div style={{ fontSize: 13, color: '#8596b4' }}>на {m.date}</div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input
+                    placeholder="Новое показание"
+                    style={{ ...s.inp, flex: 1 }}
+                    type="number"
+                    value={meterReadings[m.id] || ''}
+                    onChange={e => setMeterReadings(r => ({ ...r, [m.id]: e.target.value }))}
+                  />
+                  <button
+                    disabled={!meterReadings[m.id] || savingMeter === m.id}
+                    onClick={async () => {
+                      const curr = parseFloat(meterReadings[m.id])
+                      if (isNaN(curr)) return
+                      setSavingMeter(m.id)
+                      const period = new Date().toISOString().slice(0, 7)
+                      const prev = last?.curr_value ?? 0
+                      const consumption = Math.max(0, curr - prev)
+                      const amount = tariff ? consumption * tariff : 0
+                      await supabase.from('meter_readings').insert({ meter_id: m.id, period, prev_value: prev, curr_value: curr, consumption, amount })
+                      setMeterReadings(r => ({ ...r, [m.id]: '' }))
+                      // Refresh meters
+                      const { data: fresh } = await supabase.from('meter_readings').select('period,curr_value,created_at').eq('meter_id', m.id).order('created_at', { ascending: false }).limit(1)
+                      setMeters(prev => prev.map(x => x.id === m.id ? { ...x, meter_readings: [...(fresh || []), ...(x.meter_readings || [])] } : x))
+                      setSavingMeter(null)
+                    }}
+                    style={{ padding: '7px 14px', border: 'none', borderRadius: 6, background: savingMeter === m.id ? '#a5b4fc' : '#4f6ef7', color: '#fff', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500 }}>
+                    {savingMeter === m.id ? '...' : 'Сохранить'}
+                  </button>
                 </div>
               </div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <input placeholder="Новое показание" style={{ ...s.inp, flex: 1 }} type="number" />
-                <button style={{ padding: '7px 14px', border: 'none', borderRadius: 6, background: '#4f6ef7', color: '#fff', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500 }}>Сохранить</button>
-              </div>
-            </div>
-          ))}
-          <button style={{ width: '100%', padding: 8, border: '1px dashed #e8ebf3', borderRadius: 7, background: 'transparent', color: '#4f6ef7', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit', marginTop: 4 }}>+ Добавить счётчик</button>
+            )
+          })}
         </div>
       )}
 
@@ -918,33 +974,41 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
       {tab === 4 && (
         <div style={s.card}>
           <div style={s.sectionTitle}>История счетов</div>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
-            <thead><tr style={{ background: '#f8f9fc', borderBottom: '1px solid #e8ebf3' }}>
-              {['Номер', 'Период', 'Аренда', 'Услуги', 'Итого', 'Статус'].map(h => (
-                <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 500, color: '#8596b4', fontSize: 13 }}>{h}</th>
-              ))}
-            </tr></thead>
-            <tbody>
-              {[
-                { num: '2025-0041', period: 'Июнь 2025', rent: 20500, util: 2500, status: 'SENT' },
-                { num: '2025-0028', period: 'Май 2025', rent: 20500, util: 2100, status: 'PAID' },
-                { num: '2025-0015', period: 'Апрель 2025', rent: 20500, util: 1850, status: 'PAID' },
-              ].map((inv, i) => (
-                <tr key={i} style={{ borderBottom: '1px solid #f0f2f8' }}>
-                  <td style={{ padding: '9px 12px', fontWeight: 500, color: '#1a2240' }}>№{inv.num}</td>
-                  <td style={{ padding: '9px 12px', color: '#6b7280' }}>{inv.period}</td>
-                  <td style={{ padding: '9px 12px' }}>{inv.rent.toLocaleString('ru')} ₽</td>
-                  <td style={{ padding: '9px 12px' }}>{inv.util.toLocaleString('ru')} ₽</td>
-                  <td style={{ padding: '9px 12px', fontWeight: 600 }}>{(inv.rent + inv.util).toLocaleString('ru')} ₽</td>
-                  <td style={{ padding: '9px 12px' }}>
-                    <span style={{ padding: '2px 8px', borderRadius: 10, fontSize: 13, fontWeight: 500, background: inv.status === 'PAID' ? '#f0fdf4' : '#eff6ff', color: inv.status === 'PAID' ? '#16a34a' : '#2563eb' }}>
-                      {inv.status === 'PAID' ? 'Оплачен' : 'Выставлен'}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          {!invoicesLoaded ? (
+            <div style={{ color: '#8596b4', fontSize: 13 }}>Загрузка...</div>
+          ) : tenantInvoices.length === 0 ? (
+            <div style={{ color: '#8596b4', fontSize: 13, padding: '12px 0' }}>Счетов не найдено</div>
+          ) : (
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+              <thead><tr style={{ background: '#f8f9fc', borderBottom: '1px solid #e8ebf3' }}>
+                {['Номер', 'Период', 'Офис', 'Итого', 'Статус'].map(h => (
+                  <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 500, color: '#8596b4', fontSize: 13 }}>{h}</th>
+                ))}
+              </tr></thead>
+              <tbody>
+                {tenantInvoices.map((inv: any) => {
+                  const STATUS_MAP: Record<string, { label: string; bg: string; color: string }> = {
+                    DRAFT:   { label: 'Черновик', bg: '#f3f4f6', color: '#6b7280' },
+                    SENT:    { label: 'Выставлен', bg: '#eff6ff', color: '#2563eb' },
+                    OVERDUE: { label: 'Просрочен', bg: '#fee2e2', color: '#ef4444' },
+                    PAID:    { label: 'Оплачен',   bg: '#f0fdf4', color: '#16a34a' },
+                  }
+                  const st = STATUS_MAP[inv.status] || { label: inv.status, bg: '#f3f4f6', color: '#6b7280' }
+                  return (
+                    <tr key={inv.id} style={{ borderBottom: '1px solid #f0f2f8' }}>
+                      <td style={{ padding: '9px 12px', fontWeight: 500, color: '#1a2240' }}>№{inv.number}</td>
+                      <td style={{ padding: '9px 12px', color: '#6b7280' }}>{inv.period?.slice(0, 7) || '—'}</td>
+                      <td style={{ padding: '9px 12px', color: '#6b7280' }}>{inv.units?.number || '—'}</td>
+                      <td style={{ padding: '9px 12px', fontWeight: 600, color: inv.status === 'OVERDUE' ? '#ef4444' : '#1a2240' }}>{(inv.total_amount || 0).toLocaleString('ru')} ₽</td>
+                      <td style={{ padding: '9px 12px' }}>
+                        <span style={{ padding: '2px 8px', borderRadius: 10, fontSize: 13, fontWeight: 500, background: st.bg, color: st.color }}>{st.label}</span>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          )}
         </div>
       )}
 

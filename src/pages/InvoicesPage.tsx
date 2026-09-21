@@ -352,6 +352,10 @@ function toDetailFormat(inv: Invoice & { _status?: string }) {
     periodStart: inv.period,
     dueDate: inv.due_date,
     status: STATUS_UP[inv._status ?? inv.status] ?? inv.status.toUpperCase(),
+    rentAmount: (inv as any).rent_amount ?? 0,
+    cleaningAmount: (inv as any).cleaning_amount ?? 0,
+    utilitiesAmount: (inv as any).utilities_amount ?? 0,
+    servicesAmount: (inv as any).services_amount ?? 0,
     lease: {
       tenant: { fullName: inv.tenant?.full_name ?? '—' },
       unit: { number: inv.unit?.number ?? '—' },
@@ -373,7 +377,7 @@ export function InvoicesPage({ onOpenInvoice }: { onOpenInvoice?: (inv: any) => 
 
   async function load() {
     const [{ data: inv }, { data: ten }, { data: un }, { data: svc }] = await Promise.all([
-      supabase.from('invoices').select('*, tenant:tenants(full_name), unit:units(number)').order('created_at', { ascending: false }),
+      supabase.from('invoices').select('*, tenant:tenants(full_name), unit:units(number), rent_amount, cleaning_amount, utilities_amount, services_amount').order('created_at', { ascending: false }),
       supabase.from('tenants').select('id, full_name').order('full_name'),
       supabase.from('units').select('id, number').order('number'),
       supabase.from('services').select('id, name, price, unit, category').order('name'),

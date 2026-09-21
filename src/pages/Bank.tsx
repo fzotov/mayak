@@ -25,6 +25,8 @@ export default function BankPage() {
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<Filter>('all')
   const [uploading, setUploading] = useState(false)
+  const [matching, setMatching] = useState(false)
+  const [matchResult, setMatchResult] = useState('')
   const [parseError, setParseError] = useState('')
   const [search, setSearch] = useState('')
   const [imports, setImports] = useState<string[]>([])
@@ -82,6 +84,24 @@ export default function BankPage() {
       setParseError(String(e))
     } finally {
       setUploading(false)
+    }
+  }
+
+  async function runAiMatch() {
+    setMatching(true)
+    setMatchResult('')
+    try {
+      const resp = await fetch('/api/match-transactions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) })
+      const data = await resp.json()
+      if (!data.ok) { setMatchResult('Ошибка: ' + data.error); return }
+      const applied = data.applied?.length ?? 0
+      const total = data.matches?.length ?? 0
+      setMatchResult(`✓ AI проанализировал ${total} транзакций, автоматически сопоставлено ${applied}`)
+      await load()
+    } catch (e) {
+      setMatchResult('Ошибка: ' + String(e))
+    } finally {
+      setMatching(false)
     }
   }
 
@@ -153,6 +173,18 @@ export default function BankPage() {
           style={{ padding: '6px 12px', borderRadius: 7, border: '1px solid #e8ebf3', fontSize: 13, fontFamily: 'inherit', outline: 'none', width: 200 }}
         />
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
+          {unmatched > 0 && (
+            <button onClick={runAiMatch} disabled={matching}
+              style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid #8b5cf6', background: '#f5f3ff', color: '#7c3aed', fontSize: 13, fontWeight: 600, cursor: matching ? 'default' : 'pointer', opacity: matching ? 0.7 : 1, fontFamily: 'inherit' }}>
+              {matching ? '⏳ AI анализирует...' : `✦ AI сопоставить (${unmatched})`}
+            </button>
+          )}
+          {unmatched > 0 && (
+            <button onClick={() => window.dispatchEvent(new CustomEvent('navigate', { detail: 'reconcile' }))}
+              style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid #f59e0b', background: '#fffbeb', color: '#b45309', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+              ⚡ Сверить ({unmatched})
+            </button>
+          )}
           {imports.length > 0 && (
             <select onChange={e => { if (e.target.value) deleteImport(e.target.value) }} defaultValue=""
               style={{ padding: '6px 10px', borderRadius: 7, border: '1px solid #e8ebf3', fontSize: 12, fontFamily: 'inherit', color: '#8596b4', cursor: 'pointer' }}>
@@ -174,6 +206,11 @@ export default function BankPage() {
         </div>
       </div>
 
+      {matchResult && (
+        <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 8, padding: '10px 14px', color: '#16a34a', fontSize: 13 }}>
+          {matchResult}
+        </div>
+      )}
       {parseError && (
         <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', color: '#ef4444', fontSize: 12, whiteSpace: 'pre-wrap', fontFamily: 'monospace', maxHeight: 200, overflowY: 'auto' }}>
           {parseError}

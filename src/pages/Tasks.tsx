@@ -99,7 +99,7 @@ function TaskModal({ task, staff, onClose, onSaved }: { task: Task | null; staff
   )
 }
 
-export default function TasksPage() {
+function TasksBoard({ sourceFilter }: { sourceFilter?: string }) {
   const [tasks, setTasks] = useState<Task[]>([])
   const [staff, setStaff] = useState<Staff[]>([])
   const [loading, setLoading] = useState(true)
@@ -107,12 +107,14 @@ export default function TasksPage() {
   const [showModal, setShowModal] = useState(false)
   const [newStatus, setNewStatus] = useState<Task['status']>('todo')
 
-  useEffect(() => { fetchAll() }, [])
+  useEffect(() => { fetchAll() }, [sourceFilter])
 
   async function fetchAll() {
     setLoading(true)
+    let q = supabase.from('tasks').select('*, assignee:staff(full_name)').order('due_date', { ascending: true })
+    if (sourceFilter) q = (q as any).eq('source', sourceFilter)
     const [{ data: t }, { data: s }] = await Promise.all([
-      supabase.from('tasks').select('*, assignee:staff(full_name)').order('due_date', { ascending: true }),
+      q,
       supabase.from('staff').select('id, full_name').eq('status', 'active').order('full_name')
     ])
     setTasks(t || [])
@@ -125,6 +127,8 @@ export default function TasksPage() {
     setNewStatus(status)
     setShowModal(true)
   }
+
+  const defaultTask = sourceFilter ? { ...emptyTask, source: sourceFilter } : emptyTask
 
   return (
     <div>
@@ -167,12 +171,25 @@ export default function TasksPage() {
 
       {showModal && (
         <TaskModal
-          task={selected}
+          task={selected || (defaultTask as any)}
           staff={staff}
           onClose={() => setShowModal(false)}
           onSaved={() => { setShowModal(false); fetchAll() }}
         />
       )}
+    </div>
+  )
+}
+
+export default function TasksPage() {
+  return <TasksBoard />
+}
+
+export function MyTasksPage() {
+  return (
+    <div>
+      <div style={{ fontSize: 13, color: '#8596b4', marginBottom: 14 }}>Личные задачи — созданы сотрудниками</div>
+      <TasksBoard sourceFilter="EMPLOYEE" />
     </div>
   )
 }

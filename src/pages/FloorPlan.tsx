@@ -1,221 +1,261 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 
-const OCC = '#e8d5b0'
-const FREE = '#c8e6c9'
-const DEBT = '#ffcdd2'
-const BRD = '#5d4037'
-const W = 820
-const H = 460
-
-type Office = { id: string; number: string; area: number; x: number; y: number; w: number; h: number }
-
-// 2 этаж — точно по плану
-// Здание: 3 коридора, верхний/средний/нижний ряд
-// Верхний ряд: 201-209 слева направо
-// Средний: 223/224 слева, 226-234 центр, 213 справа
-// Нижний: лестница слева, 221-214 справо
-const F2: Office[] = [
-  // ===== ВЕРХНИЙ РЯД =====
-  { id:'201', number:'201,202', area:38.30, x:15,  y:12, w:112, h:85 },
-  { id:'203', number:'203',     area:24.10, x:129, y:12, w:80,  h:85 },
-  { id:'204', number:'204',     area:21.60, x:211, y:12, w:72,  h:85 },
-  { id:'205', number:'205',     area:19.70, x:285, y:12, w:66,  h:85 },
-  { id:'206', number:'206',     area:24.10, x:353, y:12, w:80,  h:85 },
-  { id:'207', number:'207',     area:26.20, x:435, y:12, w:84,  h:85 },
-  { id:'208', number:'208',     area:21.82, x:521, y:12, w:72,  h:85 },
-  { id:'209', number:'209',     area:25.15, x:595, y:12, w:82,  h:85 },
-  // ===== СРЕДНИЙ РЯД ЛЕВЫЙ =====
-  { id:'224', number:'224', area:21.20, x:15, y:138, w:80, h:64 },
-  { id:'223', number:'223', area:23.10, x:15, y:205, w:80, h:75 },
-  // ===== СРЕДНИЙ РЯД ЦЕНТР =====
-  { id:'226',  number:'226',  area:14.40, x:145, y:138, w:58, h:64 },
-  { id:'227',  number:'227',  area:10.20, x:205, y:138, w:46, h:64 },
-  { id:'228',  number:'228',  area:10.10, x:253, y:138, w:46, h:64 },
-  { id:'229',  number:'229',  area:21.30, x:301, y:138, w:72, h:64 },
-  { id:'230',  number:'230',  area:44.85, x:375, y:138, w:168,h:64 },
-  { id:'231',  number:'231',  area:12.50, x:145, y:205, w:58, h:75 },
-  { id:'231a', number:'231А', area:10.20, x:205, y:205, w:46, h:75 },
-  { id:'231b', number:'231Б', area:10.30, x:253, y:205, w:46, h:75 },
-  { id:'232',  number:'232',  area:16.60, x:301, y:205, w:58, h:75 },
-  { id:'232a', number:'232А', area:16.87, x:361, y:205, w:58, h:75 },
-  { id:'233',  number:'233',  area:13.90, x:421, y:205, w:52, h:75 },
-  { id:'234',  number:'234',  area:12.20, x:475, y:205, w:48, h:75 },
-  // ===== ПРАВЫЙ ТОРЕЦ =====
-  { id:'213', number:'213', area:14.80, x:683, y:138, w:60, h:142 },
-  // ===== НИЖНИЙ РЯД (после лестницы) =====
-  { id:'221', number:'221', area:25.00, x:112, y:332, w:80, h:80 },
-  { id:'220', number:'220', area:23.10, x:194, y:332, w:76, h:80 },
-  { id:'219', number:'219', area:18.10, x:272, y:332, w:62, h:80 },
-  { id:'218', number:'218', area:23.56, x:336, y:332, w:76, h:80 },
-  { id:'217', number:'217', area:24.20, x:414, y:332, w:78, h:80 },
-  { id:'216', number:'216', area:25.56, x:494, y:332, w:82, h:80 },
-  { id:'215', number:'215', area:25.40, x:578, y:332, w:82, h:80 },
-  { id:'214', number:'214', area:21.50, x:662, y:332, w:70, h:80 },
+// Exact room coordinates from rooms.json (original SVG viewBox 0 0 2048 1150)
+// The overlay SVG uses the same viewBox — coordinates align 1:1 with the floor plan image
+const ROOMS_F2 = [
+  { id:'201-202', number:'201, 202', area_m2:38.30, x:64,   y:27,  w:196, h:216 },
+  { id:'203',     number:'203',      area_m2:24.10, x:333,  y:29,  w:143, h:214 },
+  { id:'204',     number:'204',      area_m2:21.60, x:476,  y:29,  w:149, h:214 },
+  { id:'205',     number:'205',      area_m2:19.70, x:625,  y:29,  w:142, h:214 },
+  { id:'206',     number:'206',      area_m2:24.10, x:767,  y:29,  w:147, h:214 },
+  { id:'207',     number:'207',      area_m2:26.20, x:914,  y:29,  w:151, h:214 },
+  { id:'208',     number:'208',      area_m2:21.82, x:1065, y:29,  w:145, h:214 },
+  { id:'209',     number:'209',      area_m2:25.15, x:1210, y:29,  w:151, h:214 },
+  { id:'224',     number:'224',      area_m2:21.20, x:128,  y:311, w:201, h:126 },
+  { id:'223',     number:'223',      area_m2:23.10, x:128,  y:438, w:201, h:124 },
+  { id:'226',     number:'226',      area_m2:14.40, x:407,  y:311, w:142, h:126 },
+  { id:'227',     number:'227',      area_m2:10.20, x:549,  y:311, w:94,  h:126 },
+  { id:'228',     number:'228',      area_m2:10.10, x:643,  y:311, w:96,  h:126 },
+  { id:'229',     number:'229',      area_m2:21.30, x:739,  y:311, w:205, h:126 },
+  { id:'230',     number:'230',      area_m2:44.85, x:944,  y:311, w:416, h:126 },
+  { id:'231',     number:'231',      area_m2:12.50, x:407,  y:438, w:142, h:124 },
+  { id:'231A',    number:'231A',     area_m2:10.20, x:549,  y:438, w:94,  h:124 },
+  { id:'231B',    number:'231Б',     area_m2:10.30, x:643,  y:438, w:96,  h:124 },
+  { id:'232',     number:'232',      area_m2:16.60, x:739,  y:438, w:149, h:124 },
+  { id:'232A',    number:'232A',     area_m2:16.87, x:888,  y:438, w:151, h:124 },
+  { id:'233',     number:'233',      area_m2:13.90, x:1039, y:438, w:129, h:124 },
+  { id:'234',     number:'234',      area_m2:12.20, x:1168, y:438, w:99,  h:124 },
+  { id:'213',     number:'213',      area_m2:14.80, x:1451, y:525, w:109, h:169 },
+  { id:'221',     number:'221',      area_m2:25.00, x:329,  y:638, w:145, h:208 },
+  { id:'220',     number:'220',      area_m2:23.10, x:474,  y:638, w:151, h:208 },
+  { id:'219',     number:'219',      area_m2:18.10, x:625,  y:638, w:141, h:208 },
+  { id:'218',     number:'218',      area_m2:23.56, x:766,  y:638, w:140, h:208 },
+  { id:'217',     number:'217',      area_m2:24.20, x:906,  y:638, w:146, h:208 },
+  { id:'216',     number:'216',      area_m2:25.56, x:1052, y:638, w:143, h:208 },
+  { id:'215',     number:'215',      area_m2:25.40, x:1195, y:638, w:166, h:208 },
+  { id:'214',     number:'214',      area_m2:21.50, x:1364, y:694, w:196, h:152 },
 ]
 
-const F3: Office[] = [
-  // ===== ВЕРХНИЙ РЯД =====
-  { id:'301', number:'301,302', area:38.20, x:15,  y:12, w:112, h:85 },
-  { id:'303', number:'303',     area:24.30, x:129, y:12, w:80,  h:85 },
-  { id:'304', number:'304',     area:21.90, x:211, y:12, w:72,  h:85 },
-  { id:'305', number:'305',     area:20.00, x:285, y:12, w:66,  h:85 },
-  { id:'306', number:'306',     area:23.80, x:353, y:12, w:80,  h:85 },
-  { id:'307', number:'307',     area:26.00, x:435, y:12, w:84,  h:85 },
-  { id:'308', number:'308',     area:21.90, x:521, y:12, w:72,  h:85 },
-  { id:'309', number:'309',     area:24.90, x:595, y:12, w:82,  h:85 },
-  // ===== СРЕДНИЙ РЯД ЛЕВЫЙ =====
-  { id:'324', number:'324', area:21.20, x:15, y:138, w:80, h:64 },
-  { id:'323', number:'323', area:23.00, x:15, y:205, w:80, h:75 },
-  // ===== СРЕДНИЙ РЯД ЦЕНТР =====
-  { id:'326a', number:'326А', area:40.40, x:145, y:138, w:92, h:142 },
-  { id:'326',  number:'326',  area:12.90, x:239, y:138, w:52, h:64 },
-  { id:'327',  number:'327',  area:21.10, x:293, y:138, w:72, h:64 },
-  { id:'328',  number:'328',  area:21.10, x:367, y:138, w:72, h:64 },
-  { id:'329',  number:'329',  area:22.20, x:441, y:138, w:74, h:64 },
-  { id:'326b', number:'326Б', area:17.30, x:239, y:205, w:52, h:75 },
-  { id:'330',  number:'330',  area:15.65, x:293, y:205, w:72, h:75 },
-  { id:'330a', number:'330А', area:17.45, x:367, y:205, w:56, h:75 },
-  { id:'331',  number:'331',  area:13.60, x:425, y:205, w:52, h:75 },
-  { id:'332',  number:'332',  area:12.20, x:479, y:205, w:48, h:75 },
-  // ===== ПРАВЫЙ ТОРЕЦ =====
-  { id:'313', number:'313', area:14.80, x:683, y:138, w:60, h:142 },
-  // ===== НИЖНИЙ РЯД =====
-  { id:'321', number:'321', area:25.00, x:112, y:332, w:80, h:80 },
-  { id:'320', number:'320', area:23.50, x:194, y:332, w:76, h:80 },
-  { id:'319', number:'319', area:18.60, x:272, y:332, w:62, h:80 },
-  { id:'318', number:'318', area:23.90, x:336, y:332, w:76, h:80 },
-  { id:'317', number:'317', area:22.50, x:414, y:332, w:78, h:80 },
-  { id:'316', number:'316', area:26.00, x:494, y:332, w:82, h:80 },
-  { id:'315', number:'315', area:25.90, x:578, y:332, w:82, h:80 },
-  { id:'314', number:'314', area:21.50, x:662, y:332, w:70, h:80 },
-]
+// Free rooms on floor 2 — only 231, 232, 217 (NOT 228)
+const FREE_F2 = new Set(['231', '232', '217'])
 
-const MOCK: Record<string, {status: string; tenant?: string}> = {
-  '203': { status: 'OCCUPIED', tenant: 'ИП Фролова Е.В.' },
-  '204': { status: 'OCCUPIED', tenant: 'ООО Техцентр' },
-  '208': { status: 'OCCUPIED', tenant: 'ООО Консалт' },
-  '231': { status: 'FREE' },
-  '232': { status: 'FREE' },
-  '215': { status: 'FREE' },
-  '327': { status: 'FREE' },
-  '330': { status: 'FREE' },
+type Room = typeof ROOMS_F2[number]
+
+type TenantInfo = {
+  id: string
+  full_name: string
+  unit_number: string
+  monthly_rent: number | null
+  monthly_total: number | null
+  contract_number: string | null
+  contract_start_date: string | null
+  tenant_group: string
+  inn: string | null
 }
 
-export function FloorPlanPage() {
-  const [buildings, setBuildings] = useState<any[]>([])
-  const [selBuilding, setSelBuilding] = useState<any>(null)
+function fmt(n: number | null | undefined) {
+  if (!n) return '—'
+  return new Intl.NumberFormat('ru-RU').format(n) + ' ₽'
+}
+
+export function FloorPlanPage({ onOpenTenant }: { onOpenTenant?: (id: string) => void }) {
   const [floor, setFloor] = useState(2)
-  const [sel, setSel] = useState<string|null>(null)
+  const [hoverId, setHoverId] = useState<string | null>(null)
+  const [selId, setSelId]   = useState<string | null>(null)
+  const [byUnit, setByUnit] = useState<Record<string, TenantInfo>>({})
 
   useEffect(() => {
-    supabase.from('buildings').select('*').eq('active', true).then(({ data }) => {
-      if (data?.length) { setBuildings(data); setSelBuilding(data[0]) }
-    })
+    supabase
+      .from('tenants')
+      .select('id,full_name,unit_number,monthly_rent,monthly_total,contract_number,contract_start_date,tenant_group,inn')
+      .not('unit_number', 'is', null)
+      .then(({ data }) => {
+        if (!data) return
+        const map: Record<string, TenantInfo> = {}
+        for (const t of data) {
+          const raw = t.unit_number as string
+          for (const part of raw.split(/[,\s]+/)) {
+            const p = part.trim()
+            if (!p || /^ещё$/i.test(p) || /^и$/i.test(p)) continue
+            for (const sub of p.includes('.') ? p.split('.') : [p]) {
+              const c = sub.trim()
+              if (c) map[c.toUpperCase()] = t as TenantInfo
+            }
+          }
+        }
+        setByUnit(map)
+      })
   }, [])
 
-  const offices = floor === 2 ? F2 : F3
-  const selOffice = offices.find(o => o.id === sel)
-  const getS = (id: string) => MOCK[id]?.status || 'OCCUPIED'
-  const getT = (id: string) => MOCK[id]?.tenant
-  const getC = (id: string, s: boolean) => s ? '#1a2240' : getS(id) === 'FREE' ? FREE : getS(id) === 'DEBT' ? DEBT : OCC
-  const occ = offices.filter(o => getS(o.id) === 'OCCUPIED').length
-  const free = offices.filter(o => getS(o.id) === 'FREE').length
-  const debt = offices.filter(o => getS(o.id) === 'DEBT').length
+  const getTenant = useCallback((room: Room): TenantInfo | null => {
+    for (const part of room.number.split(/[,\s]+/)) {
+      const t = byUnit[part.trim().toUpperCase()]
+      if (t) return t
+    }
+    return null
+  }, [byUnit])
+
+  useEffect(() => { setSelId(null) }, [floor])
+
+  const rooms = floor === 2 ? ROOMS_F2 : []
+  const freeSet = floor === 2 ? FREE_F2 : new Set<string>()
+  const selRoom = rooms.find(r => r.id === selId) ?? null
+  const selTenant = selRoom ? getTenant(selRoom) : null
+  const isFree = selId ? (freeSet.has(selId) || !selTenant) : false
 
   return (
-    <div style={{ maxWidth: 1000 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
-        {buildings.map(b => (
-          <button key={b.id} onClick={() => { setSelBuilding(b); setSel(null) }}
-            style={{ padding: '6px 14px', border: `1px solid ${selBuilding?.id === b.id ? '#4f6ef7' : '#e8ebf3'}`, borderRadius: 8, background: selBuilding?.id === b.id ? '#eff3ff' : '#fff', color: selBuilding?.id === b.id ? '#4f6ef7' : '#6b7280', fontSize: 12, fontWeight: selBuilding?.id === b.id ? 600 : 400, cursor: 'pointer', fontFamily: 'inherit' }}>
-            🏢 {b.name}
-          </button>
-        ))}
-        <div style={{ width: 1, height: 20, background: '#e8ebf3' }} />
-        {[2,3].map(f => (
-          <button key={f} onClick={() => { setFloor(f); setSel(null) }}
-            style={{ padding: '6px 14px', border: 'none', borderRadius: 8, background: floor === f ? '#4f6ef7' : '#e8ebf3', color: floor === f ? '#fff' : '#6b7280', fontSize: 12, fontWeight: floor === f ? 600 : 400, cursor: 'pointer', fontFamily: 'inherit' }}>
+    <div style={{ maxWidth: 1200 }}>
+      {/* Tabs */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+        {[2, 3].map(f => (
+          <button key={f} onClick={() => setFloor(f)}
+            style={{
+              padding: '6px 20px',
+              border: floor === f ? '2px solid #4f6ef7' : '1px solid #d1d5db',
+              borderRadius: 8, background: floor === f ? '#4f6ef7' : '#fff',
+              color: floor === f ? '#fff' : '#374151',
+              fontSize: 13, fontWeight: floor === f ? 600 : 400,
+              cursor: 'pointer', fontFamily: 'inherit',
+            }}>
             {f} этаж
           </button>
         ))}
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 12, fontSize: 11 }}>
-          {[{c:OCC,l:`Занято: ${occ}`},{c:FREE,l:`Свободно: ${free}`},{c:DEBT,l:`Долг: ${debt}`}].map((s,i) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-              <div style={{ width: 12, height: 12, background: s.c, border: `1px solid ${BRD}` }} />
-              <span style={{ color: '#6b7280' }}>{s.l}</span>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 18, fontSize: 12, alignItems: 'center' }}>
+          {[
+            { bg: 'rgba(74,222,128,0.35)', br: 'rgba(22,163,74,0.9)', label: 'Свободно' },
+            { bg: 'rgba(72,187,120,0.20)', br: 'rgba(34,120,70,0.8)', label: 'Наведение' },
+          ].map(s => (
+            <div key={s.label} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <div style={{ width: 14, height: 14, background: s.bg, border: `1.5px solid ${s.br}`, borderRadius: 2 }} />
+              <span style={{ color: '#6b7280', fontWeight: 500 }}>{s.label}</span>
             </div>
           ))}
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: sel ? '1fr 240px' : '1fr', gap: 12 }}>
-        <div style={{ background: '#fff', border: '1px solid #e8ebf3', borderRadius: 10, padding: 12, overflowX: 'auto' }}>
-          <div style={{ fontSize: 11, color: '#8596b4', marginBottom: 8, fontWeight: 500 }}>{selBuilding?.name || 'БЦ Маяк'} · {floor} этаж</div>
-          <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} xmlns="http://www.w3.org/2000/svg" style={{ display: 'block' }}>
-            <rect width={W} height={H} fill="#f0ebe3"/>
-            {/* Внешние стены */}
-            <rect x="5" y="5" width={W-10} height={H-10} fill="none" stroke={BRD} strokeWidth="4"/>
-            {/* Лестница лево-низ */}
-            <rect x="5" y="300" width="105" height="155" fill="#c8b89a" stroke={BRD} strokeWidth="2"/>
-            <text x="57" y="378" textAnchor="middle" fontSize="9" fill={BRD}>лестница</text>
-            {/* Лестница право-верх */}
-            <rect x="680" y="5" width="135" height="130" fill="#c8b89a" stroke={BRD} strokeWidth="2"/>
-            <text x="747" y="70" textAnchor="middle" fontSize="9" fill={BRD}>лестница</text>
-            {/* WC */}
-            <rect x="680" y="138" width="65" height="100" fill="#b0c4de" stroke={BRD} strokeWidth="1"/>
-            <text x="712" y="185" textAnchor="middle" fontSize="10" fill="#1a3a5c">WC</text>
-            <rect x="680" y="241" width="65" height="40" fill="#b0c4de" stroke={BRD} strokeWidth="1"/>
+      <div style={{ display: 'grid', gridTemplateColumns: selId ? '1fr 280px' : '1fr', gap: 14, alignItems: 'start' }}>
+        {/* Floor plan */}
+        <div style={{ background: '#fff', border: '1px solid #e8ebf3', borderRadius: 10, padding: 10 }}>
+          <div style={{ fontSize: 11, color: '#8596b4', marginBottom: 6, fontWeight: 600, letterSpacing: '0.03em' }}>
+            БЦ Маяк · {floor} этаж — нажмите на кабинет
+          </div>
 
-            {offices.map(o => {
-              const s = sel === o.id
-              return (
-                <g key={o.id} onClick={() => setSel(o.id === sel ? null : o.id)} style={{ cursor: 'pointer' }}>
-                  <rect x={o.x} y={o.y} width={o.w} height={o.h}
-                    fill={getC(o.id, s)} stroke={s ? '#4f6ef7' : BRD} strokeWidth={s ? 2 : 1}/>
-                  <text x={o.x+o.w/2} y={o.y+o.h/2-8} textAnchor="middle" fontSize="9" fontWeight="600" fill={s ? '#fff' : '#1a1a1a'}>
-                    №{o.number}
-                  </text>
-                  <text x={o.x+o.w/2} y={o.y+o.h/2+7} textAnchor="middle" fontSize="8.5" fill={s ? '#a5b4fc' : BRD}>
-                    {o.area} м²
-                  </text>
-                </g>
-              )
-            })}
-          </svg>
+          {floor === 2 ? (
+            /* Wrapper: floor plan image + transparent interactive overlay */
+            <div style={{ position: 'relative', width: '100%', lineHeight: 0 }}>
+              {/* Original floor plan — rendered as image, visually 100% unchanged */}
+              <img
+                src="/floorplan_f2.svg"
+                alt="План 2 этажа"
+                style={{ width: '100%', display: 'block', borderRadius: 6 }}
+                draggable={false}
+              />
+
+              {/* Transparent SVG overlay — same viewBox as original SVG */}
+              {/* Hit areas, hover and selection highlights only — no redrawing of walls/rooms */}
+              <svg
+                viewBox="0 0 2048 1150"
+                xmlns="http://www.w3.org/2000/svg"
+                style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}
+              >
+                {rooms.map(r => {
+                  const isSel   = selId === r.id
+                  const isHover = hoverId === r.id && !isSel
+                  const isFreeRoom = freeSet.has(r.id)
+
+                  let fill   = 'transparent'
+                  let stroke = 'transparent'
+                  let sw     = 0
+
+                  if (isSel) {
+                    fill   = 'rgba(79, 110, 247, 0.22)'
+                    stroke = 'rgba(79, 110, 247, 0.90)'
+                    sw     = 4
+                  } else if (isFreeRoom) {
+                    fill   = isHover ? 'rgba(74, 222, 128, 0.45)' : 'rgba(74, 222, 128, 0.35)'
+                    stroke = 'rgba(22, 163, 74, 0.90)'
+                    sw     = 3
+                  } else if (isHover) {
+                    fill   = 'rgba(72, 187, 120, 0.20)'
+                    stroke = 'rgba(34, 120, 70, 0.80)'
+                    sw     = 3
+                  }
+
+                  return (
+                    <rect
+                      key={r.id}
+                      x={r.x} y={r.y} width={r.w} height={r.h}
+                      fill={fill}
+                      stroke={stroke}
+                      strokeWidth={sw}
+                      style={{ cursor: 'pointer' }}
+                      onMouseEnter={() => setHoverId(r.id)}
+                      onMouseLeave={() => setHoverId(null)}
+                      onClick={() => setSelId(selId === r.id ? null : r.id)}
+                    />
+                  )
+                })}
+              </svg>
+            </div>
+          ) : (
+            <div style={{ padding: 48, textAlign: 'center', color: '#9ca3af', fontSize: 14 }}>
+              <div style={{ fontSize: 40, marginBottom: 12 }}>🏢</div>
+              <div>План 3 этажа в разработке</div>
+              <div style={{ fontSize: 12, marginTop: 6 }}>Поместите floorplan_f3.svg в папку public</div>
+            </div>
+          )}
         </div>
 
-        {sel && selOffice && (
-          <div style={{ background: '#fff', border: '1px solid #e8ebf3', borderRadius: 10, padding: 16 }}>
+        {/* Sidebar */}
+        {selRoom && (
+          <div style={{ background: '#fff', border: '1px solid #e8ebf3', borderRadius: 10, padding: 16, display: 'flex', flexDirection: 'column' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <div style={{ fontSize: 15, fontWeight: 600, color: '#1a2240' }}>Офис №{selOffice.number}</div>
-              <button onClick={() => setSel(null)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#9ca3af', fontSize: 16 }}>✕</button>
+              <div style={{ fontSize: 15, fontWeight: 700, color: '#1a2240' }}>Кабинет №{selRoom.number}</div>
+              <button onClick={() => setSelId(null)}
+                style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#9ca3af', fontSize: 18, lineHeight: 1 }}>✕</button>
             </div>
-            <div style={{ padding: '7px 10px', borderRadius: 7, marginBottom: 12, background: getS(selOffice.id) === 'FREE' ? '#f0fdf4' : '#fffbeb' }}>
-              <span style={{ fontSize: 12, fontWeight: 600, color: getS(selOffice.id) === 'FREE' ? '#16a34a' : '#d97706' }}>
-                {getS(selOffice.id) === 'FREE' ? 'Свободен' : 'Занят'}
+
+            <div style={{ padding: '5px 10px', borderRadius: 7, marginBottom: 12, background: isFree ? '#f0fdf4' : '#eff6ff' }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: isFree ? '#16a34a' : '#3b82f6' }}>
+                {isFree ? 'Свободен' : 'Занято'}
               </span>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
-              <div><div style={{ fontSize: 11, color: '#8596b4', marginBottom: 2 }}>Площадь</div><div style={{ fontSize: 13, fontWeight: 500 }}>{selOffice.area} м²</div></div>
-              {getT(selOffice.id) && <div><div style={{ fontSize: 11, color: '#8596b4', marginBottom: 2 }}>Арендатор</div><div style={{ fontSize: 13, fontWeight: 500 }}>{getT(selOffice.id)}</div></div>}
-              <div><div style={{ fontSize: 11, color: '#8596b4', marginBottom: 2 }}>Этаж</div><div style={{ fontSize: 13, fontWeight: 500 }}>{floor} / {selBuilding?.name}</div></div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid #f1f5f9' }}>
+              <span style={{ fontSize: 11, color: '#8596b4' }}>Площадь</span>
+              <span style={{ fontSize: 12, fontWeight: 500 }}>{selRoom.area_m2} м²</span>
             </div>
-            {getS(selOffice.id) !== 'FREE'
-              ? <button style={{ width: '100%', padding: '8px', border: 'none', borderRadius: 7, background: '#4f6ef7', color: '#fff', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500 }}>Открыть карточку</button>
-              : <button style={{ width: '100%', padding: '8px', border: 'none', borderRadius: 7, background: '#16a34a', color: '#fff', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500 }}>Заселить арендатора</button>
-            }
+
+            {selTenant && (
+              <>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#1a2240', margin: '12px 0 8px', lineHeight: 1.4 }}>
+                  {selTenant.full_name}
+                </div>
+                {[
+                  { label: 'Аренда',       value: fmt(selTenant.monthly_rent) },
+                  { label: 'Итого в мес.', value: fmt(selTenant.monthly_total) },
+                  { label: 'Договор №',    value: selTenant.contract_number || '—' },
+                  { label: 'Дата начала',  value: selTenant.contract_start_date ? new Date(selTenant.contract_start_date).toLocaleDateString('ru-RU') : '—' },
+                  { label: 'ИНН',          value: selTenant.inn || '—' },
+                ].map(({ label, value }) => (
+                  <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '5px 0', borderBottom: '1px solid #f1f5f9' }}>
+                    <span style={{ fontSize: 11, color: '#8596b4' }}>{label}</span>
+                    <span style={{ fontSize: 12, fontWeight: 500, color: '#1a2240', textAlign: 'right', maxWidth: 160 }}>{value}</span>
+                  </div>
+                ))}
+                <button onClick={() => onOpenTenant?.(selTenant.id)}
+                  style={{ marginTop: 14, width: '100%', padding: '9px', border: 'none', borderRadius: 7, background: '#4f6ef7', color: '#fff', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
+                  Открыть карточку →
+                </button>
+              </>
+            )}
+
+            {!selTenant && (
+              <div style={{ marginTop: 8, fontSize: 12, color: '#6b7280' }}>Нет данных об арендаторе</div>
+            )}
           </div>
         )}
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 10, marginTop: 12 }}>
-        {[{l:'Всего офисов',v:offices.length,c:'#1a2240'},{l:'Занято',v:occ,c:'#4f6ef7'},{l:'Свободно',v:free,c:'#16a34a'},{l:'С задолженностью',v:debt,c:'#ef4444'}].map((s,i) => (
-          <div key={i} style={{ background: '#fff', border: '1px solid #e8ebf3', borderRadius: 9, padding: '12px 14px' }}>
-            <div style={{ fontSize: 11, color: '#8596b4', marginBottom: 4 }}>{s.l}</div>
-            <div style={{ fontSize: 22, fontWeight: 600, color: s.c }}>{s.v}</div>
-          </div>
-        ))}
       </div>
     </div>
   )

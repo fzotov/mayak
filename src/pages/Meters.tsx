@@ -22,6 +22,9 @@ export default function MetersPage() {
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState<any>(null)
   const [view, setView] = useState<'list'|'edit'|'readings'>('list')
+  const [scanning, setScanning] = useState(false)
+  const [scanResult, setScanResult] = useState<string>('')
+  const quickScanRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => { load() }, [])
 
@@ -29,22 +32,72 @@ export default function MetersPage() {
     setLoading(true)
     const [{data:m},{data:u}] = await Promise.all([
       supabase.from('meters').select('*'),
-      supabase.from('units').select('id,number').order('number')
+      supabase.from('units').select('id,number,tenant_premises(tenant_id,tenants(full_name))').order('number')
     ])
     setMeters(m||[])
     setUnits(u||[])
     setLoading(false)
   }
 
+  async function quickScan(file: File) {
+    setScanning(true)
+    setScanResult('🔍 Распознаю счётчик...')
+    try {
+      const imageBase64 = await fileToBase64(file)
+      const meterSerials = meters.map((m: any) => m.serial).filter(Boolean)
+      const res = await fetch('/api/recognize-meter', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageBase64, meterNumbers: meterSerials })
+      })
+      const data = await res.json()
+      if (data.ok && data.meters?.length > 0) {
+        const best = data.meters[0]
+        const found = meters.find((m: any) => m.serial && best.serial && m.serial.toLowerCase().replace(/\s/g,'').includes(best.serial.toLowerCase().replace(/\s/g,'')))
+        if (found) {
+          setScanResult(`✓ Счётчик ${found.serial || found.number} (${TYPES[found.type]?.label || found.type}) — показание ${best.reading}`)
+          setSelected(found)
+          setView('readings')
+        } else {
+          setScanResult(`? Серийник ${best.serial} не найден в базе. Показание: ${best.reading}`)
+        }
+      } else {
+        setScanResult('Не удалось распознать счётчик. Попробуйте сделать фото чётче.')
+      }
+    } catch { setScanResult('Ошибка распознавания') }
+    setScanning(false)
+  }
+
   if (loading) return <div style={{padding:20,color:'#9ca3af'}}>Загрузка...</div>
 
   if (view === 'edit') return <MeterForm meter={selected} units={units} onBack={() => { setView('list'); load() }} />
-  if (view === 'readings' && selected) return <ReadingsView meter={selected} onBack={() => { setView('list'); load() }} />
+  if (view === 'readings' && selected) return <ReadingsView
+    meter={selected}
+    allMeters={meters}
+    onSwitchMeter={(m) => setSelected(m)}
+    onBack={() => { setView('list'); load() }}
+  />
 
   return (
     <div>
-      <div style={{display:'flex',justifyContent:'flex-end',marginBottom:16}}>
-        <button onClick={() => { setSelected(null); setView('edit') }} style={{padding:'7px 16px',border:'none',borderRadius:6,background:'#111',color:'#fff',fontSize:13,cursor:'pointer',fontFamily:'inherit'}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16,gap:10}}>
+        <div style={{display:'flex',alignItems:'center',gap:10,flex:1}}>
+          <input ref={quickScanRef} type="file" accept="image/*" style={{display:'none'}}
+            onChange={e => { const f = e.target.files?.[0]; if (f) quickScan(f); e.target.value = '' }} />
+          <button onClick={() => quickScanRef.current?.click()} disabled={scanning}
+            style={{padding:'7px 16px',border:'1px solid #4f6ef7',borderRadius:6,background:'#eff3ff',color:'#4f6ef7',fontSize:13,fontWeight:600,cursor:scanning?'default':'pointer',fontFamily:'inherit',opacity:scanning?0.7:1}}>
+            {scanning ? '🔍 Распознаю...' : '📷 Сканировать счётчик'}
+          </button>
+          {scanResult && !scanning && (
+            <span style={{fontSize:13,color: scanResult.startsWith('✓') ? '#16a34a' : scanResult.startsWith('?') ? '#d97706' : '#6b7280',
+              background: scanResult.startsWith('✓') ? '#f0fdf4' : scanResult.startsWith('?') ? '#fffbeb' : '#f3f4f6',
+              padding:'5px 10px',borderRadius:7,display:'flex',alignItems:'center',gap:8}}>
+              {scanResult}
+              <button onClick={()=>setScanResult('')} style={{border:'none',background:'none',color:'#9ca3af',cursor:'pointer',fontSize:14}}>✕</button>
+            </span>
+          )}
+        </div>
+        <button onClick={() => { setSelected(null); setView('edit') }} style={{padding:'7px 16px',border:'none',borderRadius:6,background:'#111',color:'#fff',fontSize:13,cursor:'pointer',fontFamily:'inherit',flexShrink:0}}>
           + Добавить счётчик
         </button>
       </div>
@@ -153,12 +206,25 @@ function MeterForm({meter, units, onBack}: {meter:any; units:any[]; onBack:()=>v
   )
 }
 
-function ReadingsView({meter, onBack}: {meter:any; onBack:()=>void}) {
+async function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve((reader.result as string).split(',')[1])
+    reader.onerror = reject
+    reader.readAsDataURL(file)
+  })
+}
+
+function ReadingsView({meter, onBack, allMeters, onSwitchMeter}: {meter:any; onBack:()=>void; allMeters:any[]; onSwitchMeter:(m:any)=>void}) {
   const [readings, setReadings] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [showAdd, setShowAdd] = useState(false)
   const [form, setForm] = useState({period: new Date().toISOString().slice(0,7)+'-01', prev_value:0, curr_value:0, notes:''})
   const [saving, setSaving] = useState(false)
+  const [photoFile, setPhotoFile] = useState<File|null>(null)
+  const [photoUploading, setPhotoUploading] = useState(false)
+  const [recognizing, setRecognizing] = useState(false)
+  const [recognizeResult, setRecognizeResult] = useState<{serial:string; reading:number; matched:boolean; wrongMeter?:any}|null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const t = TYPES[meter.type] || {label:meter.type,icon:'📊',unit:''}
 
@@ -177,8 +243,50 @@ function ReadingsView({meter, onBack}: {meter:any; onBack:()=>void}) {
     ? consumption * (meter.heat_tariff||0) * (meter.area||1)
     : consumption * (meter.tariff||0)
 
+  async function recognizePhoto(file: File) {
+    setRecognizing(true)
+    setRecognizeResult(null)
+    try {
+      const imageBase64 = await fileToBase64(file)
+      const meterSerials = allMeters.map((m: any) => m.serial).filter(Boolean)
+      const res = await fetch('/api/recognize-meter', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageBase64, meterNumbers: meterSerials })
+      })
+      const data = await res.json()
+      if (data.ok && data.meters?.length > 0) {
+        const best = data.meters[0]
+        const matchedMeter = allMeters.find((m: any) => m.serial && best.serial && m.serial.toLowerCase().includes(best.serial.toLowerCase().replace(/\s/g, '')))
+        const isCurrent = matchedMeter?.id === meter.id
+        setRecognizeResult({
+          serial: best.serial,
+          reading: best.reading,
+          matched: !!matchedMeter,
+          wrongMeter: matchedMeter && !isCurrent ? matchedMeter : undefined,
+        })
+        if (typeof best.reading === 'number' && !isNaN(best.reading)) {
+          setForm(f => ({ ...f, curr_value: best.reading }))
+        }
+      }
+    } catch { setRecognizeResult(null) }
+    setRecognizing(false)
+  }
+
   async function save() {
     setSaving(true)
+    let photo_url: string | null = null
+    if (photoFile) {
+      setPhotoUploading(true)
+      const ext = photoFile.name.split('.').pop()
+      const path = `${meter.id}/${form.period.slice(0,7)}-${Date.now()}.${ext}`
+      const { error: upErr } = await supabase.storage.from('meter-photos').upload(path, photoFile, { upsert: true })
+      if (!upErr) {
+        const { data: pub } = supabase.storage.from('meter-photos').getPublicUrl(path)
+        photo_url = pub.publicUrl
+      }
+      setPhotoUploading(false)
+    }
     const { error } = await supabase.from('meter_readings').insert({
       meter_id: meter.id,
       period: form.period,
@@ -186,10 +294,12 @@ function ReadingsView({meter, onBack}: {meter:any; onBack:()=>void}) {
       curr_value: form.curr_value,
       consumption,
       amount,
-      notes: form.notes
+      notes: form.notes,
+      ...(photo_url ? { photo_url } : {}),
     })
     setSaving(false)
     if (error) { alert('Ошибка сохранения показания: ' + error.message); return }
+    setPhotoFile(null)
     setShowAdd(false)
     loadReadings()
   }
@@ -228,8 +338,42 @@ function ReadingsView({meter, onBack}: {meter:any; onBack:()=>void}) {
           </div>
           <div style={{marginBottom:10}}><label style={SL}>Заметка</label><input style={SI} value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))}/></div>
           <div style={{marginBottom:10}}>
-            <input ref={fileRef} type="file" accept="image/*" style={{display:'none'}}/>
-            <button onClick={()=>fileRef.current?.click()} style={{padding:'6px 12px',borderRadius:6,border:'1px solid #e5e7eb',background:'#fff',fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>📷 Фото показаний</button>
+            <input ref={fileRef} type="file" accept="image/*" style={{display:'none'}}
+              onChange={e => {
+                const f = e.target.files?.[0]
+                if (f) { setPhotoFile(f); recognizePhoto(f) }
+                e.target.value = ''
+              }} />
+            <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+              <button onClick={()=>fileRef.current?.click()} style={{padding:'6px 12px',borderRadius:6,border:'1px solid #e5e7eb',background:'#fff',fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>
+                📷 {photoFile ? 'Заменить фото' : 'Фото показаний'}
+              </button>
+              {recognizing && <span style={{fontSize:12,color:'#4f6ef7'}}>🔍 Распознаю...</span>}
+              {recognizeResult && !recognizing && (
+                <span style={{fontSize:12, padding:'3px 8px', borderRadius:6,
+                  background: recognizeResult.wrongMeter ? '#fef3c7' : recognizeResult.matched ? '#f0fdf4' : '#eff3ff',
+                  color: recognizeResult.wrongMeter ? '#b45309' : recognizeResult.matched ? '#16a34a' : '#4f6ef7'}}>
+                  {recognizeResult.wrongMeter
+                    ? `⚠ Серийник ${recognizeResult.serial} — это счётчик ${recognizeResult.wrongMeter.serial || recognizeResult.wrongMeter.number}. `
+                    : recognizeResult.matched
+                      ? `✓ Серийник ${recognizeResult.serial} совпадает`
+                      : `? Серийник ${recognizeResult.serial} не найден в базе`}
+                  {recognizeResult.wrongMeter && (
+                    <button onClick={() => onSwitchMeter(recognizeResult.wrongMeter)}
+                      style={{border:'none',background:'none',color:'#4f6ef7',cursor:'pointer',fontSize:12,fontFamily:'inherit',textDecoration:'underline',padding:'0 4px'}}>
+                      Перейти к нему →
+                    </button>
+                  )}
+                  {' '}{typeof recognizeResult.reading === 'number' && `Показание: ${recognizeResult.reading}`}
+                </span>
+              )}
+              {photoFile && !recognizing && (
+                <span style={{fontSize:12,color:'#9ca3af'}}>
+                  {photoFile.name}
+                  <button onClick={() => { setPhotoFile(null); setRecognizeResult(null) }} style={{border:'none',background:'none',color:'#ef4444',cursor:'pointer',marginLeft:6,fontSize:12}}>✕</button>
+                </span>
+              )}
+            </div>
           </div>
           <div style={{display:'flex',gap:8}}>
             <button onClick={save} disabled={saving} style={{padding:'7px 16px',borderRadius:6,border:'none',background:'#111',color:'#fff',fontSize:13,cursor:'pointer',fontFamily:'inherit',opacity:saving?0.6:1}}>
@@ -245,7 +389,7 @@ function ReadingsView({meter, onBack}: {meter:any; onBack:()=>void}) {
           <table style={{width:'100%',borderCollapse:'collapse',fontSize:14}}>
             <thead>
               <tr style={{background:'#f9fafb',borderBottom:'1px solid #e5e7eb'}}>
-                {['Период','Пред.','Тек.','Расход','Сумма','Заметка',''].map(h=>(
+                {['Период','Пред.','Тек.','Расход','Сумма','Заметка','Фото',''].map(h=>(
                   <th key={h} style={{padding:'9px 12px',textAlign:'left',fontWeight:500,color:'#6b7280',fontSize:12}}>{h}</th>
                 ))}
               </tr>
@@ -261,6 +405,11 @@ function ReadingsView({meter, onBack}: {meter:any; onBack:()=>void}) {
                   <td style={{padding:'9px 12px',fontWeight:500,color:'#111'}}>{r.consumption} {t.unit}</td>
                   <td style={{padding:'9px 12px',fontWeight:600,color:'#111'}}>{Number(r.amount).toLocaleString('ru')} ₽</td>
                   <td style={{padding:'9px 12px',color:'#9ca3af',fontSize:12}}>{r.notes||'—'}</td>
+                  <td style={{padding:'9px 12px'}}>
+                    {r.photo_url
+                      ? <a href={r.photo_url} target="_blank" rel="noreferrer" style={{fontSize:12,color:'#4f6ef7',textDecoration:'none'}}>📷 Фото</a>
+                      : <span style={{fontSize:12,color:'#e5e7eb'}}>—</span>}
+                  </td>
                   <td style={{padding:'9px 12px'}}><button onClick={()=>del(r.id)} style={{border:'none',background:'none',color:'#ef4444',fontSize:12,cursor:'pointer'}}>Удалить</button></td>
                 </tr>
               ))}
