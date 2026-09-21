@@ -1,12 +1,11 @@
+import './index.css'
 import { StrictMode, Suspense, lazy } from 'react'
 import { createRoot } from 'react-dom/client'
-import SiteApp from './site/SiteApp.tsx'
 
-// Один деплой — три приложения:
-//   /            публичный сайт mayak-d.ru
-//   /tenant/*    личный кабинет арендатора
-//   /admin/*     система управления зданием
-// Кабинет и админка грузятся отдельными чанками, чтобы сайт открывался мгновенно.
+// Это приложение обслуживает внутренние разделы:
+//   /admin/*   система управления зданием
+//   /tenant/*  личный кабинет арендатора
+// Публичный сайт mayak-d.ru — отдельное приложение в apps/site (Next.js).
 const AdminApp  = lazy(() => import('./App.tsx'))
 const TenantApp = lazy(() => import('./TenantApp.tsx'))
 
@@ -19,8 +18,10 @@ const loader = (
   </div>
 )
 
-const app = path.startsWith('/tenant') ? <Suspense fallback={loader}><TenantApp /></Suspense>
-  : path.startsWith('/admin')          ? <Suspense fallback={loader}><AdminApp /></Suspense>
-  : <SiteApp />
-
-root.render(<StrictMode>{app}</StrictMode>)
+root.render(
+  <StrictMode>
+    <Suspense fallback={loader}>
+      {path.startsWith('/tenant') ? <TenantApp /> : <AdminApp />}
+    </Suspense>
+  </StrictMode>,
+)

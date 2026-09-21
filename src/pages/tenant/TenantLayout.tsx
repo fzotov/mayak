@@ -7,28 +7,108 @@ interface TenantLayoutProps {
   onNavigate: (p: string) => void
 }
 
+const Icons = {
+  home: (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <path d="M1 6.5L8 1l7 5.5V15H10v-4H6v4H1V6.5z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" fill="none"/>
+    </svg>
+  ),
+  invoices: (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <rect x="2" y="1" width="12" height="14" rx="1.5" stroke="currentColor" strokeWidth="1.5"/>
+      <path d="M5 5h6M5 8h6M5 11h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+    </svg>
+  ),
+  contract: (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <path d="M9 1H3a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V6L9 1z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
+      <path d="M9 1v5h5" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
+    </svg>
+  ),
+  meters: (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <circle cx="8" cy="8" r="6.5" stroke="currentColor" strokeWidth="1.5"/>
+      <path d="M8 4.5v3.5l2.5 1.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  ),
+  repairs: (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <path d="M10.5 1.5a3 3 0 0 1 0 4.243L4.743 11.5a1.5 1.5 0 1 1-2.121-2.121L8.38 3.621A3 3 0 0 1 10.5 1.5z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
+      <path d="M13 11l-2.5 2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+    </svg>
+  ),
+  documents: (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <rect x="1.5" y="1.5" width="13" height="13" rx="1.5" stroke="currentColor" strokeWidth="1.5"/>
+      <path d="M4.5 5.5h7M4.5 8h7M4.5 10.5h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+    </svg>
+  ),
+  notifications: (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <path d="M8 1.5a5 5 0 0 1 5 5v3l1 2H2l1-2v-3a5 5 0 0 1 5-5z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
+      <path d="M6.5 12a1.5 1.5 0 0 0 3 0" stroke="currentColor" strokeWidth="1.5"/>
+    </svg>
+  ),
+  profile: (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <circle cx="8" cy="5.5" r="3" stroke="currentColor" strokeWidth="1.5"/>
+      <path d="M2 14c0-3.314 2.686-5 6-5s6 1.686 6 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+    </svg>
+  ),
+  logout: (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <path d="M6 2H3a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+      <path d="M10 11l3-3-3-3M13 8H6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  ),
+  menu: (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+      <path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+    </svg>
+  ),
+  bell: (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+      <path d="M10 2a6 6 0 0 1 6 6v3.5l1.5 2.5h-15L4 11.5V8a6 6 0 0 1 6-6z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
+      <path d="M8 16a2 2 0 0 0 4 0" stroke="currentColor" strokeWidth="1.5"/>
+    </svg>
+  ),
+}
+
 const NAV_ITEMS = [
-  { key: 'home',          label: 'Главная',      icon: '🏠' },
-  { key: 'invoices',      label: 'Счета',         icon: '💳' },
-  { key: 'contract',      label: 'Договор',       icon: '📋' },
-  { key: 'meters',        label: 'Счётчики',      icon: '📊' },
-  { key: 'repairs',       label: 'Заявки',        icon: '🔧' },
-  { key: 'documents',     label: 'Документы',     icon: '📁' },
-  { key: 'notifications', label: 'Уведомления',   icon: '🔔' },
-  { key: 'profile',       label: 'Мои данные',    icon: '👤' },
-]
+  { key: 'home',          label: 'Главная',      icon: 'home' },
+  { key: 'invoices',      label: 'Счета',         icon: 'invoices' },
+  { key: 'contract',      label: 'Договор',       icon: 'contract' },
+  { key: 'meters',        label: 'Счётчики',      icon: 'meters' },
+  { key: 'repairs',       label: 'Заявки',        icon: 'repairs' },
+  { key: 'documents',     label: 'Документы',     icon: 'documents' },
+  { key: 'notifications', label: 'Уведомления',   icon: 'notifications' },
+  { key: 'profile',       label: 'Мои данные',    icon: 'profile' },
+] as const
 
 const MOBILE_BOTTOM = [
-  { key: 'home',     label: 'Главная',  icon: '🏠' },
-  { key: 'invoices', label: 'Счета',    icon: '💳' },
-  { key: 'repairs',  label: 'Заявки',   icon: '🔧' },
-  { key: 'meters',   label: 'Счётчики', icon: '📊' },
-]
+  { key: 'home',     label: 'Главная',  icon: 'home' },
+  { key: 'invoices', label: 'Счета',    icon: 'invoices' },
+  { key: 'repairs',  label: 'Заявки',   icon: 'repairs' },
+  { key: 'meters',   label: 'Счётчики', icon: 'meters' },
+] as const
 
 const PAGE_TITLES: Record<string, string> = {
   home: 'Главная', invoices: 'Счета', contract: 'Договор',
   meters: 'Счётчики', repairs: 'Заявки', documents: 'Документы',
   notifications: 'Уведомления', profile: 'Мои данные',
+}
+
+const C = {
+  bg: '#0a0a0a',
+  surface: '#111',
+  border: '#1f1f1f',
+  borderSubtle: '#1a1a1a',
+  text: '#ededed',
+  muted: '#666',
+  mutedMid: '#888',
+  accent: '#fff',
+  danger: '#ff4444',
+  font: '"Geist", system-ui, -apple-system, sans-serif',
 }
 
 function getSession() {
@@ -85,23 +165,25 @@ export default function TenantLayout({ children, activePage, onNavigate }: Tenan
   // ─── DESKTOP ─────────────────────────────────────────────────────────────
   if (!isMobile) {
     return (
-      <div style={{ display: 'flex', minHeight: '100vh', fontFamily: '-apple-system,BlinkMacSystemFont,"Inter",sans-serif' }}>
+      <div style={{ display: 'flex', minHeight: '100vh', fontFamily: C.font, background: C.bg, color: C.text }}>
         {/* Sidebar */}
         <aside style={{
-          width: 260, flexShrink: 0, background: '#fff', borderRight: '1px solid #e5e7eb',
+          width: 240, flexShrink: 0, background: C.bg, borderRight: `1px solid ${C.border}`,
           display: 'flex', flexDirection: 'column', position: 'fixed', top: 0, left: 0, bottom: 0, zIndex: 50,
         }}>
           {/* Logo */}
-          <div style={{ padding: '24px 20px 16px' }}>
-            <img src="https://mayak-d.ru/pics/logo.png" alt="Маяк" style={{ maxHeight: 44, display: 'block', marginBottom: 10 }} />
-            <div style={{ fontSize: 12, color: '#9ca3af', fontWeight: 500, letterSpacing: '.5px', textTransform: 'uppercase' }}>
+          <div style={{ padding: '20px 16px 16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+              <img src="https://mayak-d.ru/pics/logo.png" alt="Маяк" style={{ height: 28, filter: 'brightness(0) invert(1)', display: 'block' }} />
+            </div>
+            <div style={{ fontSize: 11, color: C.muted, fontWeight: 500, letterSpacing: '.5px', textTransform: 'uppercase', marginTop: 8 }}>
               Портал арендатора
             </div>
           </div>
-          <div style={{ height: 1, background: '#e5e7eb', margin: '0 20px 12px' }} />
+          <div style={{ height: 1, background: C.border, margin: '0 16px 8px' }} />
 
           {/* Nav */}
-          <nav style={{ flex: 1, padding: '0 12px', overflowY: 'auto' }}>
+          <nav style={{ flex: 1, padding: '0 8px', overflowY: 'auto' }}>
             {NAV_ITEMS.map(item => {
               const active = activePage === item.key
               const badge = item.key === 'notifications' && unreadCount > 0
@@ -112,23 +194,23 @@ export default function TenantLayout({ children, activePage, onNavigate }: Tenan
                   onClick={() => onNavigate(item.key)}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 10, width: '100%',
-                    padding: '10px 12px', marginBottom: 2, border: 'none', borderRadius: 8,
-                    background: active ? '#111' : 'transparent',
-                    color: active ? '#fff' : '#6b7280',
-                    fontSize: 14, fontWeight: active ? 600 : 400,
-                    cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
-                    transition: 'background .15s, color .15s',
+                    padding: '8px 10px', marginBottom: 1, border: 'none', borderRadius: 6,
+                    background: active ? C.surface : 'transparent',
+                    color: active ? C.accent : C.mutedMid,
+                    fontSize: 13, fontWeight: active ? 500 : 400,
+                    cursor: 'pointer', fontFamily: C.font, textAlign: 'left',
+                    transition: 'background .1s, color .1s',
                   }}
-                  onMouseEnter={e => { if (!active) (e.currentTarget as HTMLButtonElement).style.background = '#f3f4f6' }}
-                  onMouseLeave={e => { if (!active) (e.currentTarget as HTMLButtonElement).style.background = 'transparent' }}
+                  onMouseEnter={e => { if (!active) { const b = e.currentTarget as HTMLButtonElement; b.style.background = C.surface; b.style.color = C.text } }}
+                  onMouseLeave={e => { if (!active) { const b = e.currentTarget as HTMLButtonElement; b.style.background = 'transparent'; b.style.color = C.mutedMid } }}
                 >
-                  <span style={{ fontSize: 16, width: 20, textAlign: 'center' }}>{item.icon}</span>
+                  <span style={{ flexShrink: 0, display: 'flex', alignItems: 'center' }}>{Icons[item.icon as keyof typeof Icons]}</span>
                   <span style={{ flex: 1 }}>{item.label}</span>
                   {badge !== null && (
                     <span style={{
-                      minWidth: 18, height: 18, borderRadius: 9, background: '#ef4444',
-                      color: '#fff', fontSize: 11, fontWeight: 700,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 5px',
+                      minWidth: 16, height: 16, borderRadius: 8, background: '#ef4444',
+                      color: '#fff', fontSize: 10, fontWeight: 700,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px',
                     }}>{badge}</span>
                   )}
                 </button>
@@ -137,48 +219,48 @@ export default function TenantLayout({ children, activePage, onNavigate }: Tenan
           </nav>
 
           {/* Profile card */}
-          <div style={{ borderTop: '1px solid #e5e7eb', padding: '16px 16px 20px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+          <div style={{ borderTop: `1px solid ${C.border}`, padding: '12px 12px 16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
               <div style={{
-                width: 36, height: 36, borderRadius: '50%', background: '#111',
-                color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 13, fontWeight: 700, flexShrink: 0,
+                width: 32, height: 32, borderRadius: '50%', background: '#333',
+                color: C.accent, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 12, fontWeight: 600, flexShrink: 0,
               }}>{ava}</div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: '#111', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <div style={{ fontSize: 13, fontWeight: 500, color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {tenantName || email}
                 </div>
                 {unitNumber && (
-                  <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 1 }}>{unitNumber}</div>
+                  <div style={{ fontSize: 11, color: C.muted, marginTop: 1 }}>{unitNumber}</div>
                 )}
               </div>
             </div>
             <button
               onClick={logout}
               style={{
-                display: 'flex', alignItems: 'center', gap: 6, width: '100%', padding: '8px 10px',
-                border: '1px solid #e5e7eb', borderRadius: 7, background: '#fff',
-                color: '#6b7280', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit',
-                transition: 'color .15s, border-color .15s',
+                display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '7px 10px',
+                border: `1px solid ${C.border}`, borderRadius: 6, background: 'transparent',
+                color: C.muted, fontSize: 12, cursor: 'pointer', fontFamily: C.font,
+                transition: 'color .1s, border-color .1s',
               }}
-              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = '#ef4444'; (e.currentTarget as HTMLButtonElement).style.borderColor = '#fecaca' }}
-              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = '#6b7280'; (e.currentTarget as HTMLButtonElement).style.borderColor = '#e5e7eb' }}
+              onMouseEnter={e => { const b = e.currentTarget as HTMLButtonElement; b.style.color = C.danger; b.style.borderColor = C.danger }}
+              onMouseLeave={e => { const b = e.currentTarget as HTMLButtonElement; b.style.color = C.muted; b.style.borderColor = C.border }}
             >
-              <span>🚪</span> Выйти
+              {Icons.logout} Выйти
             </button>
           </div>
         </aside>
 
         {/* Main */}
-        <div style={{ flex: 1, marginLeft: 260, display: 'flex', flexDirection: 'column', minHeight: '100vh', background: '#f9fafb' }}>
+        <div style={{ flex: 1, marginLeft: 240, display: 'flex', flexDirection: 'column', minHeight: '100vh', background: C.bg }}>
           <main style={{ flex: 1, padding: 32 }}>
             {children}
           </main>
-          <footer style={{ borderTop: '1px solid #e5e7eb', padding: '18px 32px', background: '#fff' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16, fontSize: 12, color: '#9ca3af' }}>
-              <div>© 2026 БЦ «Маяк». Все права защищены.</div>
-              <div style={{ textAlign: 'center' }}>г. Дмитров, Московская область, мкр. Владимира Махалина, д. 20</div>
-              <div style={{ textAlign: 'right' }}>+7 (916) 763-02-07 | +7 (496) 227-00-44</div>
+          <footer style={{ borderTop: `1px solid ${C.border}`, padding: '16px 32px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16, fontSize: 11, color: C.muted }}>
+              <div>© 2026 БЦ «Маяк»</div>
+              <div style={{ textAlign: 'center' }}>г. Дмитров, мкр. Владимира Махалина, д. 20</div>
+              <div style={{ textAlign: 'right' }}>+7 (916) 763-02-07</div>
             </div>
           </footer>
         </div>
@@ -188,49 +270,49 @@ export default function TenantLayout({ children, activePage, onNavigate }: Tenan
 
   // ─── MOBILE ──────────────────────────────────────────────────────────────
   const drawerItems = [
-    { key: 'contract',      label: 'Договор',     icon: '📋' },
-    { key: 'documents',     label: 'Документы',   icon: '📁' },
-    { key: 'notifications', label: 'Уведомления', icon: '🔔' },
-    { key: 'profile',       label: 'Мои данные',  icon: '👤' },
-  ]
+    { key: 'contract',      label: 'Договор',     icon: 'contract' },
+    { key: 'documents',     label: 'Документы',   icon: 'documents' },
+    { key: 'notifications', label: 'Уведомления', icon: 'notifications' },
+    { key: 'profile',       label: 'Мои данные',  icon: 'profile' },
+  ] as const
 
   return (
-    <div style={{ fontFamily: '-apple-system,BlinkMacSystemFont,"Inter",sans-serif', background: '#fff', minHeight: '100vh', paddingTop: 56, paddingBottom: 64 }}>
+    <div style={{ fontFamily: C.font, background: C.bg, color: C.text, minHeight: '100vh', paddingTop: 52, paddingBottom: 60 }}>
       {/* Top bar */}
       <div style={{
-        position: 'fixed', top: 0, left: 0, right: 0, height: 56, zIndex: 100,
-        background: '#fff', borderBottom: '1px solid #e5e7eb',
+        position: 'fixed', top: 0, left: 0, right: 0, height: 52, zIndex: 100,
+        background: C.bg, borderBottom: `1px solid ${C.border}`,
         display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 16px',
       }}>
-        <img src="https://mayak-d.ru/pics/logo.png" alt="Маяк" style={{ height: 28, display: 'block' }} />
-        <div style={{ fontSize: 15, fontWeight: 600, color: '#111' }}>{PAGE_TITLES[activePage] ?? 'Маяк'}</div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <button onClick={() => onNavigate('notifications')} style={{ position: 'relative', border: 'none', background: 'none', cursor: 'pointer', padding: 4, fontSize: 20 }}>
-            🔔
+        <img src="https://mayak-d.ru/pics/logo.png" alt="Маяк" style={{ height: 24, filter: 'brightness(0) invert(1)', display: 'block' }} />
+        <div style={{ fontSize: 14, fontWeight: 500, color: C.text }}>{PAGE_TITLES[activePage] ?? 'Маяк'}</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <button onClick={() => onNavigate('notifications')} style={{ position: 'relative', border: 'none', background: 'none', cursor: 'pointer', padding: 4, color: C.mutedMid, display: 'flex' }}>
+            {Icons.bell}
             {unreadCount > 0 && (
               <span style={{
-                position: 'absolute', top: 0, right: 0, minWidth: 16, height: 16, borderRadius: 8,
-                background: '#ef4444', color: '#fff', fontSize: 10, fontWeight: 700,
+                position: 'absolute', top: 0, right: 0, minWidth: 14, height: 14, borderRadius: 7,
+                background: '#ef4444', color: '#fff', fontSize: 9, fontWeight: 700,
                 display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px',
               }}>{unreadCount}</span>
             )}
           </button>
           <button onClick={() => setDrawerOpen(true)} style={{
-            width: 32, height: 32, borderRadius: '50%', background: '#111',
-            color: '#fff', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700,
+            width: 30, height: 30, borderRadius: '50%', background: '#333',
+            color: C.accent, border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 600,
           }}>{ava}</button>
         </div>
       </div>
 
       {/* Content */}
-      <div style={{ padding: 16, background: '#fff', minHeight: 'calc(100vh - 120px)' }}>
+      <div style={{ padding: 16, minHeight: 'calc(100vh - 112px)' }}>
         {children}
       </div>
 
       {/* Bottom nav */}
       <div style={{
-        position: 'fixed', bottom: 0, left: 0, right: 0, height: 64, zIndex: 100,
-        background: '#fff', borderTop: '1px solid #e5e7eb', boxShadow: '0 -2px 10px rgba(0,0,0,0.08)',
+        position: 'fixed', bottom: 0, left: 0, right: 0, height: 60, zIndex: 100,
+        background: C.bg, borderTop: `1px solid ${C.border}`,
         display: 'flex', alignItems: 'stretch',
       }}>
         {MOBILE_BOTTOM.map(item => {
@@ -238,21 +320,20 @@ export default function TenantLayout({ children, activePage, onNavigate }: Tenan
           return (
             <button key={item.key} onClick={() => onNavigate(item.key)} style={{
               flex: 1, border: 'none', background: 'none', cursor: 'pointer',
-              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2,
-              color: active ? '#111' : '#9ca3af', fontFamily: 'inherit',
+              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3,
+              color: active ? C.accent : C.muted, fontFamily: C.font,
             }}>
-              <span style={{ fontSize: 22 }}>{item.icon}</span>
+              {Icons[item.icon as keyof typeof Icons]}
               <span style={{ fontSize: 10 }}>{item.label}</span>
             </button>
           )
         })}
-        {/* Ещё */}
         <button onClick={() => setDrawerOpen(true)} style={{
           flex: 1, border: 'none', background: 'none', cursor: 'pointer',
-          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2,
-          color: '#9ca3af', fontFamily: 'inherit',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3,
+          color: C.muted, fontFamily: C.font,
         }}>
-          <span style={{ fontSize: 22 }}>≡</span>
+          {Icons.menu}
           <span style={{ fontSize: 10 }}>Ещё</span>
         </button>
       </div>
@@ -261,29 +342,25 @@ export default function TenantLayout({ children, activePage, onNavigate }: Tenan
       {drawerOpen && (
         <div
           onClick={() => setDrawerOpen(false)}
-          style={{
-            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 200,
-            transition: 'opacity .2s',
-          }}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 200 }}
         />
       )}
 
       {/* Drawer */}
       <div style={{
         position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 201,
-        background: '#fff', borderRadius: '16px 16px 0 0',
-        padding: '20px 0 32px',
+        background: C.surface, borderRadius: '12px 12px 0 0', borderTop: `1px solid ${C.border}`,
+        padding: '16px 0 32px',
         transform: drawerOpen ? 'translateY(0)' : 'translateY(100%)',
-        transition: 'transform .3s ease',
+        transition: 'transform .25s ease',
       }}>
-        <div style={{ width: 36, height: 4, borderRadius: 2, background: '#e5e7eb', margin: '0 auto 20px' }} />
+        <div style={{ width: 32, height: 3, borderRadius: 2, background: C.border, margin: '0 auto 16px' }} />
 
-        {/* Profile row */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '0 20px 16px', borderBottom: '1px solid #f3f4f6' }}>
-          <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#111', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700 }}>{ava}</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '0 16px 14px', borderBottom: `1px solid ${C.border}` }}>
+          <div style={{ width: 36, height: 36, borderRadius: '50%', background: '#333', color: C.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 600 }}>{ava}</div>
           <div>
-            <div style={{ fontSize: 14, fontWeight: 600, color: '#111' }}>{tenantName || email}</div>
-            {unitNumber && <div style={{ fontSize: 12, color: '#9ca3af' }}>{unitNumber}</div>}
+            <div style={{ fontSize: 14, fontWeight: 500, color: C.text }}>{tenantName || email}</div>
+            {unitNumber && <div style={{ fontSize: 12, color: C.muted }}>{unitNumber}</div>}
           </div>
         </div>
 
@@ -291,26 +368,26 @@ export default function TenantLayout({ children, activePage, onNavigate }: Tenan
           const badge = item.key === 'notifications' && unreadCount > 0 ? unreadCount : null
           return (
             <button key={item.key} onClick={() => { onNavigate(item.key); setDrawerOpen(false) }} style={{
-              display: 'flex', alignItems: 'center', gap: 14, width: '100%', padding: '14px 20px',
-              border: 'none', background: 'none', cursor: 'pointer', fontFamily: 'inherit',
-              fontSize: 15, color: '#111', textAlign: 'left',
+              display: 'flex', alignItems: 'center', gap: 12, width: '100%', padding: '13px 16px',
+              border: 'none', background: 'none', cursor: 'pointer', fontFamily: C.font,
+              fontSize: 14, color: C.text, textAlign: 'left',
             }}>
-              <span style={{ fontSize: 20, width: 24, textAlign: 'center' }}>{item.icon}</span>
+              <span style={{ color: C.mutedMid, display: 'flex' }}>{Icons[item.icon as keyof typeof Icons]}</span>
               <span style={{ flex: 1 }}>{item.label}</span>
               {badge !== null && (
-                <span style={{ minWidth: 20, height: 20, borderRadius: 10, background: '#ef4444', color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 5px' }}>{badge}</span>
+                <span style={{ minWidth: 18, height: 18, borderRadius: 9, background: '#ef4444', color: '#fff', fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px' }}>{badge}</span>
               )}
             </button>
           )
         })}
 
-        <div style={{ height: 1, background: '#f3f4f6', margin: '8px 0' }} />
+        <div style={{ height: 1, background: C.border, margin: '6px 0' }} />
         <button onClick={logout} style={{
-          display: 'flex', alignItems: 'center', gap: 14, width: '100%', padding: '14px 20px',
-          border: 'none', background: 'none', cursor: 'pointer', fontFamily: 'inherit',
-          fontSize: 15, color: '#ef4444', textAlign: 'left',
+          display: 'flex', alignItems: 'center', gap: 12, width: '100%', padding: '13px 16px',
+          border: 'none', background: 'none', cursor: 'pointer', fontFamily: C.font,
+          fontSize: 14, color: C.danger, textAlign: 'left',
         }}>
-          <span style={{ fontSize: 20, width: 24, textAlign: 'center' }}>🚪</span>
+          <span style={{ display: 'flex' }}>{Icons.logout}</span>
           Выйти
         </button>
       </div>

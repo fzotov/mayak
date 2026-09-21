@@ -4,11 +4,23 @@ interface TenantLoginProps {
   onNavigate: (p: string) => void;
 }
 
+const C = {
+  bg: '#0a0a0a',
+  surface: '#111',
+  border: '#1f1f1f',
+  text: '#ededed',
+  muted: '#666',
+  placeholder: '#444',
+  font: '"Geist", system-ui, -apple-system, sans-serif',
+}
+
 export default function TenantLogin({ onNavigate }: TenantLoginProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [focusEmail, setFocusEmail] = useState(false);
+  const [focusPass, setFocusPass] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -37,112 +49,126 @@ export default function TenantLogin({ onNavigate }: TenantLoginProps) {
     }
   };
 
+  const inputStyle = (focused: boolean): React.CSSProperties => ({
+    width: '100%',
+    padding: '10px 12px',
+    background: focused ? '#161616' : '#0f0f0f',
+    border: `1px solid ${focused ? '#444' : C.border}`,
+    borderRadius: 6,
+    fontSize: 14,
+    color: C.text,
+    outline: 'none',
+    boxSizing: 'border-box',
+    fontFamily: C.font,
+    transition: 'border-color .15s, background .15s',
+  });
+
   return (
-    <div
-      style={{
-        background: '#f9fafb',
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-    >
-      <div
-        style={{
-          width: 400,
-          border: '1px solid #e5e7eb',
-          borderRadius: 12,
-          padding: 40,
-          boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
-          background: '#fff',
-        }}
-      >
-        <div style={{ textAlign: 'center', marginBottom: 28 }}>
+    <div style={{
+      background: C.bg,
+      minHeight: '100vh',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      fontFamily: C.font,
+      padding: '0 16px',
+    }}>
+      <div style={{ width: '100%', maxWidth: 360 }}>
+        {/* Header */}
+        <div style={{ textAlign: 'center', marginBottom: 32 }}>
           <img
             src="https://mayak-d.ru/pics/logo.png"
             alt="Маяк"
-            style={{ maxHeight: 52, display: 'block', margin: '0 auto 16px' }}
+            style={{ height: 36, display: 'block', margin: '0 auto 20px', filter: 'brightness(0) invert(1)' }}
           />
-          <h2 style={{ fontSize: 20, fontWeight: 600, margin: '0 0 4px' }}>
+          <h1 style={{ fontSize: 20, fontWeight: 600, margin: '0 0 6px', color: C.text, letterSpacing: '-0.3px' }}>
             Портал арендатора
-          </h2>
-          <p style={{ color: '#6b7280', margin: 0, fontSize: 14 }}>
-            Бизнес-центр «Маяк»
+          </h1>
+          <p style={{ color: C.muted, margin: 0, fontSize: 13 }}>
+            Бизнес-центр «Маяк», Дмитров
           </p>
         </div>
 
-        <form onSubmit={handleSubmit}>
-          <div style={{ marginBottom: 16 }}>
-            <label style={{ display: 'block', fontSize: 14, fontWeight: 500, marginBottom: 6 }}>
-              Email
-            </label>
-            <input
-              type="email"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              required
+        {/* Card */}
+        <div style={{
+          background: C.surface,
+          border: `1px solid ${C.border}`,
+          borderRadius: 10,
+          padding: 28,
+        }}>
+          <form onSubmit={handleSubmit}>
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 6, color: C.text }}>
+                Email
+              </label>
+              <input
+                type="email"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                onFocus={() => setFocusEmail(true)}
+                onBlur={() => setFocusEmail(false)}
+                placeholder="you@company.ru"
+                required
+                style={inputStyle(focusEmail)}
+              />
+            </div>
+
+            <div style={{ marginBottom: 24 }}>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 6, color: C.text }}>
+                Пароль
+              </label>
+              <input
+                type="password"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                onFocus={() => setFocusPass(true)}
+                onBlur={() => setFocusPass(false)}
+                placeholder="••••••••"
+                required
+                style={inputStyle(focusPass)}
+              />
+            </div>
+
+            {error && (
+              <div style={{
+                background: 'rgba(255,68,68,0.08)',
+                border: '1px solid rgba(255,68,68,0.2)',
+                borderRadius: 6,
+                padding: '10px 12px',
+                fontSize: 13,
+                color: '#ff6b6b',
+                marginBottom: 16,
+              }}>{error}</div>
+            )}
+
+            <button
+              type="submit"
+              disabled={loading}
               style={{
                 width: '100%',
-                padding: '10px 12px',
-                border: '1px solid #e5e7eb',
-                borderRadius: 8,
+                background: loading ? '#333' : '#fff',
+                color: '#000',
+                border: 'none',
+                borderRadius: 6,
+                padding: '10px',
                 fontSize: 14,
-                outline: 'none',
-                boxSizing: 'border-box',
+                fontWeight: 500,
+                cursor: loading ? 'not-allowed' : 'pointer',
+                fontFamily: C.font,
+                transition: 'background .15s',
+                letterSpacing: '-0.1px',
               }}
-            />
-          </div>
+              onMouseEnter={e => { if (!loading) (e.currentTarget as HTMLButtonElement).style.background = '#e5e5e5' }}
+              onMouseLeave={e => { if (!loading) (e.currentTarget as HTMLButtonElement).style.background = '#fff' }}
+            >
+              {loading ? 'Входим...' : 'Войти'}
+            </button>
+          </form>
+        </div>
 
-          <div style={{ marginBottom: 24 }}>
-            <label style={{ display: 'block', fontSize: 14, fontWeight: 500, marginBottom: 6 }}>
-              Пароль
-            </label>
-            <input
-              type="password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              required
-              style={{
-                width: '100%',
-                padding: '10px 12px',
-                border: '1px solid #e5e7eb',
-                borderRadius: 8,
-                fontSize: 14,
-                outline: 'none',
-                boxSizing: 'border-box',
-              }}
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            style={{
-              width: '100%',
-              background: '#111',
-              color: '#fff',
-              border: 'none',
-              borderRadius: 8,
-              padding: '12px',
-              fontSize: 15,
-              fontWeight: 500,
-              cursor: loading ? 'not-allowed' : 'pointer',
-              opacity: loading ? 0.7 : 1,
-            }}
-          >
-            {loading ? 'Входим...' : 'Войти'}
-          </button>
-
-          {error && (
-            <p style={{ color: '#ef4444', fontSize: 13, textAlign: 'center', marginTop: 12 }}>
-              {error}
-            </p>
-          )}
-
-          <p style={{ color: '#9ca3af', fontSize: 13, textAlign: 'center', marginTop: 16 }}>
-            Забыли пароль? Обратитесь к администратору
-          </p>
-        </form>
+        <p style={{ color: C.muted, fontSize: 12, textAlign: 'center', marginTop: 20, lineHeight: 1.5 }}>
+          Забыли пароль? Обратитесь к администратору
+        </p>
       </div>
     </div>
   );
