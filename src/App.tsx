@@ -11,6 +11,7 @@ import ReferencesPage from './pages/References'
 import { BillingPage } from './pages/Billing'
 import { TenantNewPage } from './pages/TenantNew'
 import SiteAdminPage from './pages/SiteAdmin'
+import { fetchSiteLeads, type SiteLead } from './lib/siteLeads'
 import { FloorPlanPage } from './pages/FloorPlan'
 import StaffPage from './pages/Staff'
 import InventoryPage from './pages/Inventory'
@@ -117,8 +118,10 @@ function Dashboard() {
   const [hotRepairs, setHotRepairs] = useState<any[]>([])
   const [repairsLoaded, setRepairsLoaded] = useState(false)
   const [approvedInvoices, setApprovedInvoices] = useState<any[]>([])
+  const [siteLeads, setSiteLeads] = useState<SiteLead[]>([])
 
   useEffect(() => {
+    fetchSiteLeads(50).then(({ leads }) => setSiteLeads(leads))
     fetchHotRepairs().then(data => { setHotRepairs(data); setRepairsLoaded(true) })
     supabase.from('incoming_invoices').select('id,supplier,amount,vat,description,due_date,approved_by,approved_at')
       .eq('status', 'APPROVED').order('approved_at', { ascending: false })
@@ -169,15 +172,52 @@ function Dashboard() {
   }
   const SRC_LABEL: Record<string, string> = { OWNER: 'от руководителя', SYSTEM: 'авто', EMPLOYEE: 'личная' }
 
+  const newLeads = siteLeads.filter(l => l.status === 'new')
+  const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000
+  const leadsThisWeek = siteLeads.filter(l => new Date(l.created_at).getTime() > weekAgo)
+  const leadTime = (iso: string) => new Date(iso).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6,1fr)', gap: 8 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 8 }}>
+        <KpiCard
+          label="Заявки сайта"
+          value={newLeads.length}
+          sub={newLeads.length ? 'новые, ждут ответа' : `за неделю: ${leadsThisWeek.length}`}
+          color={newLeads.length ? '#4f6ef7' : undefined}
+        />
         <KpiCard label="Заполняемость" value={`${stats.occupancyRate}%`} sub={`${stats.occupiedUnits} из ${stats.totalUnits} офисов`} color="#22c55e" />
         <KpiCard label="Выручка / месяц" value={`${stats.totalMonthlyRevenue.toLocaleString('ru')} ₽`} />
         <KpiCard label="Просрочено счетов" value={stats.overdueCount} sub={`${stats.overdueTotal.toLocaleString('ru')} ₽ долг`} color="#ef4444" />
         <KpiCard label="Открытые заявки" value={stats.openRepairs} color="#f59e0b" />
         <KpiCard label="Истекают договоры" value={stats.expiringContracts} sub="в течение 30 дней" color="#f59e0b" />
         <KpiCard label="Аварийных заявок" value={hotRepairs.filter(r => r.priority === 'emergency').length} color="#ef4444" />
+      </div>
+
+      <div style={{ background: '#fff', border: '1px solid #e8ebf3', borderRadius: 9, padding: '13px 15px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: '#1a2240' }}>
+            Заявки с сайта{newLeads.length ? <span style={{ marginLeft: 8, padding: '1px 8px', borderRadius: 999, background: '#eff3ff', color: '#4f6ef7', fontSize: 12 }}>{newLeads.length} новых</span> : null}
+          </div>
+          <button onClick={() => window.dispatchEvent(new CustomEvent('navigate', { detail: 'site' }))} style={{ fontSize: 12, color: '#4f6ef7', border: 'none', background: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>Все →</button>
+        </div>
+        {siteLeads.length === 0
+          ? <div style={{ color: '#8596b4', fontSize: 14, padding: '8px 0' }}>Заявок с сайта пока нет</div>
+          : siteLeads.slice(0, 5).map(lead => (
+            <div key={lead.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid #f0f2f8' }}>
+              <div style={{ width: 3, height: 34, borderRadius: 2, background: lead.status === 'new' ? '#4f6ef7' : '#d1d5db', flexShrink: 0 }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 14, fontWeight: 500, color: '#1a2240' }}>
+                  {lead.name || 'Без имени'} · <a href={`tel:${lead.phone}`} style={{ color: '#4f6ef7' }}>{lead.phone}</a>
+                </div>
+                <div style={{ fontSize: 12, color: '#8596b4', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {lead.unit_number ? `Офис ${lead.unit_number}` : 'Без привязки к офису'}{lead.message ? ` · ${lead.message}` : ''}
+                </div>
+              </div>
+              <div style={{ fontSize: 12, color: '#8596b4', whiteSpace: 'nowrap' }}>{leadTime(lead.created_at)}</div>
+            </div>
+          ))
+        }
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>

@@ -1,16 +1,7 @@
 import { useState, useEffect } from 'react';
-
-// Inject Geist font directly so it loads regardless of build/CSS pipeline
-if (typeof document !== 'undefined' && !document.getElementById('geist-font')) {
-  const link = document.createElement('link')
-  link.id = 'geist-font'
-  link.rel = 'stylesheet'
-  link.href = 'https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap'
-  document.head.appendChild(link)
-  document.documentElement.style.fontFamily = '"Geist", system-ui, -apple-system, sans-serif'
-}
 import TenantLogin from './pages/tenant/TenantLogin';
 import TenantActivatePage from './pages/TenantActivate';
+import TenantResetPassword from './pages/TenantResetPassword';
 import TenantDashboard from './pages/tenant/TenantDashboard';
 import TenantProfile from './pages/tenant/TenantProfile';
 import TenantContract from './pages/tenant/TenantContract';
@@ -58,6 +49,10 @@ export default function TenantApp() {
 
   if (path.startsWith('/tenant/activate')) {
     return <TenantActivatePage />;
+  }
+
+  if (path.startsWith('/tenant/reset-password')) {
+    return <TenantResetPassword />;
   }
 
   let page = 'home';

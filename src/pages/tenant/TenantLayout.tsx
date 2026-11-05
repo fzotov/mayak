@@ -174,7 +174,7 @@ export default function TenantLayout({ children, activePage, onNavigate }: Tenan
           {/* Logo */}
           <div style={{ padding: '20px 16px 16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-              <img src="https://mayak-d.ru/pics/logo.png" alt="Маяк" style={{ height: 28, filter: 'brightness(0) invert(1)', display: 'block' }} />
+              <img src="/mayak-logo.png" alt="Маяк" style={{ height: 40, display: 'block', borderRadius: 6 }} />
             </div>
             <div style={{ fontSize: 11, color: C.muted, fontWeight: 500, letterSpacing: '.5px', textTransform: 'uppercase', marginTop: 8 }}>
               Портал арендатора
@@ -284,7 +284,7 @@ export default function TenantLayout({ children, activePage, onNavigate }: Tenan
         background: C.bg, borderBottom: `1px solid ${C.border}`,
         display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 16px',
       }}>
-        <img src="https://mayak-d.ru/pics/logo.png" alt="Маяк" style={{ height: 24, filter: 'brightness(0) invert(1)', display: 'block' }} />
+        <img src="/mayak-logo.png" alt="Маяк" style={{ height: 32, display: 'block', borderRadius: 4 }} />
         <div style={{ fontSize: 14, fontWeight: 500, color: C.text }}>{PAGE_TITLES[activePage] ?? 'Маяк'}</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <button onClick={() => onNavigate('notifications')} style={{ position: 'relative', border: 'none', background: 'none', cursor: 'pointer', padding: 4, color: C.mutedMid, display: 'flex' }}>

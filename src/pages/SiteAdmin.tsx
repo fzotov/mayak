@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { ALL_ROOMS, unitKey, unitKeys, type Room } from '../lib/floorGeometry'
+import { fetchSiteLeads, updateLeadStatus, type SiteLead } from '../lib/siteLeads'
 
 // ─── Управление публичным сайтом: витрина помещений и заявки ────────────────
 // Состав помещений берём из плана этажей, а статус, цену, фото и видео —
@@ -23,11 +24,7 @@ type Row = {
   tenantName: string | null
 }
 
-type Lead = {
-  id: string; created_at: string; name: string | null; phone: string; email: string | null
-  message: string | null; unit_number: string | null; area_wanted: number | null
-  source: string | null; page_url: string | null; status: string
-}
+type Lead = SiteLead
 
 const STATUS: Record<string, { label: string; bg: string; color: string }> = {
   free:     { label: 'Свободно', bg: '#dcfce7', color: '#16a34a' },
@@ -400,30 +397,30 @@ function LeadsTab() {
 
   async function load() {
     setLoading(true)
-    const { data, error } = await supabase.from('site_leads').select('*').order('created_at', { ascending: false }).limit(300)
-    setMissing(!!error)
-    setLeads(data || [])
+    const { leads, fallback } = await fetchSiteLeads()
+    setMissing(fallback)
+    setLeads(leads)
     setLoading(false)
   }
   useEffect(() => { load() }, [])
 
   async function setStatus(id: string, status: string) {
     setLeads(l => l.map(x => x.id === id ? { ...x, status } : x))
-    await supabase.from('site_leads').update({ status }).eq('id', id)
+    await updateLeadStatus(id, status, missing)
   }
 
   const shown = useMemo(() => leads.filter(l => filter === 'all' || l.status === filter), [leads, filter])
   const newCount = leads.filter(l => l.status === 'new').length
 
-  if (missing) return (
-    <div style={{ ...CARD, background: '#fffbeb', borderColor: '#fcd34d', fontSize: 13, color: '#92400e' }}>
-      Таблица <b>site_leads</b> ещё не создана. Выполните <code>supabase/migrations/20260920_site.sql</code> в SQL-редакторе
-      Supabase — после этого заявки с сайта будут падать сюда.
-    </div>
-  )
-
   return (
     <div>
+      {missing && (
+        <div style={{ ...CARD, background: '#fffbeb', borderColor: '#fcd34d', fontSize: 13, color: '#92400e', marginBottom: 12 }}>
+          Таблица <b>site_leads</b> ещё не создана, поэтому заявки с сайта приходят задачами и показаны ниже.
+          Выполните <code>supabase/migrations/20260920_site.sql</code> в SQL-редакторе Supabase — после этого они
+          будут храниться как полноценные заявки со своими статусами.
+        </div>
+      )}
       <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center' }}>
         {([['all', 'Все'], ['new', `Новые${newCount ? ` (${newCount})` : ''}`], ['in_work', 'В работе'], ['done', 'Закрытые']] as const).map(([v, l]) => (
           <button key={v} onClick={() => setFilter(v as any)}
