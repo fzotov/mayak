@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { apiFetch } from '../lib/api'
 
-const ROLES: Record<string, string> = { owner: 'Владелец', manager: 'Управляющий', accountant: 'Бухгалтер', technician: 'Техник' }
+const ROLES: Record<string, string> = { owner: 'Владелец', manager: 'Управляющий' }
 const inp: React.CSSProperties = { width: '100%', padding: '10px 12px', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 15, fontFamily: 'inherit', outline: 'none', color: '#111', boxSizing: 'border-box' }
 const lbl: React.CSSProperties = { fontSize: 13, fontWeight: 500, color: '#374151', display: 'block', marginBottom: 6 }
 const btn: React.CSSProperties = { padding: '10px 16px', background: '#111', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }

@@ -5,7 +5,7 @@ import { sendMail, letter } from './_lib/mail.js'
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end()
-  if (!(await requireStaff(req, res, ['owner', 'manager', 'accountant']))) return
+  if (!(await requireStaff(req, res))) return
 
   const tenantId = req.body?.tenantId
   const email = normEmail(req.body?.email)

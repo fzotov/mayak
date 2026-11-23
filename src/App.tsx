@@ -472,9 +472,7 @@ const PAGE_TITLES: Record<string, string> = {
   stele: 'Рекламная стела', counterparties: 'Контрагенты', floorplan: 'План этажей', site: 'Сайт и заявки', units: 'Помещения',
   'incoming-invoices': 'Входящие счета', 'payment-calendar': 'Платёжный календарь', 'invoice-detail': 'Счёт', 'import-tenants': 'Импорт арендаторов',
 }
-const ROLE_LABEL: Record<string, string> = { owner: 'Владелец', manager: 'Управляющий', accountant: 'Бухгалтер', technician: 'Техник' }
-// техник видит только эксплуатацию
-const TECH_PAGES = new Set(['dashboard', 'floorplan', 'units', 'meters', 'heat', 'repairs', 'inventory', 'tasks', 'my-tasks', 'kb'])
+const ROLE_LABEL: Record<string, string> = { owner: 'Владелец', manager: 'Управляющий' }
 
 /** Адрес страницы хранится в хеше: /#/tenants, /#/tenant-card/<id>. Обновление и «Назад» работают. */
 function readRoute(): { page: Page; id: string | null } {
@@ -535,11 +533,7 @@ export default function App() {
   if (!user) return <AuthPage onLogin={loadUser} />
   if (!profile) return <AuthPage denied onLogin={loadUser} />
 
-  const isTech = profile.role === 'technician'
   const groups = NAV_GROUPS
-    .map(g => ({ ...g, items: g.items.filter(n => !isTech || TECH_PAGES.has(n.id)) }))
-    .filter(g => g.items.length)
-  const allowed = !isTech || TECH_PAGES.has(page)
   const activeNav = page === 'tenant-card' || page === 'tenant-new' || page === 'import-tenants' ? 'tenants' : page === 'invoice-detail' ? 'invoices' : page
   const initials = (profile.full_name || user.email || '?').split(/\s+/).map((w: string) => w[0]).join('').slice(0, 2).toUpperCase()
 
@@ -595,8 +589,7 @@ export default function App() {
           <div style={{ fontSize: narrow ? 16 : 18, fontWeight: 600, color: '#111', letterSpacing: '-0.2px' }}>{PAGE_TITLES[page] || 'Маяк'}</div>
         </header>
         <main style={{ flex: 1, padding: narrow ? 14 : 24, overflowX: 'auto' }}>
-          {!allowed && <div style={{ color: '#6b7280', padding: 24 }}>Этот раздел недоступен для вашей роли.</div>}
-          {allowed && <>
+          <>
           {page === 'dashboard' && <Dashboard />}
           {page === 'invoices' && <InvoicesPage onOpenInvoice={(inv) => { setSelectedInvoice(inv); setPage('invoice-detail') }} />}
           {page === 'tenants' && <Tenants onOpenTenant={(id) => setPage('tenant-card', id)} onAddTenant={() => setPage('tenant-new')} />}
@@ -629,7 +622,7 @@ export default function App() {
           {page === 'stele' && <AdvertisingStele />}
           {page === 'incoming-invoices' && <IncomingInvoicesPage />}
           {page === 'payment-calendar' && <PaymentCalendarPage />}
-          </>}
+          </>
           {showSettings && <SettingsModal user={user} profile={profile} onClose={() => setShowSettings(false)} onLogout={logout} />}
         </main>
       </div>

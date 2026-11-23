@@ -4,7 +4,7 @@ import { requireStaff, admin, APP_URL } from './_lib/auth.js'
 import { issueToken, normEmail, validEmail } from './_lib/tokens.js'
 import { sendMail, letter } from './_lib/mail.js'
 
-const ROLES = ['owner', 'manager', 'accountant', 'technician']
+const ROLES = ['owner', 'manager']
 
 export default async function handler(req, res) {
   if (req.method !== 'POST' && req.method !== 'DELETE') return res.status(405).end()

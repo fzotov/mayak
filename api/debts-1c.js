@@ -7,7 +7,7 @@ export const config = { maxDuration: 60 }
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).end()
-  if (!(await requireStaff(req, res, ['owner', 'manager', 'accountant']))) return
+  if (!(await requireStaff(req, res))) return
   try {
     const fresh = await loadDebtsFresh()
     return res.status(200).json({ ok: true, ...fresh })

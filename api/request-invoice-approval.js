@@ -7,7 +7,7 @@ const resend = new Resend(process.env.RESEND_API_KEY)
 const supabase = createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY)
 
 export default async function handler(req, res) {
-  if (!(await requireStaff(req, res, ['owner', 'manager', 'accountant']))) return
+  if (!(await requireStaff(req, res))) return
   if (req.method !== 'POST') return res.status(405).end()
 
   const { invoiceId, toEmail, toName, invoiceData } = req.body

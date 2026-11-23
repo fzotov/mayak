@@ -21,7 +21,7 @@ async function sb(path, opts = {}) {
 }
 
 export default async function handler(req, res) {
-  if (!(await requireStaff(req, res, ['owner', 'manager', 'accountant']))) return
+  if (!(await requireStaff(req, res))) return
   if (req.method !== 'POST') return res.status(405).end()
   const { transactionIds } = req.body
 
