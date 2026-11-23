@@ -66,7 +66,7 @@ const labelStyle: React.CSSProperties = { fontSize: 13, color: GRAY, fontWeight:
 const CATEGORIES = ['Аренда', 'Коммунальные', 'Охрана', 'Уборка', 'Интернет', 'Страхование', 'Налоги', 'Прочее']
 
 /** Последний день месяца «ГГГГ-ММ»: в ноябре 30 дней, и база отклоняла запрос с 31-м числом. */
-function monthEnd(ym: string) {
+function lastDayOf(ym: string) {
   const [y, m] = ym.split('-').map(Number)
   return `${ym}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`
 }
@@ -95,7 +95,7 @@ export default function PaymentCalendarPage() {
       .from('payment_calendar')
       .select('regular_payment_id')
       .gte('due_date', `${monthStr}-01`)
-      .lte('due_date', monthEnd(monthStr))
+      .lte('due_date', lastDayOf(monthStr))
       .eq('type', 'REGULAR')
 
     const existingIds = new Set((existing || []).map((e: any) => e.regular_payment_id))
@@ -135,7 +135,7 @@ export default function PaymentCalendarPage() {
       .from('payment_calendar')
       .select('*')
       .gte('due_date', `${monthStr}-01`)
-      .lte('due_date', monthEnd(monthStr))
+      .lte('due_date', lastDayOf(monthStr))
       .order('due_date')
 
     // Auto-mark overdue
