@@ -59,7 +59,7 @@ export default function LedgerPage() {
         supabase.from('tenants').select('id,inn,id_1c'),
       ])
       const r1c = await r1cRes.json()
-      if (!r1c.ok) { setImportMsg('1С не отвечает: ' + (r1c.error || 'нет данных')); setLoading(false); return }
+      if (!r1c.ok) { setImportMsg(r1c.error || '1С не отвечает'); setLoading(false); return }
 
       // Build tenant lookup: id_1c → tenantId, inn → tenantId
       const byId1c: Record<string, string> = {}
