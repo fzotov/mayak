@@ -56,7 +56,7 @@ npx vercel alias admin-XXXX-vizbl.vercel.app mayak-xi.vercel.app
 ## 4. Текущее состояние
 
 - 23.11.2026 на прод выложен этап 1 ТЗ v2 (безопасность): сборка `admin-f9qkh5qek`, адрес `mayak-xi.vercel.app` переключён и проверен. Миграции `20260920_site.sql`, `20261122_schema_fixes.sql`, `20261123_security.sql`, `20261124_roles.sql` применены.
-- В Vercel заданы `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_KEY`, `ONEC_TOKEN`, `APP_URL`, `ANTHROPIC_API_KEY`. Нет `RESEND_API_KEY` — пока его нет, приглашения и сброс пароля с прода не уходят. Нет `OPENAI_API_KEY` — не работают база знаний с поиском и чат GPT.
+- В Vercel заданы `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_KEY`, `ONEC_TOKEN`, `APP_URL`, `ANTHROPIC_API_KEY`. `RESEND_API_KEY` добавлен 23.11.2026; домен `mayak-d.ru` подтверждён в Resend (команда vizbl, регион eu-west-1), письмо сброса пароля с прода доставлено. Нет `OPENAI_API_KEY` — не работают база знаний с поиском и чат GPT.
 - Выгрузка 1С `o.mayak-d.ru/export/debts.xml` 23.11.2026 отвечала 504; взаиморасчёты и сальдо арендаторов не обновлены (в `ledger_entries` данные по 31.08.2026, `tenant_balances` пуст).
 - В Supabase остаётся включённой свободная регистрация (Auth → Sign In / Providers → Allow new users to sign up). Зарегистрировавшийся без приглашения не получает ни одной строки, но настройку стоит выключить.
 - Локальные коммиты не запушены в GitHub, если ниже не сказано иное.
@@ -86,7 +86,7 @@ npx vercel alias admin-XXXX-vizbl.vercel.app mayak-xi.vercel.app
 - Сальдо арендаторов по 1С лежит в `tenant_balances`, последний снимок выгрузки — в `onec_snapshot`; обновляются при открытии «Взаиморасчётов». Кабинет арендатора показывает сальдо и операции (`ledger_entries`) отсюда.
 - Статус помещения `units.status` (`free` / `occupied`) выводится из `tenants.unit_number` — это текст, в котором может быть несколько номеров и составные вроде `201.202` (такой номер есть в `units` и целиком, и по частям). Кириллические А/Б в номерах приводятся к латинским A/B.
 - Служебные помещения заняты всегда: 228 (кухня), 301 и 302 (офис управляющей компании), 326 (склад), 326А, 326Б (МФЦ).
-- Письма уходят через Resend от `noreply@mayak-d.ru`.
+- Письма уходят через Resend от `noreply@mayak-d.ru`. DNS домена — в панели хостинга reg.ru (ISPmanager → Управление DNS), не в карточке домена. Для Resend там записи `resend._domainkey` (TXT), `send` и `rsend` (CNAME), `_dmarc` (TXT); почта mail.ru — на корне домена, их не трогать.
 - Прод-адрес для ссылок в письмах берётся из переменной `APP_URL` (по умолчанию `https://mayak-xi.vercel.app`).
 - Каталог помещений сайта пока статический (`apps/site/data/offices.ts`, `floors.ts`); переключение на таблицу `units` делается заменой реализации `apps/site/lib/offices.ts`.
 
@@ -109,7 +109,7 @@ npx vercel alias admin-XXXX-vizbl.vercel.app mayak-xi.vercel.app
 ## 9. Открытые вопросы
 
 - 1С отложена по решению Фёдора 23.11.2026. Когда вернёмся: загрузить взаиморасчёты и обновить арендаторов, когда выгрузка заработает: «Взаиморасчёты» → «Импорт из 1С».
-- Добавить `RESEND_API_KEY` в Vercel и проверить приглашение арендатора с прода письмом.
+- Ключ Resend выпущен с правом Full access; при случае заменить на ключ с правом Sending access.
 - Перевыпустить service key Supabase, токен Vercel и токен 1С (светились в чате и в истории git).
 - Этапы 2–7 ТЗ v2 (`TZ_V2.md`): учётное ядро, обмен с 1С, банк Сбера, интерфейс v2, телефон, CRM.
 - В админке остаются инлайновые стили; на телефоне широкие таблицы прокручиваются вбок.
