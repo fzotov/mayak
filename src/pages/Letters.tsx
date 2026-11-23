@@ -241,7 +241,7 @@ function LetterModal({ letter, onClose, onSaved }: { letter: Letter | null; onCl
                 </button>
                 {file && (
                   <button onClick={processFile} disabled={processing} style={{ padding: '6px 14px', borderRadius: 6, border: 'none', background: '#7c3aed', color: '#fff', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', opacity: processing ? 0.6 : 1 }}>
-                    {processing ? '⏳ Обработка...' : '✦ Обработать AI'}
+                    {processing ? 'Обработка...' : '✦ Обработать AI'}
                   </button>
                 )}
               </div>
@@ -278,7 +278,7 @@ function LetterModal({ letter, onClose, onSaved }: { letter: Letter | null; onCl
                 <label style={lbl}>Текст письма</label>
                 {form.type === 'outgoing' && (
                   <button onClick={() => setShowPrompt(true)} disabled={generating} style={{ padding: '4px 12px', borderRadius: 6, border: 'none', background: '#111', color: '#fff', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', opacity: generating ? 0.6 : 1 }}>
-                    {generating ? '⏳ Генерация...' : '✦ Сгенерировать AI'}
+                    {generating ? 'Генерация...' : '✦ Сгенерировать AI'}
                   </button>
                 )}
               </div>

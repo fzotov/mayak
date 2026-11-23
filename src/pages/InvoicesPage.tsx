@@ -224,7 +224,7 @@ function InvoiceModal({ tenants, units, services, onClose, onSaved }: {
       }
     }
 
-    setAutoHint(hints.length ? `✓ Автозаполнено: ${hints.join(', ')}` : '⚠ Договор не найден — заполните вручную')
+    setAutoHint(hints.length ? `✓ Автозаполнено: ${hints.join(', ')}` : 'Договор не найден — заполните вручную')
     setAutoLoading(false)
   }
 
@@ -423,7 +423,7 @@ export function InvoicesPage({ onOpenInvoice }: { onOpenInvoice?: (inv: any) => 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       {/* KPI */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8 }}>
         {[
           { label: 'Всего счетов', value: String(displayed.length), color: '#1a2240' },
           { label: 'Оплачено в этом месяце', value: fmtAmt(paidMonth), color: '#22c55e' },

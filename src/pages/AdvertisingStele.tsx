@@ -140,7 +140,7 @@ export default function AdvertisingStele() {
       <div style={{ fontSize: 18, fontWeight: 600, color: '#1a2240' }}>Рекламная стела</div>
 
       {/* KPIs */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
         {[
           { label: 'Занято арендаторами', value: occupied, color: '#4f6ef7', suffix: '' },
           { label: 'Свободно', value: free, color: '#16a34a', suffix: '' },

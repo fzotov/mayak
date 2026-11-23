@@ -37,11 +37,11 @@ const KEY_UNITS: Record<string, string> = {
   cleaning_price: 'руб/помещение',
 }
 const KEY_ICONS: Record<string, string> = {
-  electricity_markup: '⚡',
-  electricity_tariff: '⚡',
-  cold_water_tariff: '💧',
-  hot_water_tariff: '🔥',
-  cleaning_price: '🧹',
+  electricity_markup: '',
+  electricity_tariff: '',
+  cold_water_tariff: '',
+  hot_water_tariff: '',
+  cleaning_price: '',
 }
 
 interface Setting { id: string; key: string; value: number; description: string; valid_from: string; created_at: string; created_by?: string }
@@ -113,7 +113,7 @@ function TariffsSection() {
             <div key={key} style={{ background: c.card, border: `1px solid ${c.border}`, borderRadius: 10, overflow: 'hidden' }}>
               <div style={{ padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 12 }}>
                 <div style={{ fontSize: 20, width: 36, height: 36, background: '#f0f2f8', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  {KEY_ICONS[key] || '📋'}
+                  {KEY_ICONS[key] || ''}
                 </div>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 14, fontWeight: 600, color: c.text }}>{KEY_LABELS[key] || key}</div>
@@ -138,7 +138,7 @@ function TariffsSection() {
               {isEditing && (
                 <div style={{ padding: '14px 18px', background: '#fffbeb', borderTop: `1px solid ${c.border}` }}>
                   <div style={{ fontSize: 13, color: '#92400e', marginBottom: 12 }}>
-                    ⚠️ Новое значение применится только к новым счетам. Старые счета останутся неизменными.
+                    Новое значение применится только к новым счетам. Старые счета останутся неизменными.
                   </div>
                   <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
                     <div>
@@ -317,7 +317,7 @@ function ServicesSection() {
   return (
     <div>
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
-        <input style={{ ...inp, width: 200 }} value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 Поиск услуги..." />
+        <input style={{ ...inp, width: 200 }} value={search} onChange={e => setSearch(e.target.value)} placeholder="Поиск услуги..." />
         <select style={{ border: `1px solid ${c.border}`, borderRadius: 6, padding: '7px 12px', fontSize: 14, fontFamily: 'inherit', outline: 'none', background: '#fff', color: c.text }}
           value={catFilter} onChange={e => setCatFilter(e.target.value)}>
           <option value="">Все категории</option>
@@ -510,9 +510,9 @@ function UnitsSection() {
 
 const SECTIONS = [
   { id: 'services', label: 'Услуги', icon: '◈', desc: 'Прайс-лист услуг' },
-  { id: 'tariffs', label: 'Тарифы и нормативы', icon: '⚡', desc: 'Тарифы с историей изменений' },
-  { id: 'categories', label: 'Категории услуг', icon: '📂', desc: 'Группировка услуг' },
-  { id: 'units', label: 'Единицы измерения', icon: '📐', desc: 'шт, м², кВт·ч...' },
+  { id: 'tariffs', label: 'Тарифы и нормативы', icon: '', desc: 'Тарифы с историей изменений' },
+  { id: 'categories', label: 'Категории услуг', icon: '', desc: 'Группировка услуг' },
+  { id: 'units', label: 'Единицы измерения', icon: '', desc: 'шт, м², кВт·ч...' },
 ]
 
 export default function ReferencesPage() {

@@ -145,13 +145,13 @@ export default function ImportTenantsPage({ onDone }: { onDone?: () => void }) {
       >
         {uploading ? (
           <>
-            <div style={{ fontSize: 32, marginBottom: 10 }}>⏳</div>
+            <div style={{ fontSize: 32, marginBottom: 10 }}></div>
             <div style={{ fontSize: 15, fontWeight: 600, color: '#4f6ef7' }}>AI читает файл...</div>
             <div style={{ fontSize: 13, color: '#8596b4', marginTop: 4 }}>Это может занять 15–30 секунд</div>
           </>
         ) : (
           <>
-            <div style={{ fontSize: 40, marginBottom: 10 }}>📂</div>
+            <div style={{ fontSize: 40, marginBottom: 10 }}></div>
             <div style={{ fontSize: 15, fontWeight: 600, color: '#1a2240', marginBottom: 6 }}>Перетащите файл или нажмите для выбора</div>
             <div style={{ fontSize: 13, color: '#8596b4' }}>Excel (.xlsx, .xls), CSV, PDF</div>
           </>
@@ -169,7 +169,7 @@ export default function ImportTenantsPage({ onDone }: { onDone?: () => void }) {
   // ─── Done step ─────────────────────────────────────────────────────────────
   if (step === 'done') return (
     <div style={{ maxWidth: 480, margin: '60px auto', textAlign: 'center' }}>
-      <div style={{ fontSize: 52, marginBottom: 16 }}>✅</div>
+      <div style={{ fontSize: 52, marginBottom: 16 }}></div>
       <div style={{ fontSize: 22, fontWeight: 700, color: '#1a2240', marginBottom: 8 }}>Импорт завершён</div>
       <div style={{ fontSize: 15, color: '#8596b4', marginBottom: 32 }}>Загружено {savedCount} арендаторов</div>
       <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>

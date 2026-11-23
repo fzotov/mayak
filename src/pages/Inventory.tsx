@@ -225,7 +225,7 @@ function ItemModal({ item, staff, onClose, onSaved }: { item: Item | null; staff
                   <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: '#fff', border: '1px solid #e8ebf3', borderRadius: 8, borderLeft: `3px solid ${m.action === 'issued' ? '#f59e0b' : m.action === 'received' ? '#4f6ef7' : '#22c55e'}` }}>
                     <div style={{ flex: 1 }}>
                       <div style={{ fontSize: 13, fontWeight: 500, color: '#1a2240' }}>
-                        {m.action === 'issued' ? '📤 Выдано' : m.action === 'received' ? '📥 Приход' : '↩️ Возврат'} — {m.quantity} шт.
+                        {m.action === 'issued' ? 'Выдано' : m.action === 'received' ? 'Приход' : '↩ Возврат'} — {m.quantity} шт.
                       </div>
                       <div style={{ fontSize: 12, color: '#8596b4' }}>{(m.staff as any)?.full_name || '—'} · {new Date(m.created_at).toLocaleDateString('ru')}{m.note && ` · ${m.note}`}</div>
                     </div>
@@ -304,7 +304,7 @@ function ReceiveModal({ items, onClose, onSaved }: { items: Item[]; onClose: () 
     <div style={{ position: 'fixed', inset: 0, background: '#00000066', zIndex: 110, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <div style={{ background: '#fff', borderRadius: 14, width: '100%', maxWidth: 640, maxHeight: '92vh', overflowY: 'auto', boxShadow: '0 20px 60px #0002' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid #e8ebf3' }}>
-          <div style={{ fontSize: 16, fontWeight: 600, color: '#1a2240' }}>📥 Приходная накладная</div>
+          <div style={{ fontSize: 16, fontWeight: 600, color: '#1a2240' }}>Приходная накладная</div>
           <button onClick={onClose} style={{ border: 'none', background: 'none', fontSize: 20, color: '#8596b4', cursor: 'pointer' }}>✕</button>
         </div>
 
@@ -412,7 +412,7 @@ function IssueModal({ items, staff, onClose, onSaved }: { items: Item[]; staff: 
     <div style={{ position: 'fixed', inset: 0, background: '#00000066', zIndex: 110, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <div style={{ background: '#fff', borderRadius: 14, width: '100%', maxWidth: 600, maxHeight: '92vh', overflowY: 'auto', boxShadow: '0 20px 60px #0002' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid #e8ebf3' }}>
-          <div style={{ fontSize: 16, fontWeight: 600, color: '#1a2240' }}>📤 Расходная накладная</div>
+          <div style={{ fontSize: 16, fontWeight: 600, color: '#1a2240' }}>Расходная накладная</div>
           <button onClick={onClose} style={{ border: 'none', background: 'none', fontSize: 20, color: '#8596b4', cursor: 'pointer' }}>✕</button>
         </div>
 
@@ -498,7 +498,7 @@ function HistoryTab({ staff }: { staff: Staff[] }) {
     return true
   })
 
-  const actionLabel: Record<string, string> = { issued: '📤 Выдано', received: '📥 Приход', returned: '↩️ Возврат' }
+  const actionLabel: Record<string, string> = { issued: 'Выдано', received: 'Приход', returned: '↩ Возврат' }
   const actionColor: Record<string, string> = { issued: '#f59e0b', received: '#4f6ef7', returned: '#22c55e' }
   const actionBg: Record<string, string> = { issued: '#fffbeb', received: '#eff3ff', returned: '#f0fdf4' }
 
@@ -515,9 +515,9 @@ function HistoryTab({ staff }: { staff: Staff[] }) {
       <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
         <select style={{ border: '1px solid #e8ebf3', borderRadius: 8, padding: '7px 12px', fontSize: 14, fontFamily: 'inherit', outline: 'none', background: '#fff' }} value={actionFilter} onChange={e => setActionFilter(e.target.value)}>
           <option value="">Все операции</option>
-          <option value="received">📥 Приход</option>
-          <option value="issued">📤 Выдача</option>
-          <option value="returned">↩️ Возврат</option>
+          <option value="received">Приход</option>
+          <option value="issued">Выдача</option>
+          <option value="returned">↩ Возврат</option>
         </select>
         <select style={{ border: '1px solid #e8ebf3', borderRadius: 8, padding: '7px 12px', fontSize: 14, fontFamily: 'inherit', outline: 'none', background: '#fff' }} value={staffFilter} onChange={e => setStaffFilter(e.target.value)}>
           <option value="">Все сотрудники</option>
@@ -626,7 +626,7 @@ export default function InventoryPage() {
       {pageTab === 'items' && (
         <>
           {/* Мини-дашборд */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 14 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10, marginBottom: 14 }}>
             {[
               { label: 'Всего позиций', value: items.length, color: '#1a2240', bg: '#fff' },
               { label: 'Общая стоимость', value: totalCost.toLocaleString('ru') + ' ₽', color: '#4f6ef7', bg: '#eff3ff' },
@@ -658,14 +658,14 @@ export default function InventoryPage() {
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 14, flexWrap: 'wrap' }}>
             <input
               style={{ flex: 1, minWidth: 200, border: '1px solid #e8ebf3', borderRadius: 8, padding: '8px 12px', fontSize: 14, fontFamily: 'inherit', outline: 'none' }}
-              placeholder="🔍 Поиск по названию или номеру..."
+              placeholder="Поиск по названию или номеру..."
               value={search} onChange={e => setSearch(e.target.value)}
             />
             <button onClick={() => setShowReceive(true)} style={{ padding: '8px 14px', border: '1px solid #16a34a', borderRadius: 8, background: '#f0fdf4', color: '#16a34a', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>
-              📥 Приход
+              Приход
             </button>
             <button onClick={() => setShowIssue(true)} style={{ padding: '8px 14px', border: '1px solid #d97706', borderRadius: 8, background: '#fffbeb', color: '#d97706', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>
-              📤 Расход
+              Расход
             </button>
             <button onClick={() => { setSelected(null); setShowModal(true) }} style={{ padding: '8px 16px', border: 'none', borderRadius: 8, background: '#4f6ef7', color: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>
               + Добавить

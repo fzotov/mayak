@@ -21,7 +21,7 @@ const statusCols: { key: Task['status']; label: string; color: string; bg: strin
   { key: 'done', label: 'Готово', color: '#16a34a', bg: '#f0fdf4' },
 ]
 
-const priorityIcon: Record<string, string> = { high: '🔴', normal: '🟡', low: '🔵' }
+const priorityIcon: Record<string, string> = { high: '', normal: '', low: '' }
 
 const emptyTask: Omit<Task, 'id'> = { title: '', description: '', assignee_id: null, status: 'todo', priority: 'normal', due_date: '', letter_id: null }
 
@@ -70,9 +70,9 @@ function TaskModal({ task, staff, onClose, onSaved }: { task: Task | null; staff
             </div>
             <div><label style={lbl}>Приоритет</label>
               <select style={inp} value={form.priority} onChange={e => set('priority', e.target.value)}>
-                <option value="low">🔵 Низкий</option>
-                <option value="normal">🟡 Обычный</option>
-                <option value="high">🔴 Высокий</option>
+                <option value="low">Низкий</option>
+                <option value="normal">Обычный</option>
+                <option value="high">Высокий</option>
               </select>
             </div>
           </div>
@@ -158,7 +158,7 @@ function TasksBoard({ sourceFilter }: { sourceFilter?: string }) {
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#8596b4' }}>
                         <span>{(t.assignee as any)?.full_name || '—'}</span>
                         {t.due_date && <span>{new Date(t.due_date).toLocaleDateString('ru')}</span>}
-                        {t.letter_id && <span style={{ color: '#7c3aed', fontSize: 11, cursor: 'pointer' }} onClick={e => { e.stopPropagation(); window.dispatchEvent(new CustomEvent('navigate', { detail: 'letters' })) }}>✉ письмо</span>}
+                        {t.letter_id && <span style={{ color: '#7c3aed', fontSize: 11, cursor: 'pointer' }} onClick={e => { e.stopPropagation(); window.dispatchEvent(new CustomEvent('navigate', { detail: 'letters' })) }}>письмо</span>}
                       </div>
                     </div>
                   ))}

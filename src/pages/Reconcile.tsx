@@ -145,7 +145,7 @@ export default function ReconcilePage() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       {/* KPI */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 10 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
         {[
           { label: 'Расходы (выписка)', value: FMT(debitTxs.reduce((s,t) => s+t.amount,0)) + ' ₽', color: '#ef4444' },
           { label: 'Поступления (выписка)', value: FMT(creditTxs.reduce((s,t) => s+t.amount,0)) + ' ₽', color: '#16a34a' },
@@ -179,7 +179,7 @@ export default function ReconcilePage() {
           {debitSuggestions.length > 0 && (
             <div style={{ background: '#fff', border: '1px solid #e8ebf3', borderRadius: 9, overflow: 'hidden' }}>
               <div style={{ padding: '12px 16px', borderBottom: '1px solid #e8ebf3', background: '#fffbeb', display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: 14, fontWeight: 600, color: '#92400e' }}>⚡ Найдено совпадений: {debitSuggestions.length}</span>
+                <span style={{ fontSize: 14, fontWeight: 600, color: '#92400e' }}>Найдено совпадений: {debitSuggestions.length}</span>
                 <span style={{ fontSize: 12, color: '#8596b4' }}>расходы → входящие счета</span>
               </div>
               {debitSuggestions.map(({ tx, inv, score }) => (
@@ -226,7 +226,7 @@ export default function ReconcilePage() {
           {creditSuggestions.length > 0 && (
             <div style={{ background: '#fff', border: '1px solid #e8ebf3', borderRadius: 9, overflow: 'hidden' }}>
               <div style={{ padding: '12px 16px', borderBottom: '1px solid #e8ebf3', background: '#f0fdf4', display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: 14, fontWeight: 600, color: '#15803d' }}>⚡ Найдено совпадений: {creditSuggestions.length}</span>
+                <span style={{ fontSize: 14, fontWeight: 600, color: '#15803d' }}>Найдено совпадений: {creditSuggestions.length}</span>
                 <span style={{ fontSize: 12, color: '#8596b4' }}>поступления → арендаторы</span>
               </div>
               {creditSuggestions.map(({ tx, tenant, score }) => (
@@ -294,7 +294,7 @@ function TxTable({ rows, onIgnore, saving }: { rows: BankTx[]; onIgnore: (id: st
               {t.matched_type === 'invoice' ? <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 8, background: '#dcfce7', color: '#16a34a', fontWeight: 600 }}>✓ Счёт</span>
               : t.matched_type === 'tenant' ? <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 8, background: '#dcfce7', color: '#16a34a', fontWeight: 600 }}>✓ Аренда</span>
               : t.matched_type === 'ignored' ? <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 8, background: '#f3f4f6', color: '#9ca3af', fontWeight: 600 }}>Пропущено</span>
-              : <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 8, background: '#fffbeb', color: '#d97706', fontWeight: 600 }}>⚠ Не сопоставлено</span>}
+              : <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 8, background: '#fffbeb', color: '#d97706', fontWeight: 600 }}>Не сопоставлено</span>}
             </td>
             <td style={{ padding: '8px 12px' }}>
               {!t.matched_type && (

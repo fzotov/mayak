@@ -287,7 +287,7 @@ export default function LedgerPage() {
       )}
 
       {/* KPI — balances from 1C counterparty level (authoritative) */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 10 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
         {[
           { label: 'Должников', value: debtors, sub: FMT(totalDebt) + ' ₽', color: debtors > 0 ? '#ef4444' : '#8596b4' },
           { label: 'Общий долг', value: FMT(totalDebt) + ' ₽', color: '#ef4444', small: true },

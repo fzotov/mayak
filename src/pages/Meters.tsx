@@ -3,15 +3,15 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 
 const TYPES: Record<string, {label:string;icon:string;unit:string}> = {
-  electricity: {label:'Электричество',icon:'⚡',unit:'кВт·ч'},
-  cold_water: {label:'Холодная вода',icon:'💧',unit:'м³'},
-  hot_water: {label:'Горячая вода',icon:'🔥',unit:'м³'},
-  heat: {label:'Тепло',icon:'🌡',unit:'Гкал'},
-  gas: {label:'Газ',icon:'🔆',unit:'м³'},
-  boiler: {label:'Бойлер',icon:'♨️',unit:'м³'},
-  common_electricity: {label:'Общий эл.',icon:'⚡',unit:'кВт·ч'},
-  common_water: {label:'Общий вода',icon:'💧',unit:'м³'},
-  common_heat: {label:'Общее тепло',icon:'🌡',unit:'Гкал'},
+  electricity: {label:'Электричество',icon:'',unit:'кВт·ч'},
+  cold_water: {label:'Холодная вода',icon:'',unit:'м³'},
+  hot_water: {label:'Горячая вода',icon:'',unit:'м³'},
+  heat: {label:'Тепло',icon:'',unit:'Гкал'},
+  gas: {label:'Газ',icon:'',unit:'м³'},
+  boiler: {label:'Бойлер',icon:'',unit:'м³'},
+  common_electricity: {label:'Общий эл.',icon:'',unit:'кВт·ч'},
+  common_water: {label:'Общий вода',icon:'',unit:'м³'},
+  common_heat: {label:'Общее тепло',icon:'',unit:'Гкал'},
 }
 
 const SI: React.CSSProperties = {width:'100%',border:'1px solid #e5e7eb',borderRadius:6,padding:'7px 10px',fontSize:14,fontFamily:'inherit',outline:'none',boxSizing:'border-box'}
@@ -42,7 +42,7 @@ export default function MetersPage() {
 
   async function quickScan(file: File) {
     setScanning(true)
-    setScanResult('🔍 Распознаю счётчик...')
+    setScanResult('Распознаю счётчик...')
     try {
       const imageBase64 = await fileToBase64(file)
       const meterSerials = meters.map((m: any) => m.serial).filter(Boolean)
@@ -87,7 +87,7 @@ export default function MetersPage() {
             onChange={e => { const f = e.target.files?.[0]; if (f) quickScan(f); e.target.value = '' }} />
           <button onClick={() => quickScanRef.current?.click()} disabled={scanning}
             style={{padding:'7px 16px',border:'1px solid #4f6ef7',borderRadius:6,background:'#eff3ff',color:'#4f6ef7',fontSize:13,fontWeight:600,cursor:scanning?'default':'pointer',fontFamily:'inherit',opacity:scanning?0.7:1}}>
-            {scanning ? '🔍 Распознаю...' : '📷 Сканировать счётчик'}
+            {scanning ? 'Распознаю...' : 'Сканировать счётчик'}
           </button>
           {scanResult && !scanning && (
             <span style={{fontSize:13,color: scanResult.startsWith('✓') ? '#16a34a' : scanResult.startsWith('?') ? '#d97706' : '#6b7280',
@@ -104,7 +104,7 @@ export default function MetersPage() {
       </div>
       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill, minmax(260px, 1fr))',gap:12}}>
         {meters.map(m => {
-          const t = TYPES[m.type] || {label:m.type,icon:'📊',unit:''}
+          const t = TYPES[m.type] || {label:m.type,icon:'',unit:''}
           return (
             <div key={m.id} style={{background:'#fff',border:'1px solid #e5e7eb',borderRadius:10,padding:16}}>
               <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
@@ -227,7 +227,7 @@ function ReadingsView({meter, onBack, allMeters, onSwitchMeter}: {meter:any; onB
   const [recognizing, setRecognizing] = useState(false)
   const [recognizeResult, setRecognizeResult] = useState<{serial:string; reading:number; matched:boolean; wrongMeter?:any}|null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
-  const t = TYPES[meter.type] || {label:meter.type,icon:'📊',unit:''}
+  const t = TYPES[meter.type] || {label:meter.type,icon:'',unit:''}
 
   useEffect(() => { loadReadings() }, [])
 
@@ -350,15 +350,15 @@ function ReadingsView({meter, onBack, allMeters, onSwitchMeter}: {meter:any; onB
               }} />
             <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
               <button onClick={()=>fileRef.current?.click()} style={{padding:'6px 12px',borderRadius:6,border:'1px solid #e5e7eb',background:'#fff',fontSize:12,cursor:'pointer',fontFamily:'inherit'}}>
-                📷 {photoFile ? 'Заменить фото' : 'Фото показаний'}
+                {photoFile ? 'Заменить фото' : 'Фото показаний'}
               </button>
-              {recognizing && <span style={{fontSize:12,color:'#4f6ef7'}}>🔍 Распознаю...</span>}
+              {recognizing && <span style={{fontSize:12,color:'#4f6ef7'}}>Распознаю...</span>}
               {recognizeResult && !recognizing && (
                 <span style={{fontSize:12, padding:'3px 8px', borderRadius:6,
                   background: recognizeResult.wrongMeter ? '#fef3c7' : recognizeResult.matched ? '#f0fdf4' : '#eff3ff',
                   color: recognizeResult.wrongMeter ? '#b45309' : recognizeResult.matched ? '#16a34a' : '#4f6ef7'}}>
                   {recognizeResult.wrongMeter
-                    ? `⚠ Серийник ${recognizeResult.serial} — это счётчик ${recognizeResult.wrongMeter.serial || recognizeResult.wrongMeter.number}. `
+                    ? `Серийник ${recognizeResult.serial} — это счётчик ${recognizeResult.wrongMeter.serial || recognizeResult.wrongMeter.number}. `
                     : recognizeResult.matched
                       ? `✓ Серийник ${recognizeResult.serial} совпадает`
                       : `? Серийник ${recognizeResult.serial} не найден в базе`}

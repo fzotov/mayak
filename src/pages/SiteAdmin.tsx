@@ -353,7 +353,7 @@ function UnitEditor({ row, hasSiteCols, onSaved, onClose }: { row: Row; hasSiteC
           <div key={p} style={{ position: 'relative', borderRadius: 8, overflow: 'hidden', border: i === 0 ? '2px solid #4f6ef7' : '1px solid #e5e7eb', aspectRatio: '4/3', background: '#f3f4f6' }}>
             <img src={p} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
             <div style={{ position: 'absolute', inset: 'auto 0 0 0', display: 'flex', gap: 2, padding: 3, background: 'rgba(0,0,0,.45)' }}>
-              {i !== 0 && <button onClick={() => makeCover(p)} title="Сделать обложкой" style={{ flex: 1, border: 0, background: 'transparent', color: '#fff', fontSize: 11, cursor: 'pointer' }}>★</button>}
+              {i !== 0 && <button onClick={() => makeCover(p)} title="Сделать обложкой" style={{ flex: 1, border: 0, background: 'transparent', color: '#fff', fontSize: 11, cursor: 'pointer' }}></button>}
               <button onClick={() => removePhoto(p)} title="Удалить" style={{ flex: 1, border: 0, background: 'transparent', color: '#fff', fontSize: 11, cursor: 'pointer' }}>✕</button>
             </div>
             {i === 0 && <div style={{ position: 'absolute', top: 4, left: 4, background: '#4f6ef7', color: '#fff', fontSize: 10, padding: '1px 6px', borderRadius: 4 }}>обложка</div>}

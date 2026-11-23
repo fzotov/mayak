@@ -313,7 +313,7 @@ export default function CounterpartiesPage() {
         <div style={{ display: 'flex', gap: 8, marginBottom: 14, alignItems: 'center' }}>
           <input
             style={{ flex: 1, border: '1px solid #e8ebf3', borderRadius: 8, padding: '8px 12px', fontSize: 14, fontFamily: 'inherit', outline: 'none' }}
-            placeholder="🔍 Поиск по названию, ИНН, контактному лицу..."
+            placeholder="Поиск по названию, ИНН, контактному лицу..."
             value={search}
             onChange={e => setSearch(e.target.value)}
           />

@@ -118,10 +118,10 @@ export function KnowledgeBasePage() {
           <div style={{ fontSize: 14, fontWeight: 600, color: '#1a2240', marginBottom: 14 }}>Как это работает</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {[
-              { icon: '📄', title: 'Добавь документ', desc: 'Договор, регламент, тарифы, инструкцию' },
-              { icon: '🧠', title: 'Хранится в Supabase', desc: 'Статьи доступны всем сотрудникам' },
-              { icon: '💬', title: 'AI использует контекст', desc: 'AI ассистент найдёт нужный документ и ответит точно' },
-              { icon: '🔄', title: 'Обновляй', desc: 'Добавляй новые версии тарифов и регламентов' },
+              { icon: '', title: 'Добавь документ', desc: 'Договор, регламент, тарифы, инструкцию' },
+              { icon: '', title: 'Хранится в Supabase', desc: 'Статьи доступны всем сотрудникам' },
+              { icon: '', title: 'AI использует контекст', desc: 'AI ассистент найдёт нужный документ и ответит точно' },
+              { icon: '', title: 'Обновляй', desc: 'Добавляй новые версии тарифов и регламентов' },
             ].map(item => (
               <div key={item.title} style={{ display: 'flex', gap: 10, padding: '8px 10px', background: '#f8f9fc', borderRadius: 7 }}>
                 <span style={{ fontSize: 18 }}>{item.icon}</span>

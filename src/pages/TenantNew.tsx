@@ -82,9 +82,9 @@ export function TenantNewPage({ onBack, onSaved }: { onBack: () => void; onSaved
           <div style={{ fontSize: 18, fontWeight: 600, color: '#1a2240' }}>Новый арендатор</div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={() => printDoc('act')} style={{ padding: '7px 14px', border: '1px solid #e8ebf3', borderRadius: 8, background: '#fff', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', color: '#374151' }}>📋 Акт приёма-передачи</button>
-          <button style={{ padding: '7px 14px', border: '1px solid #10b981', borderRadius: 8, background: '#f0fdf4', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', color: '#10b981', fontWeight: 500 }}>🏢 План этажа</button>
-          <button onClick={() => printDoc('contract')} style={{ padding: '7px 14px', border: '1px solid #4f6ef7', borderRadius: 8, background: '#eff3ff', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', color: '#4f6ef7', fontWeight: 500 }}>📄 Распечатать договор</button>
+          <button onClick={() => printDoc('act')} style={{ padding: '7px 14px', border: '1px solid #e8ebf3', borderRadius: 8, background: '#fff', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', color: '#374151' }}>Акт приёма-передачи</button>
+          <button style={{ padding: '7px 14px', border: '1px solid #10b981', borderRadius: 8, background: '#f0fdf4', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', color: '#10b981', fontWeight: 500 }}>План этажа</button>
+          <button onClick={() => printDoc('contract')} style={{ padding: '7px 14px', border: '1px solid #4f6ef7', borderRadius: 8, background: '#eff3ff', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', color: '#4f6ef7', fontWeight: 500 }}>Распечатать договор</button>
         </div>
       </div>
 

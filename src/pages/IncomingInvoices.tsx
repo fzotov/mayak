@@ -342,7 +342,7 @@ export default function IncomingInvoicesPage() {
                         {(inv.status === 'NEW' || inv.status === 'PENDING_APPROVAL') && (
                           <button onClick={() => { setApprovalInvoice(inv); setApprovalEmail(''); setApprovalSent(false) }}
                             style={{ padding: '4px 9px', borderRadius: 6, border: `1px solid ${BORDER}`, background: '#fff', color: '#d97706', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
-                            ✉ Согласовать
+                            Согласовать
                           </button>
                         )}
                         {/* Согласовать вручную */}
@@ -369,7 +369,7 @@ export default function IncomingInvoicesPage() {
                         {inv.file_url && (
                           <a href="#" onClick={e => { e.preventDefault(); openStoredFile(inv.file_url!) }}
                             style={{ padding: '4px 9px', borderRadius: 6, border: `1px solid ${BORDER}`, background: '#fff', color: ACCENT, fontSize: 11, textDecoration: 'none', fontWeight: 500 }}>
-                            📎
+                            
                           </a>
                         )}
                       </div>
@@ -388,7 +388,7 @@ export default function IncomingInvoicesPage() {
           <div style={{ background: '#fff', borderRadius: 14, padding: 28, width: 460, boxShadow: '0 20px 60px rgba(0,0,0,.2)' }}>
             {approvalSent ? (
               <div style={{ textAlign: 'center', padding: '16px 0' }}>
-                <div style={{ fontSize: 48, marginBottom: 16 }}>✉️</div>
+                <div style={{ fontSize: 48, marginBottom: 16 }}></div>
                 <div style={{ fontSize: 18, fontWeight: 700, color: TEXT, marginBottom: 8 }}>Запрос отправлен</div>
                 <div style={{ fontSize: 14, color: GRAY, marginBottom: 24 }}>Письмо отправлено на {approvalEmail}</div>
                 <button onClick={() => setApprovalInvoice(null)} style={{ padding: '10px 24px', borderRadius: 8, border: 'none', background: ACCENT, color: '#fff', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Закрыть</button>
@@ -426,7 +426,7 @@ export default function IncomingInvoicesPage() {
                     disabled={sendingApproval || !approvalEmail}
                     style={{ padding: '9px 20px', borderRadius: 8, border: 'none', background: ACCENT, color: '#fff', fontSize: 14, fontWeight: 600, cursor: sendingApproval || !approvalEmail ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: sendingApproval || !approvalEmail ? .6 : 1 }}
                   >
-                    {sendingApproval ? 'Отправляю...' : '✉ Отправить'}
+                    {sendingApproval ? 'Отправляю...' : 'Отправить'}
                   </button>
                 </div>
               </>
@@ -450,7 +450,7 @@ export default function IncomingInvoicesPage() {
                   onClick={() => fileRef.current?.click()}
                   style={{ padding: '8px 14px', borderRadius: 8, border: `1px solid ${BORDER}`, background: '#f8f9fb', color: TEXT, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}
                 >
-                  📎 Выбрать файл
+                  Выбрать файл
                 </button>
                 {form.fileName && <span style={{ fontSize: 13, color: GRAY }}>{form.fileName}</span>}
                 {form.fileBase64 && (
@@ -464,7 +464,7 @@ export default function IncomingInvoicesPage() {
                 )}
               </div>
               {recognizeError && (
-                <div style={{ marginTop: 6, fontSize: 12, color: '#ef4444' }}>⚠ {recognizeError}</div>
+                <div style={{ marginTop: 6, fontSize: 12, color: '#ef4444' }}>{recognizeError}</div>
               )}
             </div>
 

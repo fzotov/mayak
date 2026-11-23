@@ -212,7 +212,7 @@ export default function PaymentCalendarPage() {
                 padding: '7px 14px', border: 'none', background: viewMode === m ? ACCENT : '#fff',
                 color: viewMode === m ? '#fff' : GRAY, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500,
               }}>
-                {m === 'list' ? '☰ Список' : '📅 Календарь'}
+                {m === 'list' ? 'Список' : 'Календарь'}
               </button>
             ))}
           </div>

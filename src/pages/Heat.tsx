@@ -173,11 +173,11 @@ export default function HeatPage() {
           ].filter(Boolean).join(' · ')
           setAiMsg(parts
             ? `✓ AI извлёк: ${parts}. Проверьте и нажмите Рассчитать.`
-            : '⚠ AI не нашёл данных в файле — введите вручную.')
+            : 'AI не нашёл данных в файле — введите вручную.')
         } else {
-          setAiMsg(`⚠ AI не смог разобрать файл — введите вручную.${data.raw ? ' (ответ: ' + String(data.raw).slice(0, 100) + ')' : ''}`)
+          setAiMsg(`AI не смог разобрать файл — введите вручную.${data.raw ? ' (ответ: ' + String(data.raw).slice(0, 100) + ')' : ''}`)
         }
-      } catch { setAiMsg('⚠ Ошибка обработки файла.') }
+      } catch { setAiMsg('Ошибка обработки файла.') }
       setAiLoading(false)
     }
     reader.readAsDataURL(file)
@@ -345,7 +345,7 @@ export default function HeatPage() {
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
             <button onClick={() => fileRef.current?.click()} disabled={aiLoading}
               style={{ padding: '8px 18px', border: '1px solid #4f6ef7', borderRadius: 7, background: aiLoading ? '#e0e7ff' : '#eff3ff', color: '#4f6ef7', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', opacity: aiLoading ? 0.7 : 1 }}>
-              {aiLoading ? '⏳ AI обрабатывает...' : '📎 Загрузить фото / PDF счёта'}
+              {aiLoading ? 'AI обрабатывает...' : 'Загрузить фото / PDF счёта'}
             </button>
             <span style={{ fontSize: 12, color: '#9ca3af' }}>AI извлечёт сумму, период и объём Гкал</span>
           </div>
@@ -421,7 +421,7 @@ export default function HeatPage() {
 
           {selectedBill && (
             <div style={{ marginBottom: 12, padding: '8px 12px', background: '#fafafa', borderRadius: 7, border: '1px solid #e8ebf3', fontSize: 13, color: '#6b7280' }}>
-              📂 Архивный расчёт от {new Date(selectedBill.created_at).toLocaleDateString('ru')} — только просмотр. Нажмите «+ Новый расчёт» чтобы создать новый.
+              Архивный расчёт от {new Date(selectedBill.created_at).toLocaleDateString('ru')} — только просмотр. Нажмите «+ Новый расчёт» чтобы создать новый.
             </div>
           )}
           {doneMsg && (
@@ -431,7 +431,7 @@ export default function HeatPage() {
           )}
 
           {/* KPI */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 14 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8, marginBottom: 14 }}>
             {[
               { label: 'Исходная сумма', value: fmtAmt(parseFloat(totalAmount) || 0) },
               { label: 'Итого с коэффициентом', value: fmtAmt(items.reduce((s, i) => s + i.amount_final, 0)), color: '#4f6ef7' },

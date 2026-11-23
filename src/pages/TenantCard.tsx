@@ -11,37 +11,37 @@ const METER_UNITS: Record<string, string> = { electricity: 'кВт·ч', cold_wa
 
 // Перечень документов по типу — точно по внутреннему перечню БЦ «Маяк»
 const DOC_TYPES_COMPANY = [
-  { key: 'card', label: 'Карточка предприятия (реквизиты)', icon: '🏢', required: true },
-  { key: 'charter', label: 'Устав (заверен подписью и печатью)', icon: '📖', required: true },
-  { key: 'egrul', label: 'Выписка из ЕГРЮЛ (не старше 1 нед.)', icon: '📄', required: true },
-  { key: 'inn_doc', label: 'Копия ИНН (заверен)', icon: '📄', required: true },
-  { key: 'director_order', label: 'Приказ о назначении руководителя', icon: '📝', required: true },
-  { key: 'passport', label: 'Паспорт руководителя (фото + прописка)', icon: '🪪', required: true },
-  { key: 'poa', label: 'Доверенность (если подписывает не директор)', icon: '📝', required: false },
-  { key: 'license', label: 'Лицензии/разрешения (если лицензируется)', icon: '📋', required: false },
-  { key: 'brand_doc', label: 'Права на товарный знак / бренд', icon: '™️', required: false },
-  { key: 'opd_consent', label: 'Согласие на обработку ПД', icon: '✍️', required: true },
+  { key: 'card', label: 'Карточка предприятия (реквизиты)', icon: '', required: true },
+  { key: 'charter', label: 'Устав (заверен подписью и печатью)', icon: '', required: true },
+  { key: 'egrul', label: 'Выписка из ЕГРЮЛ (не старше 1 нед.)', icon: '', required: true },
+  { key: 'inn_doc', label: 'Копия ИНН (заверен)', icon: '', required: true },
+  { key: 'director_order', label: 'Приказ о назначении руководителя', icon: '', required: true },
+  { key: 'passport', label: 'Паспорт руководителя (фото + прописка)', icon: '', required: true },
+  { key: 'poa', label: 'Доверенность (если подписывает не директор)', icon: '', required: false },
+  { key: 'license', label: 'Лицензии/разрешения (если лицензируется)', icon: '', required: false },
+  { key: 'brand_doc', label: 'Права на товарный знак / бренд', icon: '™', required: false },
+  { key: 'opd_consent', label: 'Согласие на обработку ПД', icon: '✍', required: true },
 ]
 const DOC_TYPES_IP = [
-  { key: 'passport', label: 'Паспорт ИП (фото + прописка)', icon: '🪪', required: true },
-  { key: 'inn_doc', label: 'Копия ИНН', icon: '📄', required: true },
-  { key: 'ogrn', label: 'Свидетельство ОГРНИП', icon: '📋', required: true },
-  { key: 'poa', label: 'Доверенность (если подписывает не ИП)', icon: '📝', required: false },
-  { key: 'license', label: 'Лицензии/разрешения (галерея)', icon: '📋', required: false },
-  { key: 'brand_doc', label: 'Права на товарный знак / бренд', icon: '™️', required: false },
-  { key: 'opd_consent', label: 'Согласие на обработку ПД', icon: '✍️', required: true },
+  { key: 'passport', label: 'Паспорт ИП (фото + прописка)', icon: '', required: true },
+  { key: 'inn_doc', label: 'Копия ИНН', icon: '', required: true },
+  { key: 'ogrn', label: 'Свидетельство ОГРНИП', icon: '', required: true },
+  { key: 'poa', label: 'Доверенность (если подписывает не ИП)', icon: '', required: false },
+  { key: 'license', label: 'Лицензии/разрешения (галерея)', icon: '', required: false },
+  { key: 'brand_doc', label: 'Права на товарный знак / бренд', icon: '™', required: false },
+  { key: 'opd_consent', label: 'Согласие на обработку ПД', icon: '✍', required: true },
 ]
 const DOC_TYPES_INDIVIDUAL = [
-  { key: 'passport', label: 'Паспорт (фото + прописка, или ВНЖ)', icon: '🪪', required: true },
-  { key: 'inn_doc', label: 'ИНН (при наличии)', icon: '📄', required: false },
-  { key: 'opd_consent', label: 'Согласие на обработку ПД', icon: '✍️', required: true },
+  { key: 'passport', label: 'Паспорт (фото + прописка, или ВНЖ)', icon: '', required: true },
+  { key: 'inn_doc', label: 'ИНН (при наличии)', icon: '', required: false },
+  { key: 'opd_consent', label: 'Согласие на обработку ПД', icon: '✍', required: true },
 ]
 const DOC_TYPES_SELF_EMPLOYED = [
-  { key: 'passport', label: 'Паспорт (фото + прописка, или ВНЖ)', icon: '🪪', required: true },
-  { key: 'self_employed_cert', label: 'Справка о постановке на учёт (Мой налог / ФНС)', icon: '📋', required: true },
-  { key: 'utility_bill', label: 'Квитанция ЖКХ по месту регистрации (посл. мес.)', icon: '🧾', required: true },
-  { key: 'bank_details', label: 'Банковские реквизиты', icon: '🏦', required: true },
-  { key: 'opd_consent', label: 'Согласие на обработку ПД', icon: '✍️', required: true },
+  { key: 'passport', label: 'Паспорт (фото + прописка, или ВНЖ)', icon: '', required: true },
+  { key: 'self_employed_cert', label: 'Справка о постановке на учёт (Мой налог / ФНС)', icon: '', required: true },
+  { key: 'utility_bill', label: 'Квитанция ЖКХ по месту регистрации (посл. мес.)', icon: '', required: true },
+  { key: 'bank_details', label: 'Банковские реквизиты', icon: '', required: true },
+  { key: 'opd_consent', label: 'Согласие на обработку ПД', icon: '✍', required: true },
 ]
 function getDocTypes(tenantType: string) {
   if (tenantType === 'IP') return DOC_TYPES_IP
@@ -74,7 +74,7 @@ const s = {
   value: { fontSize: 14, color: '#1a2240', fontWeight: 500 } as React.CSSProperties,
   grid2: { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px 20px' } as React.CSSProperties,
   grid3: { display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '12px 20px' } as React.CSSProperties,
-  grid4: { display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '12px 20px' } as React.CSSProperties,
+  grid4: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px 20px' } as React.CSSProperties,
   inp: { width: '100%', minWidth: 0, boxSizing: 'border-box', padding: '7px 10px', border: '1px solid #e8ebf3', borderRadius: 6, fontSize: 14, fontFamily: 'inherit', outline: 'none', color: '#1a2240' } as React.CSSProperties,
   inpDisabled: { width: '100%', padding: '7px 10px', border: '1px solid #f0f2f8', borderRadius: 6, fontSize: 14, fontFamily: 'inherit', outline: 'none', color: '#1a2240', background: '#f8f9fc' } as React.CSSProperties,
   sectionTitle: { fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 14, textTransform: 'uppercase', letterSpacing: '.5px' } as React.CSSProperties,
@@ -575,7 +575,7 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
 
       {editing && (
         <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontSize: 14, color: '#92400e', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span>⚠️</span> Режим редактирования — внесите изменения и нажмите Сохранить
+          <span></span> Режим редактирования — внесите изменения и нажмите Сохранить
         </div>
       )}
 
@@ -1069,7 +1069,7 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
                       {dt.key === 'opd_consent' && (
                         <button onClick={() => printOPD(saved)}
                           style={{ flex: 1, padding: '6px 0', border: '1px solid #e8ebf3', borderRadius: 7, background: '#f8f9fc', color: '#374151', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>
-                          📄 Распечатать бланк
+                          Распечатать бланк
                         </button>
                       )}
                       <label style={{ flex: 1, display: 'block', padding: '6px 0', border: `1px dashed ${isDone ? '#bbf7d0' : '#e8ebf3'}`, borderRadius: 7, background: 'transparent', color: uploadingDoc === dt.key ? '#8596b4' : '#4f6ef7', fontSize: 13, cursor: 'pointer', textAlign: 'center', boxSizing: 'border-box' as const }}>
@@ -1110,7 +1110,7 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
                   const typeLabel = CONTRACT_TYPES.find(ct => ct.key === c.contract_type)?.label || c.contract_type
                   return (
                     <div key={c.id} style={{ background: '#fff', border: '1px solid #e8ebf3', borderRadius: 10, padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 14 }}>
-                      <div style={{ width: 36, height: 36, borderRadius: 8, background: '#eff3ff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>📄</div>
+                      <div style={{ width: 36, height: 36, borderRadius: 8, background: '#eff3ff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}></div>
                       <div style={{ flex: 1 }}>
                         <div style={{ fontSize: 14, fontWeight: 600, color: '#1a2240' }}>{typeLabel}{c.contract_number ? ` № ${c.contract_number}` : ''}</div>
                         <div style={{ fontSize: 13, color: '#8596b4', marginTop: 2 }}>
@@ -1121,7 +1121,7 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
                         </div>
                       </div>
                       <button onClick={() => printContract(c.contract_type, saved, c.contract_number || '', c.valid_from || '', c.valid_to || '', premisesList)}
-                        style={{ padding: '6px 12px', border: '1px solid #e8ebf3', borderRadius: 6, background: '#fff', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', color: '#374151' }}>🖨 Печать</button>
+                        style={{ padding: '6px 12px', border: '1px solid #e8ebf3', borderRadius: 6, background: '#fff', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', color: '#374151' }}>Печать</button>
                       <button onClick={() => setContractModal({ ...c, type: c.contract_type, startDate: c.valid_from, endDate: c.valid_to })}
                         style={{ padding: '6px 10px', border: '1px solid #e8ebf3', borderRadius: 6, background: '#fff', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', color: '#374151' }}>✎</button>
                       <button onClick={() => deleteContract(c.id)}

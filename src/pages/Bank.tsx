@@ -140,7 +140,7 @@ export default function BankPage() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       {/* KPI */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 10 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
         {[
           { label: 'Приход', value: FMT(totalCredit) + ' ₽', color: '#16a34a' },
           { label: 'Расход', value: FMT(totalDebit) + ' ₽', color: '#ef4444' },
@@ -164,7 +164,7 @@ export default function BankPage() {
               background: filter === f ? '#eff3ff' : '#fff',
               color: filter === f ? '#4f6ef7' : '#6b7280',
             }}>
-              {{ all: 'Все', credit: '↓ Приход', debit: '↑ Расход', unmatched: '⚠ Не сопоставлено' }[f]}
+              {{ all: 'Все', credit: '↓ Приход', debit: '↑ Расход', unmatched: 'Не сопоставлено' }[f]}
             </button>
           ))}
         </div>
@@ -177,13 +177,13 @@ export default function BankPage() {
           {unmatched > 0 && (
             <button onClick={runAiMatch} disabled={matching}
               style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid #8b5cf6', background: '#f5f3ff', color: '#7c3aed', fontSize: 13, fontWeight: 600, cursor: matching ? 'default' : 'pointer', opacity: matching ? 0.7 : 1, fontFamily: 'inherit' }}>
-              {matching ? '⏳ AI анализирует...' : `✦ AI сопоставить (${unmatched})`}
+              {matching ? 'AI анализирует...' : `✦ AI сопоставить (${unmatched})`}
             </button>
           )}
           {unmatched > 0 && (
             <button onClick={() => window.dispatchEvent(new CustomEvent('navigate', { detail: 'reconcile' }))}
               style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid #f59e0b', background: '#fffbeb', color: '#b45309', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
-              ⚡ Сверить ({unmatched})
+              Сверить ({unmatched})
             </button>
           )}
           {imports.length > 0 && (
@@ -202,7 +202,7 @@ export default function BankPage() {
           />
           <button onClick={() => fileRef.current?.click()} disabled={uploading}
             style={{ padding: '7px 16px', borderRadius: 8, border: 'none', background: '#4f6ef7', color: '#fff', fontSize: 13, fontWeight: 600, cursor: uploading ? 'default' : 'pointer', opacity: uploading ? 0.7 : 1, fontFamily: 'inherit' }}>
-            {uploading ? '⏳ Распознаю...' : '+ Загрузить выписку'}
+            {uploading ? 'Распознаю...' : '+ Загрузить выписку'}
           </button>
         </div>
       </div>
@@ -281,7 +281,7 @@ export default function BankPage() {
                         ) : t.matched_type === 'ignored' ? (
                           <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 8, background: '#f3f4f6', color: '#9ca3af', fontWeight: 600 }}>Пропущено</span>
                         ) : (
-                          <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 8, background: '#fffbeb', color: '#d97706', fontWeight: 600 }}>⚠</span>
+                          <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 8, background: '#fffbeb', color: '#d97706', fontWeight: 600 }}></span>
                         )}
                       </td>
                     </tr>

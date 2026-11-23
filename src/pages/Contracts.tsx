@@ -242,7 +242,7 @@ export default function ContractsPage() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8 }}>
         {[
           { label: 'Всего договоров', value: counts.total, color: '#1a2240' },
           { label: 'Активных', value: counts.active, color: '#22c55e' },

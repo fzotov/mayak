@@ -18,11 +18,11 @@ interface Unit {
 }
 
 const TYPES: Record<string, { label: string; icon: string }> = {
-  office: { label: 'Офис', icon: '🏢' },
-  storage: { label: 'Склад', icon: '📦' },
-  corridor: { label: 'Коридор', icon: '🚶' },
-  common: { label: 'Общее', icon: '🏛' },
-  other: { label: 'Другое', icon: '📋' },
+  office: { label: 'Офис', icon: '' },
+  storage: { label: 'Склад', icon: '' },
+  corridor: { label: 'Коридор', icon: '' },
+  common: { label: 'Общее', icon: '' },
+  other: { label: 'Другое', icon: '' },
 }
 
 const STATUS: Record<string, { label: string; bg: string; color: string }> = {
@@ -155,7 +155,7 @@ export default function UnitsPage() {
   return (
     <div>
       {/* Статистика */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10, marginBottom: 16 }}>
         {[
           { label: 'Всего помещений', value: stats.total, color: '#111' },
           { label: 'Свободно', value: stats.free, color: '#16a34a' },

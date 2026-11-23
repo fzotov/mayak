@@ -148,9 +148,9 @@ export default function StaffPage() {
                   {s.status === 'fired' && <span style={{ fontSize: 11, background: '#fee2e2', color: '#ef4444', padding: '2px 7px', borderRadius: 10 }}>Уволен</span>}
                 </div>
                 <div style={{ fontSize: 13, color: '#6b7280', display: 'flex', flexDirection: 'column', gap: 3 }}>
-                  {s.phone && <span>📞 {s.phone}</span>}
-                  {s.email && <span>✉️ {s.email}</span>}
-                  {s.salary > 0 && <span>💰 {s.salary.toLocaleString('ru')} ₽</span>}
+                  {s.phone && <span>{s.phone}</span>}
+                  {s.email && <span>{s.email}</span>}
+                  {s.salary > 0 && <span>{s.salary.toLocaleString('ru')} ₽</span>}
                 </div>
                 <div style={{ marginTop: 10 }}>
                   <span style={{ fontSize: 12, padding: '3px 9px', borderRadius: 10, background: rc.bg, color: rc.color }}>{roleLabel[s.role] || s.role}</span>

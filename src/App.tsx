@@ -180,7 +180,7 @@ function Dashboard() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 8 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8 }}>
         <KpiCard
           label="Заявки сайта"
           value={newLeads.length}
@@ -273,7 +273,7 @@ function Dashboard() {
       {/* Горящие заявки */}
       <div style={{ background: '#fff', border: '1px solid #e8ebf3', borderRadius: 9, padding: '13px 15px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-          <div style={{ fontSize: 14, fontWeight: 600, color: '#1a2240' }}>⚡ Горящие заявки</div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: '#1a2240' }}>Горящие заявки</div>
           {hotRepairs.length > 0 && (
             <span style={{ background: '#ef4444', color: '#fff', fontSize: 11, fontWeight: 700, borderRadius: 10, padding: '2px 7px' }}>{hotRepairs.length}</span>
           )}
@@ -309,7 +309,7 @@ function Dashboard() {
       {/* Согласованные счета к оплате */}
       <div style={{ background: '#fff', border: '1px solid #e8ebf3', borderRadius: 9, padding: '13px 15px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-          <div style={{ fontSize: 14, fontWeight: 600, color: '#1a2240' }}>✅ Согласованные счета к оплате</div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: '#1a2240' }}>Согласованные счета к оплате</div>
           {approvedInvoices.length > 0 && (
             <span style={{ background: '#4f6ef7', color: '#fff', fontSize: 11, fontWeight: 700, borderRadius: 10, padding: '2px 7px' }}>{approvedInvoices.length}</span>
           )}
@@ -349,7 +349,7 @@ function Dashboard() {
       {/* Истекающие договоры */}
       <div style={{ background: '#fff', border: '1px solid #e8ebf3', borderRadius: 9, padding: '13px 15px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-          <div style={{ fontSize: 14, fontWeight: 600, color: '#1a2240' }}>📅 Истекающие договоры (30 дней)</div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: '#1a2240' }}>Истекающие договоры (30 дней)</div>
           <button onClick={() => window.dispatchEvent(new CustomEvent('navigate', { detail: 'contracts' }))} style={{ fontSize: 12, color: '#4f6ef7', border: 'none', background: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>Все →</button>
         </div>
         {events.length === 0

@@ -150,7 +150,7 @@ function RepairModal({ repair, units, staff, onClose, onSaved }: {
           <div>
             <div style={{ fontSize: 16, fontWeight: 600, color: '#1a2240' }}>
               {repair ? `Заявка №${repair.number}` : 'Новая заявка'}
-              {form.priority === 'emergency' && <span style={{ marginLeft: 8, fontSize: 13, color: '#ef4444' }}>⚡ Аварийная</span>}
+              {form.priority === 'emergency' && <span style={{ marginLeft: 8, fontSize: 13, color: '#ef4444' }}>Аварийная</span>}
             </div>
             {repair && <div style={{ fontSize: 12, color: '#8596b4', marginTop: 2 }}>{new Date(repair.created_at).toLocaleDateString('ru')}</div>}
           </div>
@@ -189,7 +189,7 @@ function RepairModal({ repair, units, staff, onClose, onSaved }: {
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                 {Object.entries(PRIORITIES).map(([key, val]) => (
                   <button key={key} onClick={() => set('priority', key)} style={{ padding: '5px 12px', borderRadius: 8, border: `2px solid ${form.priority === key ? val.color : '#e8ebf3'}`, background: form.priority === key ? val.bg : '#fff', color: form.priority === key ? val.color : '#6b7280', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', fontWeight: form.priority === key ? 600 : 400 }}>
-                    {key === 'emergency' && '⚡ '}{val.label}
+                    {key === 'emergency' && ''}{val.label}
                   </button>
                 ))}
               </div>
@@ -352,7 +352,7 @@ export default function RepairsPage() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       {/* KPI */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 10 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
         <div style={kpi}><div style={{ fontSize: 12, color: '#8596b4', marginBottom: 4 }}>Всего заявок</div><div style={{ fontSize: 22, fontWeight: 700, color: '#1a2240' }}>{total}</div></div>
         <div style={kpi}><div style={{ fontSize: 12, color: '#8596b4', marginBottom: 4 }}>Новые</div><div style={{ fontSize: 22, fontWeight: 700, color: '#6b7280' }}>{newCount}</div></div>
         <div style={kpi}><div style={{ fontSize: 12, color: '#8596b4', marginBottom: 4 }}>В работе</div><div style={{ fontSize: 22, fontWeight: 700, color: '#d97706' }}>{inProgress}</div></div>
@@ -367,13 +367,13 @@ export default function RepairsPage() {
             Все заявки
           </button>
           <button onClick={() => setPageTab('emergency')} style={{ padding: '6px 14px', borderRadius: 6, border: 'none', background: pageTab === 'emergency' ? '#fff' : 'transparent', color: pageTab === 'emergency' ? '#ef4444' : '#8596b4', fontSize: 13, fontWeight: pageTab === 'emergency' ? 600 : 400, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 6, boxShadow: pageTab === 'emergency' ? '0 1px 4px #0001' : 'none' }}>
-            ⚡ Аварийные
+            Аварийные
             {emergencyOpen > 0 && <span style={{ background: '#ef4444', color: '#fff', fontSize: 11, fontWeight: 700, borderRadius: 10, padding: '1px 6px', minWidth: 18, textAlign: 'center' }}>{emergencyOpen}</span>}
           </button>
         </div>
         <div style={{ flex: 1 }} />
         <button onClick={() => openNew('emergency')} style={{ padding: '8px 14px', border: 'none', borderRadius: 8, background: '#fee2e2', color: '#ef4444', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
-          ⚡ Аварийная
+          Аварийная
         </button>
         <button onClick={() => openNew()} style={{ padding: '8px 16px', border: 'none', borderRadius: 8, background: '#4f6ef7', color: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>
           + Новая заявка
