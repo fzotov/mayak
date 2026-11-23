@@ -23,7 +23,8 @@ export default async function handler(req, res) {
     body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 1000, messages: [{ role: 'user', content }] })
   })
 
-  const data = await response.json()
+  const data = await response.json().catch(() => ({}))
+  if (!response.ok) return res.status(502).json({ ok: false, error: 'Claude: ' + (data?.error?.message || response.status) })
   const text = data.content?.[0]?.text || '{}'
   try {
     const parsed = JSON.parse(text.replace(/```json|```/g, '').trim())
