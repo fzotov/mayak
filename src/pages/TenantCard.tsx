@@ -1,3 +1,5 @@
+import { apiFetch, openStoredFile } from '../lib/api'
+import { TenantPortalAccess } from '../components/TenantPortalAccess'
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 
@@ -262,7 +264,7 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
   useEffect(() => {
     if (!tenantId) return
     setLoadingTenant(true)
-    supabase.from('tenants').select('*').eq('id', tenantId).single()
+    Promise.resolve(supabase.from('tenants').select('*').eq('id', tenantId).single())
       .then(({ data }) => {
         if (!data) return
         setRawData(data)
@@ -305,19 +307,19 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
             setPremisesLoaded(true)
           })
         // Load documents
-        supabase.from('tenant_documents').select('*').eq('tenant_id', tenantId).order('uploaded_at', { ascending: false })
+        Promise.resolve(supabase.from('tenant_documents').select('*').eq('tenant_id', tenantId).order('uploaded_at', { ascending: false }))
           .then(({ data: docs }) => { setDocuments(docs || []); setDocsLoaded(true) })
           .catch(() => { setDocuments([]); setDocsLoaded(true) })
         // Load contracts
-        supabase.from('tenant_contracts').select('*').eq('tenant_id', tenantId).order('created_at', { ascending: false })
+        Promise.resolve(supabase.from('tenant_contracts').select('*').eq('tenant_id', tenantId).order('created_at', { ascending: false }))
           .then(({ data: cts }) => { setContracts(cts || []); setContractsLoaded(true) })
           .catch(() => { setContracts([]); setContractsLoaded(true) })
         // Load invoices
-        supabase.from('invoices').select('id,number,period,total_amount,status,units(number)').eq('tenant_id', tenantId).order('created_at', { ascending: false })
+        Promise.resolve(supabase.from('invoices').select('id,number,period,total_amount,status,units(number)').eq('tenant_id', tenantId).order('created_at', { ascending: false }))
           .then(({ data: invs }) => { setTenantInvoices(invs || []); setInvoicesLoaded(true) })
           .catch(() => { setTenantInvoices([]); setInvoicesLoaded(true) })
         // Load meters via premises units
-        supabase.from('tenant_premises').select('unit_number').eq('tenant_id', tenantId)
+        Promise.resolve(supabase.from('tenant_premises').select('unit_number').eq('tenant_id', tenantId))
           .then(async ({ data: prems }) => {
             const unitNums = (prems || []).map((p: any) => p.unit_number).filter(Boolean)
             if (!unitNums.length) { setMeters([]); setMetersLoaded(true); return }
@@ -435,7 +437,7 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
 
   async function updateOnboardingStatus(status: string) {
     if (!dbId) return
-    await supabase.from('tenants').update({ onboarding_status: status }).eq('id', dbId).catch(() => {})
+    await supabase.from('tenants').update({ onboarding_status: status }).eq('id', dbId)
     setSaved(p => ({ ...p, onboardingStatus: status }))
     setForm(p => ({ ...p, onboardingStatus: status }))
   }
@@ -503,7 +505,7 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
   const createInvoice = async () => {
     setCreating(true)
     try {
-      await fetch('/api/billing-generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ month: invoiceMonth, year: invoiceYear }) })
+      await apiFetch('/api/billing-generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ month: invoiceMonth, year: invoiceYear }) })
       setInvoiceCreated(true); setShowInvoiceForm(false); setTimeout(() => setInvoiceCreated(false), 3000)
     } catch { /* ignore */ } finally { setCreating(false) }
   }
@@ -565,7 +567,7 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
           ) : (
             <>
               <button onClick={() => setEditing(true)} style={{ padding: '7px 14px', border: '1px solid #e8ebf3', borderRadius: 7, background: '#fff', cursor: 'pointer', fontSize: 14, fontFamily: 'inherit', color: '#374151' }}>Редактировать</button>
-              <button onClick={() => setShowInvoiceForm(true)} style={{ padding: '7px 14px', border: 'none', borderRadius: 7, background: '#4f6ef7', cursor: 'pointer', fontSize: 14, fontFamily: 'inherit', color: '#fff', fontWeight: 500 }}>Выставить счёт</button>
+              <button onClick={() => onCreateInvoice?.()} style={{ padding: '7px 14px', border: 'none', borderRadius: 7, background: '#4f6ef7', cursor: 'pointer', fontSize: 14, fontFamily: 'inherit', color: '#fff', fontWeight: 500 }}>Выставить счёт</button>
             </>
           )}
         </div>
@@ -637,6 +639,7 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
       )}
 
       {/* ─── TAB 1: ОБЩИЕ ─── */}
+      {tab === 1 && dbId && <TenantPortalAccess tenantId={dbId} defaultEmail={saved.email || saved.contactEmail || ''} />}
       {tab === 1 && (
         <>
           <div style={s.card}>
@@ -953,7 +956,7 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
                       const prev = last?.curr_value ?? 0
                       const consumption = Math.max(0, curr - prev)
                       const amount = tariff ? consumption * tariff : 0
-                      await supabase.from('meter_readings').insert({ meter_id: m.id, period, prev_value: prev, curr_value: curr, consumption, amount })
+                      await supabase.from('meter_readings').insert({ meter_id: m.id, period, prev_value: prev, curr_value: curr, consumption, amount, reading: curr, previous_reading: prev, reading_date: new Date().toISOString().slice(0, 10) })
                       setMeterReadings(r => ({ ...r, [m.id]: '' }))
                       // Refresh meters
                       const { data: fresh } = await supabase.from('meter_readings').select('period,curr_value,created_at').eq('meter_id', m.id).order('created_at', { ascending: false }).limit(1)
@@ -1057,7 +1060,7 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
                       <div key={doc.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 8px', background: '#f8f9fc', borderRadius: 6, marginBottom: 6, fontSize: 13 }}>
                         <span style={{ color: '#374151', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 160 }}>{doc.file_name}</span>
                         <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                          {doc.file_url && <a href={doc.file_url} target="_blank" rel="noopener noreferrer" style={{ color: '#4f6ef7', fontSize: 12, textDecoration: 'none' }}>↓</a>}
+                          {doc.file_url && <a href="#" onClick={e => { e.preventDefault(); openStoredFile(doc.file_url) }} style={{ color: '#4f6ef7', fontSize: 12, textDecoration: 'none' }}>↓</a>}
                           <button onClick={() => deleteDoc(doc.id)} style={{ border: 'none', background: 'none', color: '#ef4444', fontSize: 12, cursor: 'pointer', padding: '0 4px' }}>×</button>
                         </div>
                       </div>

@@ -1,3 +1,4 @@
+import { apiFetch } from '../lib/api'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 
@@ -54,11 +55,11 @@ export default function LedgerPage() {
     try {
       // 1C data = authoritative balances; Supabase tenants = for linking
       const [r1cRes, { data: tenantRows }] = await Promise.all([
-        fetch('/api/debts-1c'),
+        apiFetch('/api/debts-1c'),
         supabase.from('tenants').select('id,inn,id_1c'),
       ])
       const r1c = await r1cRes.json()
-      if (!r1c.ok) { setLoading(false); return }
+      if (!r1c.ok) { setImportMsg('1С не отвечает: ' + (r1c.error || 'нет данных')); setLoading(false); return }
 
       // Build tenant lookup: id_1c → tenantId, inn → tenantId
       const byId1c: Record<string, string> = {}
@@ -74,7 +75,7 @@ export default function LedgerPage() {
         tenantId: byId1c[cp.id] || byInn[cp.inn] || undefined,
       }))
 
-      if (r1c.meta?.asOf) setLastUpdate(new Date(r1c.meta.asOf).toLocaleString('ru-RU'))
+      if (r1c.meta?.asOf) setLastUpdate(new Date(r1c.meta.asOf).toLocaleString('ru-RU') + (r1c.stale ? ' — 1С сейчас не отвечает, показаны сохранённые данные' : ''))
       setCps(enriched)
 
       // Load operations from DB for the period (history tab)
@@ -93,8 +94,8 @@ export default function LedgerPage() {
     setImporting1c(true); setImportMsg('')
     try {
       // First sync tenants so id_1c is populated
-      await fetch('/api/sync-tenants-1c', { method: 'POST' })
-      const r = await fetch('/api/import-1c-ledger', { method: 'POST' })
+      await apiFetch('/api/sync-tenants-1c', { method: 'POST' })
+      const r = await apiFetch('/api/import-1c-ledger', { method: 'POST' })
       const json = await r.json()
       if (json.ok) {
         setImportMsg(`✓ 1С: ${json.imported} операций импортировано (${json.matched} сопоставлено, ${json.unmatched} без арендатора)`)
@@ -108,7 +109,7 @@ export default function LedgerPage() {
     setImportingBank(true); setImportMsg('')
     try {
       const text = await file.text()
-      const r = await fetch('/api/import-bank-csv', {
+      const r = await apiFetch('/api/import-bank-csv', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ csv: text, filename: file.name }),

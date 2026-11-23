@@ -1,3 +1,4 @@
+import { apiFetch, openStoredFile } from '../lib/api'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 
@@ -45,7 +46,7 @@ export default function MetersPage() {
     try {
       const imageBase64 = await fileToBase64(file)
       const meterSerials = meters.map((m: any) => m.serial).filter(Boolean)
-      const res = await fetch('/api/recognize-meter', {
+      const res = await apiFetch('/api/recognize-meter', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ imageBase64, meterNumbers: meterSerials })
@@ -249,7 +250,7 @@ function ReadingsView({meter, onBack, allMeters, onSwitchMeter}: {meter:any; onB
     try {
       const imageBase64 = await fileToBase64(file)
       const meterSerials = allMeters.map((m: any) => m.serial).filter(Boolean)
-      const res = await fetch('/api/recognize-meter', {
+      const res = await apiFetch('/api/recognize-meter', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ imageBase64, meterNumbers: meterSerials })
@@ -295,6 +296,9 @@ function ReadingsView({meter, onBack, allMeters, onSwitchMeter}: {meter:any; onB
       consumption,
       amount,
       notes: form.notes,
+      reading: form.curr_value,
+      previous_reading: form.prev_value,
+      reading_date: new Date().toISOString().slice(0, 10),
       ...(photo_url ? { photo_url } : {}),
     })
     setSaving(false)
@@ -407,7 +411,7 @@ function ReadingsView({meter, onBack, allMeters, onSwitchMeter}: {meter:any; onB
                   <td style={{padding:'9px 12px',color:'#9ca3af',fontSize:12}}>{r.notes||'—'}</td>
                   <td style={{padding:'9px 12px'}}>
                     {r.photo_url
-                      ? <a href={r.photo_url} target="_blank" rel="noreferrer" style={{fontSize:12,color:'#4f6ef7',textDecoration:'none'}}>📷 Фото</a>
+                      ? <a href="#" onClick={e => { e.preventDefault(); openStoredFile(r.photo_url) }} style={{fontSize:12,color:'#4f6ef7',textDecoration:'none'}}>Фото</a>
                       : <span style={{fontSize:12,color:'#e5e7eb'}}>—</span>}
                   </td>
                   <td style={{padding:'9px 12px'}}><button onClick={()=>del(r.id)} style={{border:'none',background:'none',color:'#ef4444',fontSize:12,cursor:'pointer'}}>Удалить</button></td>

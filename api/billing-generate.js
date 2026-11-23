@@ -1,9 +1,11 @@
+import { requireStaff } from './_lib/auth.js'
 export default async function handler(req, res) {
+  if (!(await requireStaff(req, res, ['owner', 'manager', 'accountant']))) return
   if (req.method !== 'POST') return res.status(405).end();
   const { month, year } = req.body;
 
   const SB_URL = process.env.VITE_SUPABASE_URL;
-  const SB_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+  const SB_KEY = process.env.SUPABASE_SERVICE_KEY;
   const headers = {
     'Content-Type': 'application/json',
     'apikey': SB_KEY,
@@ -86,21 +88,6 @@ export default async function handler(req, res) {
       };
 
       invoices.push(invoice);
-    }
-
-    // 3. Если нет арендаторов в БД — возвращаем моковые данные
-    if (invoices.length === 0) {
-      return res.status(200).json({
-        ok: true,
-        preview: true,
-        message: 'Арендаторы не найдены в БД — показан предварительный расчёт',
-        invoices: [
-          { tenant_name: 'ООО Техцентр', period: periodLabel, rent_amount: 20500, cleaning_amount: 2500, utilities_amount: 1840, services_amount: 0, total_amount: 24840 },
-          { tenant_name: 'ИП Фролова Е.В.', period: periodLabel, rent_amount: 22800, cleaning_amount: 2500, utilities_amount: 2100, services_amount: 0, total_amount: 27400 },
-          { tenant_name: 'ООО Консалт', period: periodLabel, rent_amount: 41400, cleaning_amount: 5000, utilities_amount: 3200, services_amount: 1500, total_amount: 51100 },
-        ],
-        tariffs: { electricityTariff, electricityMarkup, coldWaterTariff, hotWaterTariff, cleaningPrice }
-      });
     }
 
     res.status(200).json({ ok: true, invoices, tariffs: { electricityTariff, electricityMarkup, coldWaterTariff, hotWaterTariff, cleaningPrice } });

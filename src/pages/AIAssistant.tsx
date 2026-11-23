@@ -1,3 +1,4 @@
+import { apiFetch } from '../lib/api'
 import { useState, useRef, useEffect } from 'react'
 
 interface Message { role: 'user' | 'assistant'; content: string }
@@ -23,7 +24,7 @@ export function AIAssistantPage() {
     setLoading(true)
     try {
       const endpoint = model === 'claude' ? '/api/ai-chat' : '/api/ai-chat-gpt'
-      const res = await fetch(endpoint, {
+      const res = await apiFetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messages: newMessages.map(m => ({ role: m.role, content: m.content })) })

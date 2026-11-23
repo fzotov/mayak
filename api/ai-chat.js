@@ -1,5 +1,6 @@
+import { requireStaff } from './_lib/auth.js'
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY
 
 async function sb(path, opts = {}) {
   const res = await fetch(SUPABASE_URL + '/rest/v1/' + path, {
@@ -17,6 +18,7 @@ async function sb(path, opts = {}) {
 function fmt(n) { return Number(n || 0).toLocaleString('ru-RU') }
 
 export default async function handler(req, res) {
+  if (!(await requireStaff(req, res))) return
   if (req.method !== 'POST') return res.status(405).end()
   const { messages } = req.body
   const lastMsg = messages[messages.length - 1]?.content || ''

@@ -1,5 +1,6 @@
+import { requireStaff } from './_lib/auth.js'
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY
 
 async function sb(path, opts = {}) {
   const res = await fetch(SUPABASE_URL + '/rest/v1/' + path, {
@@ -20,6 +21,7 @@ async function sb(path, opts = {}) {
 }
 
 export default async function handler(req, res) {
+  if (!(await requireStaff(req, res, ['owner', 'manager', 'accountant']))) return
   if (req.method !== 'POST') return res.status(405).end()
   const { transactionIds } = req.body
 
@@ -99,10 +101,15 @@ ${txList}
     // Auto-apply high-confidence matches (>= 80)
     const applied = []
     for (const m of matches) {
-      if (m.confidence >= 80 && m.tenant_id) {
-        // Create payment record
-        const tx = txs.find(t => t.id === m.tx_id)
-        if (!tx) continue
+      // Платёж проводится без человека только по твёрдому признаку: ИНН арендатора есть в реквизитах платежа.
+      // Догадка модели сама по себе деньги не проводит — такие строки остаются предложением для оператора.
+      const tx = txs.find(t => t.id === m.tx_id)
+      const tenant = tenants.find(t => t.id === m.tenant_id)
+      const inn = String(tenant?.inn || '').trim()
+      const haystack = `${tx?.counterparty || ''} ${tx?.description || ''}`
+      const innMatched = inn.length >= 10 && new RegExp(`(^|\\D)${inn}(\\D|$)`).test(haystack)
+      m.auto = !!(tx && tenant && innMatched)
+      if (m.auto) {
         const [payment] = await sb('payments', {
           method: 'POST',
           body: JSON.stringify({

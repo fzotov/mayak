@@ -1,3 +1,4 @@
+import { requireStaff } from './_lib/auth.js'
 /**
  * POST /api/sync-unit-status
  * Синхронизирует units.status на основе таблицы tenants.
@@ -44,6 +45,7 @@ function isOccupied(unitNumber, occupiedSet) {
 }
 
 export default async function handler(req, res) {
+  if (!(await requireStaff(req, res))) return
   if (req.method !== 'POST' && req.method !== 'GET') return res.status(405).end()
 
   const { data: tenants, error: tErr } = await supabase

@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { supabase } from '../../lib/supabase';
+import { loadTenantSession } from '../../lib/tenantSession';
 
 interface TenantLoginProps {
   onNavigate: (p: string) => void;
@@ -14,8 +16,8 @@ const C = {
 }
 
 const inp: React.CSSProperties = {
-  width: '100%', padding: '10px 12px', background: '#0f0f0f',
-  border: `1px solid #1f1f1f`, borderRadius: 6, fontSize: 14,
+  width: '100%', padding: '12px', background: '#0f0f0f',
+  border: `1px solid #1f1f1f`, borderRadius: 8, fontSize: 16,
   color: '#ededed', outline: 'none', fontFamily: C.font, boxSizing: 'border-box',
 }
 
@@ -38,14 +40,17 @@ export default function TenantLogin({ onNavigate }: TenantLoginProps) {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch('/api/tenant-login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      });
-      const d = await res.json();
-      if (!res.ok) { setError(d.error || 'Ошибка входа. Проверьте данные.'); return; }
-      localStorage.setItem('tenant_session', JSON.stringify({ tenantId: d.tenantId, token: d.sessionToken, email: d.email }));
+      const { error: authErr } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+      if (authErr) { setError('Неверный email или пароль.'); return; }
+      const session = await loadTenantSession();
+      if (!session) {
+        // сотрудник, вошедший через страницу арендатора, попадает в админку
+        const { data: prof } = await supabase.from('profiles').select('user_id').limit(1);
+        if (prof?.length) { window.location.replace('/'); return; }
+        await supabase.auth.signOut();
+        setError('Для этого адреса кабинет арендатора не открыт. Обратитесь в администрацию.');
+        return;
+      }
       onNavigate('home');
     } catch {
       setError('Не удалось подключиться к серверу.');
@@ -88,11 +93,11 @@ export default function TenantLogin({ onNavigate }: TenantLoginProps) {
             <form onSubmit={handleLogin}>
               <div style={{ marginBottom: 16 }}>
                 <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 6, color: C.text }}>Email</label>
-                <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@company.ru" required style={inp} />
+                <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@company.ru" autoComplete="email" inputMode="email" required style={inp} />
               </div>
               <div style={{ marginBottom: 24 }}>
                 <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 6, color: C.text }}>Пароль</label>
-                <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" required style={inp} />
+                <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" autoComplete="current-password" required style={inp} />
               </div>
               {error && (
                 <div style={{ background: 'rgba(255,68,68,0.08)', border: '1px solid rgba(255,68,68,0.2)', borderRadius: 6, padding: '10px 12px', fontSize: 13, color: '#ff6b6b', marginBottom: 16 }}>

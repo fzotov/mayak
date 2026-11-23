@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react';
+import { supabase } from './lib/supabase';
+import { loadTenantSession, tenantSignOut, type TenantSession } from './lib/tenantSession';
 import TenantLogin from './pages/tenant/TenantLogin';
 import TenantActivatePage from './pages/TenantActivate';
 import TenantResetPassword from './pages/TenantResetPassword';
@@ -26,26 +28,28 @@ export default function TenantApp() {
     setPath(to);
   };
 
-  const sessionRaw = localStorage.getItem('tenant_session');
-  const session = sessionRaw ? JSON.parse(sessionRaw) : null;
-  const isAuthenticated = session !== null;
+  // undefined — ещё проверяем вход; null — не вошёл
+  const [session, setSession] = useState<TenantSession | null | undefined>(undefined);
+  useEffect(() => {
+    loadTenantSession().then(setSession);
+    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_OUT') setSession(null);
+    });
+    return () => sub.subscription.unsubscribe();
+  }, []);
+  const isAuthenticated = !!session;
 
   const onNavigate = (pageName: string) => {
     if (pageName === 'home') {
-      navigate('/tenant/dashboard');
+      loadTenantSession().then(s => { setSession(s); navigate('/tenant/dashboard'); });
     } else if (pageName === 'login') {
       navigate('/tenant/login');
     } else if (pageName === 'logout') {
-      localStorage.removeItem('tenant_session');
-      navigate('/tenant/login');
+      tenantSignOut().then(() => { setSession(null); navigate('/tenant/login'); });
     } else {
       navigate('/tenant/' + pageName);
     }
   };
-
-  if (path === '/tenant/login' || (!isAuthenticated && !path.startsWith('/tenant/activate'))) {
-    return <TenantLogin onNavigate={onNavigate} />;
-  }
 
   if (path.startsWith('/tenant/activate')) {
     return <TenantActivatePage />;
@@ -53,6 +57,18 @@ export default function TenantApp() {
 
   if (path.startsWith('/tenant/reset-password')) {
     return <TenantResetPassword />;
+  }
+
+  if (session === undefined) {
+    return <div style={{ minHeight: '100dvh', background: '#0a0a0a', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#666', fontFamily: '"Geist", system-ui, sans-serif', fontSize: 14 }}>Загрузка…</div>;
+  }
+
+  if (!session || !isAuthenticated) {
+    return <TenantLogin onNavigate={onNavigate} />;
+  }
+
+  if (path === '/tenant/login') {
+    window.history.replaceState({}, '', '/tenant/dashboard');
   }
 
   let page = 'home';
@@ -74,7 +90,7 @@ export default function TenantApp() {
     page = 'notifications';
   }
 
-  let content: JSX.Element;
+  let content: React.ReactElement;
   if (page === 'home') {
     content = <TenantDashboard tenantId={session.tenantId} onNavigate={onNavigate} />;
   } else if (page === 'profile') {

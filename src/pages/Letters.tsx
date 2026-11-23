@@ -1,3 +1,4 @@
+import { apiFetch } from '../lib/api'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 
@@ -147,7 +148,7 @@ function LetterModal({ letter, onClose, onSaved }: { letter: Letter | null; onCl
     setShowPrompt(false)
     setGenerating(true)
     try {
-      const res = await fetch('/api/generate-letter', {
+      const res = await apiFetch('/api/generate-letter', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ subject: form.subject, recipient: form.recipient, sender: form.sender, prompt })
@@ -171,7 +172,7 @@ function LetterModal({ letter, onClose, onSaved }: { letter: Letter | null; onCl
         reader.onload = () => res((reader.result as string).split(',')[1])
         reader.readAsDataURL(file)
       })
-      const res = await fetch('/api/process-letter', {
+      const res = await apiFetch('/api/process-letter', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ base64, mediaType: file.type })

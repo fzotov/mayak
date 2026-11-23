@@ -1,4 +1,6 @@
+import { requireStaff } from './_lib/auth.js'
 export default async function handler(req, res) {
+  if (!(await requireStaff(req, res))) return
   if (req.method !== 'POST') return res.status(405).end();
   const { imageBase64, meterNumbers, mediaType } = req.body;
   if (!imageBase64) return res.status(400).json({ ok: false, error: 'No image' });

@@ -1,216 +1,110 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { apiFetch } from '../lib/api'
 
-const TABS = [
-  { label: 'Личные данные', icon: '👤' },
-  { label: 'Безопасность', icon: '🔒' },
-  { label: 'Настройки', icon: '⚙️' },
-]
+const ROLES: Record<string, string> = { owner: 'Владелец', manager: 'Управляющий', accountant: 'Бухгалтер', technician: 'Техник' }
+const inp: React.CSSProperties = { width: '100%', padding: '10px 12px', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 15, fontFamily: 'inherit', outline: 'none', color: '#111', boxSizing: 'border-box' }
+const lbl: React.CSSProperties = { fontSize: 13, fontWeight: 500, color: '#374151', display: 'block', marginBottom: 6 }
+const btn: React.CSSProperties = { padding: '10px 16px', background: '#111', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }
+const h: React.CSSProperties = { fontSize: 13, fontWeight: 600, color: '#111', margin: '0 0 12px' }
 
-export function SettingsModal({ onClose, onLogout }: { onClose: () => void; onLogout: () => void }) {
-  const [tab, setTab] = useState(0)
-  const [name, setName] = useState('Андрей Соколов')
-  const [role, setRole] = useState('Управляющий')
-  const [phone, setPhone] = useState('+7 916 000-00-00')
-  const [email, setEmail] = useState('manager@mayak-d.ru')
-  const [company, setCompany] = useState('БЦ Маяк')
-  const [timezone, setTimezone] = useState('Europe/Moscow (UTC+3)')
-  const [saved, setSaved] = useState(false)
-  const [oldPw, setOldPw] = useState('')
+interface Props { user: any; profile: { full_name: string; role: string }; onClose: () => void; onLogout: () => void }
+
+/** Профиль: смена пароля, выход; для владельца — кто имеет доступ в систему. */
+export function SettingsModal({ user, profile, onClose, onLogout }: Props) {
+  const isOwner = profile.role === 'owner'
   const [newPw, setNewPw] = useState('')
   const [confirmPw, setConfirmPw] = useState('')
-  const [pwMsg, setPwMsg] = useState('')
+  const [pwMsg, setPwMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const [people, setPeople] = useState<any[]>([])
+  const [inv, setInv] = useState({ fullName: '', email: '', role: 'manager' })
+  const [invMsg, setInvMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const [busy, setBusy] = useState(false)
 
-  const inp: React.CSSProperties = { width: '100%', padding: '10px 12px', border: '1px solid #e5e7eb', borderRadius: 10, fontSize: 14, fontFamily: 'inherit', outline: 'none', color: '#1a2240', background: '#fff' }
+  const loadPeople = () => supabase.from('profiles').select('user_id, email, full_name, role').order('created_at').then(({ data }) => setPeople(data || []))
+  useEffect(() => { if (isOwner) loadPeople() }, [isOwner])
 
-  const saveProfile = () => { setSaved(true); setTimeout(() => setSaved(false), 2000) }
-  const changePassword = async () => {
-    if (newPw !== confirmPw) { setPwMsg('Пароли не совпадают'); return }
-    if (newPw.length < 6) { setPwMsg('Минимум 6 символов'); return }
+  const changePassword = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (newPw.length < 8) { setPwMsg({ ok: false, text: 'Пароль должен быть не короче 8 символов' }); return }
+    if (newPw !== confirmPw) { setPwMsg({ ok: false, text: 'Пароли не совпадают' }); return }
     const { error } = await supabase.auth.updateUser({ password: newPw })
-    if (error) setPwMsg('Ошибка: ' + error.message)
-    else { setPwMsg('Пароль изменён'); setOldPw(''); setNewPw(''); setConfirmPw('') }
-    setTimeout(() => setPwMsg(''), 3000)
+    if (error) setPwMsg({ ok: false, text: 'Не удалось сменить пароль: ' + error.message })
+    else { setPwMsg({ ok: true, text: 'Пароль изменён' }); setNewPw(''); setConfirmPw('') }
   }
 
-  const initials = name.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase()
+  const invite = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setBusy(true); setInvMsg(null)
+    const r = await apiFetch('/api/staff-invite', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(inv) })
+    const d = await r.json().catch(() => ({ ok: false, error: 'Сервер не ответил' }))
+    setBusy(false)
+    if (d.ok) { setInvMsg({ ok: true, text: `Приглашение отправлено на ${inv.email}` }); setInv({ fullName: '', email: '', role: 'manager' }) }
+    else setInvMsg({ ok: false, text: d.error || 'Не удалось отправить приглашение' })
+  }
+
+  const revoke = async (p: any) => {
+    if (!confirm(`Отозвать доступ у ${p.full_name || p.email}?`)) return
+    const r = await apiFetch('/api/staff-invite', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: p.user_id }) })
+    const d = await r.json().catch(() => ({ ok: false }))
+    if (d.ok) loadPeople(); else alert(d.error || 'Не удалось отозвать доступ')
+  }
+
+  const note = (m: { ok: boolean; text: string } | null) => m && (
+    <div style={{ fontSize: 13, marginTop: 10, padding: '8px 12px', borderRadius: 8, background: m.ok ? '#f0fdf4' : '#fef2f2', color: m.ok ? '#166534' : '#b91c1c' }}>{m.text}</div>
+  )
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-      <div style={{ background: '#fff', borderRadius: 16, width: 680, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
-        <div style={{ padding: '20px 24px', borderBottom: '1px solid #f0f2f8', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: 14, width: '100%', maxWidth: 520, maxHeight: '90dvh', overflowY: 'auto' }}>
+        <div style={{ padding: '18px 22px', borderBottom: '1px solid #f0f0f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <div style={{ fontSize: 17, fontWeight: 600, color: '#1a2240' }}>Профиль</div>
-            <div style={{ fontSize: 13, color: '#8596b4', marginTop: 2 }}>Управление вашим аккаунтом</div>
+            <div style={{ fontSize: 16, fontWeight: 600, color: '#111' }}>{profile.full_name || user.email}</div>
+            <div style={{ fontSize: 13, color: '#6b7280', marginTop: 2 }}>{ROLES[profile.role] || profile.role} · {user.email}</div>
           </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#9ca3af', padding: '0 4px' }}>✕</button>
+          <button onClick={onClose} aria-label="Закрыть" style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: '#9ca3af', lineHeight: 1 }}>×</button>
         </div>
 
-        <div style={{ display: 'flex', minHeight: 400 }}>
-          <div style={{ width: 200, borderRight: '1px solid #f0f2f8', padding: '16px 12px', flexShrink: 0 }}>
-            {TABS.map((t, i) => (
-              <button key={i} onClick={() => setTab(i)} style={{
-                width: '100%', padding: '10px 12px', border: 'none', borderRadius: 8,
-                background: tab === i ? '#eff3ff' : 'transparent',
-                color: tab === i ? '#4f6ef7' : '#374151',
-                fontSize: 14, fontFamily: 'inherit', cursor: 'pointer',
-                textAlign: 'left', fontWeight: tab === i ? 500 : 400,
-                display: 'flex', alignItems: 'center', gap: 10, marginBottom: 2
-              }}>
-                <span style={{ fontSize: 15 }}>{t.icon}</span>
-                {t.label}
-              </button>
-            ))}
-            <div style={{ borderTop: '1px solid #f0f2f8', marginTop: 8, paddingTop: 8 }}>
-              <button onClick={async () => { await supabase.auth.signOut(); onLogout() }} style={{
-                width: '100%', padding: '10px 12px', border: 'none', borderRadius: 8,
-                background: 'transparent', color: '#ef4444', fontSize: 14,
-                fontFamily: 'inherit', cursor: 'pointer', textAlign: 'left',
-                display: 'flex', alignItems: 'center', gap: 10
-              }}>
-                <span>↪</span> Выйти из аккаунта
-              </button>
+        <div style={{ padding: 22 }}>
+          <form onSubmit={changePassword} style={{ marginBottom: 26 }}>
+            <p style={h}>Смена пароля</p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 12 }}>
+              <div><label style={lbl}>Новый пароль</label><input style={inp} type="password" autoComplete="new-password" value={newPw} onChange={e => setNewPw(e.target.value)} /></div>
+              <div><label style={lbl}>Ещё раз</label><input style={inp} type="password" autoComplete="new-password" value={confirmPw} onChange={e => setConfirmPw(e.target.value)} /></div>
             </div>
-          </div>
+            <button type="submit" style={btn}>Сменить пароль</button>
+            {note(pwMsg)}
+          </form>
 
-          <div style={{ flex: 1, padding: '20px 24px' }}>
-            {tab === 0 && (
-              <>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 24 }}>
-                  <div style={{ width: 72, height: 72, borderRadius: '50%', background: '#4f6ef7', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, fontWeight: 600, color: '#fff', flexShrink: 0 }}>
-                    {initials}
-                  </div>
-                  <button style={{ padding: '10px 16px', border: '1px solid #e5e7eb', borderRadius: 10, background: '#fff', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', color: '#374151', display: 'flex', alignItems: 'center', gap: 6 }}>
-                    📷 Изменить фото
-                  </button>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 16px', marginBottom: 20 }}>
-                  <div>
-                    <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 6 }}>Имя и фамилия</div>
-                    <input style={inp} value={name} onChange={e => setName(e.target.value)} />
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 6 }}>Должность</div>
-                    <input style={inp} value={role} onChange={e => setRole(e.target.value)} />
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 6 }}>Email</div>
-                    <input style={inp} value={email} onChange={e => setEmail(e.target.value)} />
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 6 }}>Телефон</div>
-                    <input style={inp} value={phone} onChange={e => setPhone(e.target.value)} />
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 6 }}>Компания</div>
-                    <input style={inp} value={company} onChange={e => setCompany(e.target.value)} />
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 6 }}>Часовой пояс</div>
-                    <input style={inp} value={timezone} onChange={e => setTimezone(e.target.value)} />
-                  </div>
-                </div>
-
-                {saved && <div style={{ fontSize: 12, color: '#16a34a', marginBottom: 12, padding: '8px 12px', background: '#f0fdf4', borderRadius: 8 }}>Изменения сохранены</div>}
-
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-                  <button onClick={onClose} style={{ padding: '10px 20px', border: '1px solid #e5e7eb', borderRadius: 10, background: '#fff', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit', color: '#374151' }}>Отмена</button>
-                  <button onClick={saveProfile} style={{ padding: '10px 20px', border: 'none', borderRadius: 10, background: '#4f6ef7', fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}>
-                    ✓ Сохранить изменения
-                  </button>
-                </div>
-              </>
-            )}
-
-            {tab === 1 && (
-              <>
-                <div style={{ marginBottom: 14 }}>
-                  <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 6 }}>Текущий пароль</div>
-                  <input style={inp} type="password" value={oldPw} onChange={e => setOldPw(e.target.value)} placeholder="Введите текущий пароль" />
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 16px', marginBottom: 14 }}>
-                  <div>
-                    <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 6 }}>Новый пароль</div>
-                    <input style={inp} type="password" value={newPw} onChange={e => setNewPw(e.target.value)} placeholder="Минимум 6 символов" />
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 6 }}>Подтверждение пароля</div>
-                    <input style={inp} type="password" value={confirmPw} onChange={e => setConfirmPw(e.target.value)} placeholder="Повторите пароль" />
-                  </div>
-                </div>
-                {pwMsg && <div style={{ fontSize: 12, color: pwMsg.includes('Ошибка') || pwMsg.includes('не') ? '#ef4444' : '#16a34a', marginBottom: 12, padding: '8px 12px', background: pwMsg.includes('Ошибка') || pwMsg.includes('не') ? '#fef2f2' : '#f0fdf4', borderRadius: 8 }}>{pwMsg}</div>}
-                <button onClick={changePassword} style={{ padding: '10px 20px', border: 'none', borderRadius: 10, background: '#4f6ef7', fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', color: '#fff', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 16 }}>
-                  🔒 Обновить пароль
-                </button>
-
-                <div style={{ padding: 14, border: '1px solid #e5e7eb', borderRadius: 12, marginBottom: 16 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                      <div style={{ fontSize: 14, fontWeight: 500, color: '#1a2240' }}>Двухфакторная аутентификация</div>
-                      <div style={{ fontSize: 12, color: '#8596b4', marginTop: 2 }}>Дополнительная защита входа через приложение-аутентификатор</div>
+          {isOwner && (
+            <div style={{ marginBottom: 26 }}>
+              <p style={h}>Доступ в систему</p>
+              <div style={{ border: '1px solid #e5e7eb', borderRadius: 10, marginBottom: 14 }}>
+                {people.map((p, i) => (
+                  <div key={p.user_id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderTop: i ? '1px solid #f0f0f0' : 'none' }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 14, color: '#111', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.full_name || p.email}</div>
+                      <div style={{ fontSize: 12, color: '#6b7280' }}>{ROLES[p.role] || p.role} · {p.email}</div>
                     </div>
-                    <div style={{ width: 44, height: 24, borderRadius: 12, background: '#e5e7eb', cursor: 'pointer', position: 'relative', flexShrink: 0 }}>
-                      <div style={{ position: 'absolute', top: 3, left: 3, width: 18, height: 18, background: '#fff', borderRadius: '50%' }} />
-                    </div>
-                  </div>
-                </div>
-
-                <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 10 }}>Активные сессии</div>
-                {[
-                  { device: 'MacBook Pro · Safari · Москва', time: 'Текущая сессия', current: true },
-                  { device: 'iPhone 15 · Маяк App · Москва', time: '2 ч назад', current: false },
-                ].map((s, i) => (
-                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', border: '1px solid #e5e7eb', borderRadius: 10, marginBottom: 8 }}>
-                    <div style={{ fontSize: 14, color: '#1a2240' }}>{s.device}</div>
-                    <div style={{ fontSize: 12, color: s.current ? '#8596b4' : '#9ca3af' }}>{s.time}</div>
+                    {p.user_id !== user.id && <button onClick={() => revoke(p)} style={{ border: '1px solid #e5e7eb', background: '#fff', color: '#b91c1c', borderRadius: 7, padding: '5px 10px', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>Отозвать</button>}
                   </div>
                 ))}
-              </>
-            )}
-
-            {tab === 2 && (
-              <>
-                <div style={{ marginBottom: 14 }}>
-                  <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 6 }}>Язык интерфейса</div>
-                  <select style={{ ...inp, appearance: 'none' as any }}>
-                    <option>Русский</option>
-                    <option>English</option>
+              </div>
+              <form onSubmit={invite}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10, marginBottom: 12 }}>
+                  <input style={inp} placeholder="Имя и фамилия" value={inv.fullName} onChange={e => setInv({ ...inv, fullName: e.target.value })} required />
+                  <input style={inp} type="email" placeholder="Email" value={inv.email} onChange={e => setInv({ ...inv, email: e.target.value })} required />
+                  <select style={inp} value={inv.role} onChange={e => setInv({ ...inv, role: e.target.value })}>
+                    {Object.entries(ROLES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                   </select>
                 </div>
-                <div style={{ marginBottom: 20 }}>
-                  <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 6 }}>Тема оформления</div>
-                  <select style={{ ...inp, appearance: 'none' as any }}>
-                    <option>Светлая</option>
-                    <option>Тёмная</option>
-                    <option>Системная</option>
-                  </select>
-                </div>
+                <button type="submit" disabled={busy} style={{ ...btn, opacity: busy ? 0.6 : 1 }}>{busy ? 'Отправляем…' : 'Пригласить сотрудника'}</button>
+                {note(invMsg)}
+              </form>
+            </div>
+          )}
 
-                <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 10 }}>Email-уведомления</div>
-                {[
-                  { label: 'Биллинг и платежи', on: true },
-                  { label: 'Модерация клиентов', on: true },
-                  { label: 'Безопасность аккаунта', on: true },
-                  { label: 'Новости продукта', on: false },
-                ].map((item, i) => (
-                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', border: '1px solid #e5e7eb', borderRadius: 10, marginBottom: 8 }}>
-                    <div style={{ fontSize: 14, color: '#1a2240' }}>{item.label}</div>
-                    <div style={{ width: 44, height: 24, borderRadius: 12, background: item.on ? '#4f6ef7' : '#e5e7eb', cursor: 'pointer', position: 'relative', flexShrink: 0 }}>
-                      <div style={{ position: 'absolute', top: 3, left: item.on ? 23 : 3, width: 18, height: 18, background: '#fff', borderRadius: '50%', transition: 'left .2s' }} />
-                    </div>
-                  </div>
-                ))}
-
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16 }}>
-                  <button onClick={onClose} style={{ padding: '10px 20px', border: '1px solid #e5e7eb', borderRadius: 10, background: '#fff', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit', color: '#374151' }}>Отмена</button>
-                  <button style={{ padding: '10px 20px', border: 'none', borderRadius: 10, background: '#4f6ef7', fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}>
-                    ✓ Сохранить изменения
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
+          <button onClick={onLogout} style={{ ...btn, background: '#fff', color: '#111', border: '1px solid #e5e7eb' }}>Выйти</button>
         </div>
       </div>
     </div>

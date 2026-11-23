@@ -1,62 +1,48 @@
-import { createClient } from '@supabase/supabase-js'
-
-const supabase = createClient(process.env.VITE_SUPABASE_URL, process.env.VITE_SUPABASE_ANON_KEY)
+// Согласование входящего счёта по ссылке из письма.
+// GET  — показывает счёт и кнопку подтверждения (ничего не меняет: почтовые сканеры открывают ссылки сами).
+// POST — выполняет решение.
+import { admin, APP_URL, esc } from './_lib/auth.js'
 
 export default async function handler(req, res) {
-  const { token, action } = req.query
-  if (!token) return res.status(400).send('Токен не указан')
+  if (req.method !== 'GET' && req.method !== 'POST') return res.status(405).end()
+  const token = String(req.query?.token || '')
+  const action = req.query?.action === 'approve' ? 'approve' : 'reject'
+  res.setHeader('Content-Type', 'text/html; charset=utf-8')
+  if (token.length < 32) return res.status(400).send(page('Ссылка недействительна', 'Токен не указан.', '#8596b4'))
 
-  const { data: inv, error } = await supabase
-    .from('incoming_invoices')
-    .select('id, supplier, amount, approval_token, approval_requested_to, status')
-    .eq('approval_token', token)
-    .single()
+  const db = admin()
+  const { data: inv } = await db.from('incoming_invoices')
+    .select('id, supplier, amount, approval_requested_to, approval_requested_at, status').eq('approval_token', token).maybeSingle()
+  if (!inv) return res.status(404).send(page('Ссылка недействительна', 'Счёт не найден, уже обработан или ссылка устарела.', '#8596b4'))
+  const week = 7 * 24 * 3600 * 1000
+  if (inv.status !== 'PENDING_APPROVAL' || (inv.approval_requested_at && Date.now() - new Date(inv.approval_requested_at).getTime() > week)) {
+    return res.status(200).send(page('Уже обработано', 'Этот счёт уже был обработан ранее или срок ссылки истёк.', '#8596b4'))
+  }
+  const amountFmt = Number(inv.amount || 0).toLocaleString('ru-RU', { minimumFractionDigits: 2 }) + ' ₽'
+  const what = `Счёт от <strong>${esc(inv.supplier)}</strong> на сумму <strong>${esc(amountFmt)}</strong>`
+  const isApprove = action === 'approve'
 
-  if (error || !inv) return res.status(404).send('Счёт не найден или ссылка устарела')
-  if (inv.status !== 'PENDING_APPROVAL') {
-    return res.status(200).send(html('Уже обработано', `Счёт от ${inv.supplier} уже был обработан ранее.`, '#8596b4'))
+  if (req.method === 'GET') {
+    return res.status(200).send(page(isApprove ? 'Согласовать оплату?' : 'Отклонить счёт?', what + '.', isApprove ? '#16a34a' : '#dc2626',
+      `<form method="POST" action="/api/approve-invoice?token=${esc(token)}&action=${action}"><button type="submit">${isApprove ? 'Согласовать' : 'Отклонить'}</button></form>`))
   }
 
-  const isApprove = action === 'approve'
-  const newStatus = isApprove ? 'APPROVED' : 'NEW'
-
-  await supabase.from('incoming_invoices').update({
-    status: newStatus,
-    approval_token: null,
+  await db.from('incoming_invoices').update({
+    status: isApprove ? 'APPROVED' : 'NEW', approval_token: null,
     ...(isApprove ? { approved_by: inv.approval_requested_to, approved_at: new Date().toISOString() } : {}),
   }).eq('id', inv.id)
-
-  const amountFmt = Number(inv.amount || 0).toLocaleString('ru-RU', { minimumFractionDigits: 2 }) + ' ₽'
-
-  if (isApprove) {
-    return res.status(200).send(html(
-      '✓ Согласовано',
-      `Счёт от <strong>${inv.supplier}</strong> на сумму <strong>${amountFmt}</strong> согласован к оплате.`,
-      '#22c55e'
-    ))
-  } else {
-    return res.status(200).send(html(
-      '✗ Отклонено',
-      `Счёт от <strong>${inv.supplier}</strong> на сумму <strong>${amountFmt}</strong> отклонён. Статус возвращён на «Новый».`,
-      '#ef4444'
-    ))
-  }
+  return res.status(200).send(isApprove
+    ? page('Согласовано', what + ' согласован к оплате.', '#16a34a')
+    : page('Отклонено', what + ' отклонён. Статус возвращён на «Новый».', '#dc2626'))
 }
 
-function html(title, message, color) {
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title}</title>
-<style>body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;margin:0;background:#f0f2f8;display:flex;align-items:center;justify-content:center;min-height:100vh;}
-.card{background:#fff;border-radius:16px;padding:48px 40px;max-width:440px;text-align:center;box-shadow:0 8px 40px rgba(0,0,0,.1);}
-.icon{width:64px;height:64px;border-radius:50%;background:${color}22;display:flex;align-items:center;justify-content:center;font-size:28px;margin:0 auto 20px;}
-h1{color:#1a2240;font-size:22px;margin:0 0 12px;}
-p{color:#4b5563;font-size:15px;line-height:1.6;margin:0 0 28px;}
-a{display:inline-block;padding:12px 28px;background:#1a2240;color:#fff;border-radius:10px;text-decoration:none;font-weight:600;font-size:14px;}
-</style></head><body>
-<div class="card">
-  <div class="icon" style="color:${color}">${title.startsWith('✓') ? '✓' : title.startsWith('✗') ? '✗' : 'ℹ'}</div>
-  <h1 style="color:${color}">${title}</h1>
-  <p>${message}</p>
-  <a href="https://mayak-xi.vercel.app">Перейти в систему</a>
-</div>
-</body></html>`
+function page(title, message, color, extra = '') {
+  return `<!DOCTYPE html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)}</title>
+<style>body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;margin:0;background:#f0f2f8;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:16px;box-sizing:border-box}
+.card{background:#fff;border-radius:16px;padding:40px 32px;max-width:440px;width:100%;text-align:center;box-sizing:border-box}
+h1{font-size:22px;margin:0 0 12px}p{color:#4b5563;font-size:15px;line-height:1.6;margin:0 0 24px}
+button,a.btn{display:inline-block;padding:12px 28px;background:#1a2240;color:#fff;border:0;border-radius:10px;text-decoration:none;font-weight:600;font-size:15px;cursor:pointer;font-family:inherit}
+form{margin:0 0 16px}a.link{color:#8596b4;font-size:13px}</style></head><body>
+<div class="card"><h1 style="color:${color}">${esc(title)}</h1><p>${message}</p>${extra}
+<div><a class="link" href="${esc(APP_URL)}">Перейти в систему</a></div></div></body></html>`
 }

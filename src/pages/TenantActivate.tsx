@@ -1,20 +1,20 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 
-type State = 'loading' | 'valid' | 'expired' | 'done' | 'error'
+type State = 'loading' | 'valid' | 'expired' | 'done'
 
-function hashPassword(password: string): Promise<string> {
-  return fetch('/api/tenant-activate-hash', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ password }),
-  }).then(r => r.json()).then(d => d.hash)
+const C = { bg: '#0a0a0a', surface: '#111', border: '#1f1f1f', text: '#ededed', muted: '#888', font: '"Geist", system-ui, -apple-system, sans-serif' }
+const inp: React.CSSProperties = {
+  width: '100%', padding: '12px', background: '#0f0f0f', border: '1px solid #1f1f1f', borderRadius: 8,
+  fontSize: 16, color: '#ededed', outline: 'none', fontFamily: C.font, boxSizing: 'border-box',
 }
 
-export default function TenantActivatePage() {
+/** Задать пароль по одноразовой ссылке из письма: приглашение арендатора, приглашение сотрудника, сброс пароля. */
+export default function SetPasswordPage({ mode = 'activate' }: { mode?: 'activate' | 'reset' }) {
   const token = new URLSearchParams(window.location.search).get('token') ?? ''
   const [state, setState] = useState<State>('loading')
-  const [record, setRecord] = useState<any>(null)
+  const [email, setEmail] = useState('')
+  const [kind, setKind] = useState('')
   const [pw, setPw] = useState('')
   const [pw2, setPw2] = useState('')
   const [err, setErr] = useState('')
@@ -22,132 +22,74 @@ export default function TenantActivatePage() {
 
   useEffect(() => {
     if (!token) { setState('expired'); return }
-    supabase
-      .from('tenant_portal_access')
-      .select('*')
-      .eq('invite_token', token)
-      .single()
-      .then(({ data, error }) => {
-        if (error || !data) { setState('expired'); return }
-        const expired = data.invite_expires_at && new Date(data.invite_expires_at) < new Date()
-        if (expired) { setState('expired'); return }
-        setRecord(data)
-        setState('valid')
-      })
+    fetch('/api/set-password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, check: true }) })
+      .then(r => r.json())
+      .then(d => { if (d.ok) { setEmail(d.email); setKind(d.kind); setState('valid') } else setState('expired') })
+      .catch(() => setState('expired'))
   }, [token])
 
-  async function activate() {
+  async function submit(e: React.FormEvent) {
+    e.preventDefault()
     setErr('')
-    if (pw.length < 8) { setErr('Пароль должен быть не менее 8 символов'); return }
+    if (pw.length < 8) { setErr('Пароль должен быть не короче 8 символов'); return }
     if (pw !== pw2) { setErr('Пароли не совпадают'); return }
     setSaving(true)
-
     try {
-      const salt = Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b => b.toString(16).padStart(2, '0')).join('')
-      const enc = new TextEncoder()
-      const keyMaterial = await crypto.subtle.importKey('raw', enc.encode(pw), 'PBKDF2', false, ['deriveBits'])
-      const bits = await crypto.subtle.deriveBits(
-        { name: 'PBKDF2', salt: enc.encode(salt), iterations: 100000, hash: 'SHA-256' },
-        keyMaterial, 256
-      )
-      const hash = Array.from(new Uint8Array(bits)).map(b => b.toString(16).padStart(2, '0')).join('')
-      const password_hash = `${salt}:${hash}`
-
-      const { error } = await supabase
-        .from('tenant_portal_access')
-        .update({ password_hash, status: 'active', invite_token: null })
-        .eq('id', record.id)
-
-      if (error) { setErr('Ошибка: ' + error.message); setSaving(false); return }
-      setState('done')
-    } catch (e: any) {
-      setErr('Ошибка: ' + e.message)
-      setSaving(false)
+      const r = await fetch('/api/set-password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, password: pw }) })
+      const d = await r.json()
+      if (!d.ok) { setErr(d.error || 'Не удалось сохранить пароль'); setSaving(false); return }
+      const { error } = await supabase.auth.signInWithPassword({ email: d.email, password: pw })
+      if (error) { setState('done'); return }
+      window.location.replace(d.area === 'staff' ? '/' : '/tenant/dashboard')
+    } catch {
+      setErr('Не удалось подключиться к серверу'); setSaving(false)
     }
   }
 
-  const inp: React.CSSProperties = {
-    width: '100%', boxSizing: 'border-box', padding: '10px 12px',
-    border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 15,
-    fontFamily: 'Arial, sans-serif', outline: 'none', color: '#111',
-  }
+  const title = state === 'expired' ? 'Ссылка недействительна'
+    : state === 'done' ? 'Пароль сохранён'
+    : mode === 'reset' || kind === 'reset' ? 'Новый пароль' : 'Создайте пароль'
 
   return (
-    <div style={{ minHeight: '100vh', background: '#f4f4f4', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Arial, sans-serif', padding: 16 }}>
-      <div style={{ background: '#fff', borderRadius: 12, padding: 40, width: '100%', maxWidth: 440, boxShadow: '0 2px 16px rgba(0,0,0,0.10)' }}>
+    <div style={{ background: C.bg, minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: C.font, padding: '24px 16px', boxSizing: 'border-box' }}>
+      <div style={{ width: '100%', maxWidth: 360 }}>
         <div style={{ textAlign: 'center', marginBottom: 28 }}>
-          <img src="https://mayak-d.ru/pics/logo.png" alt="Маяк" style={{ maxHeight: 52, maxWidth: 160, marginBottom: 12 }} />
-          <div style={{ fontSize: 11, color: '#888', textTransform: 'uppercase', letterSpacing: 1 }}>Портал арендаторов</div>
+          <img src="/mayak-logo.png" alt="Маяк" style={{ height: 64, display: 'block', margin: '0 auto 20px', borderRadius: 10 }} />
+          <h1 style={{ fontSize: 20, fontWeight: 600, margin: '0 0 6px', color: C.text, letterSpacing: '-0.3px' }}>{title}</h1>
+          <p style={{ color: C.muted, margin: 0, fontSize: 13 }}>Бизнес-центр «Маяк», Дмитров</p>
         </div>
+        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 24 }}>
+          {state === 'loading' && <div style={{ color: C.muted, fontSize: 14, textAlign: 'center' }}>Проверяем ссылку…</div>}
 
-        {state === 'loading' && (
-          <div style={{ textAlign: 'center', color: '#888', padding: '20px 0' }}>Проверяем ссылку...</div>
-        )}
-
-        {state === 'expired' && (
-          <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: 40, marginBottom: 12 }}>🔗</div>
-            <div style={{ fontSize: 16, fontWeight: 600, color: '#111', marginBottom: 8 }}>Ссылка недействительна</div>
-            <div style={{ fontSize: 14, color: '#666', lineHeight: 1.6 }}>
-              Ссылка устарела или уже была использована.<br />
-              Запросите новую у администратора.
+          {state === 'expired' && (
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ color: C.muted, fontSize: 14, lineHeight: 1.6, marginBottom: 20 }}>
+                Ссылка уже использована или её срок истёк. Запросите новую на странице входа или обратитесь в администрацию бизнес-центра.
+              </div>
+              <a href="/tenant/login" style={{ display: 'block', background: '#fff', color: '#000', borderRadius: 8, padding: 12, fontSize: 15, fontWeight: 500, textDecoration: 'none' }}>Перейти ко входу</a>
             </div>
-            <div style={{ marginTop: 20, fontSize: 13, color: '#999' }}>
-              +7 (916) 763-02-07 | +7 (496) 227-00-44
-            </div>
-          </div>
-        )}
+          )}
 
-        {state === 'valid' && (
-          <>
-            <div style={{ fontSize: 18, fontWeight: 600, color: '#111', marginBottom: 6, textAlign: 'center' }}>Создайте пароль</div>
-            <div style={{ fontSize: 14, color: '#666', marginBottom: 24, textAlign: 'center' }}>
-              Для входа на портал арендатора
+          {state === 'done' && (
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ color: C.muted, fontSize: 14, lineHeight: 1.6, marginBottom: 20 }}>Теперь войдите с новым паролем.</div>
+              <a href="/tenant/login" style={{ display: 'block', background: '#fff', color: '#000', borderRadius: 8, padding: 12, fontSize: 15, fontWeight: 500, textDecoration: 'none' }}>Войти</a>
             </div>
+          )}
 
-            <div style={{ marginBottom: 14 }}>
-              <label style={{ fontSize: 13, color: '#555', display: 'block', marginBottom: 5 }}>Email (логин)</label>
-              <input style={{ ...inp, background: '#f9fafb', color: '#888' }} value={record?.email ?? ''} readOnly />
-            </div>
-            <div style={{ marginBottom: 14 }}>
-              <label style={{ fontSize: 13, color: '#555', display: 'block', marginBottom: 5 }}>Пароль <span style={{ color: '#888' }}>(минимум 8 символов)</span></label>
-              <input style={inp} type="password" value={pw} onChange={e => { setPw(e.target.value); setErr('') }} placeholder="Введите пароль" autoFocus />
-            </div>
-            <div style={{ marginBottom: 20 }}>
-              <label style={{ fontSize: 13, color: '#555', display: 'block', marginBottom: 5 }}>Подтверждение пароля</label>
-              <input style={inp} type="password" value={pw2} onChange={e => { setPw2(e.target.value); setErr('') }} placeholder="Повторите пароль" />
-            </div>
-
-            {err && <div style={{ fontSize: 13, color: '#ef4444', marginBottom: 14, padding: '8px 12px', background: '#fef2f2', borderRadius: 6 }}>{err}</div>}
-
-            <button
-              onClick={activate}
-              disabled={saving}
-              style={{ width: '100%', padding: '13px', background: '#111', color: '#fff', border: 'none', borderRadius: 8, fontSize: 15, fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer', fontFamily: 'Arial, sans-serif', opacity: saving ? 0.7 : 1 }}
-            >
-              {saving ? 'Сохраняем...' : 'Создать пароль и войти'}
-            </button>
-          </>
-        )}
-
-        {state === 'done' && (
-          <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: 40, marginBottom: 12 }}>✅</div>
-            <div style={{ fontSize: 16, fontWeight: 600, color: '#111', marginBottom: 8 }}>Пароль установлен!</div>
-            <div style={{ fontSize: 14, color: '#666', marginBottom: 24, lineHeight: 1.6 }}>
-              Теперь вы можете войти на портал арендатора.
-            </div>
-            <a
-              href="/tenant"
-              style={{ display: 'inline-block', padding: '12px 32px', background: '#111', color: '#fff', textDecoration: 'none', borderRadius: 8, fontSize: 15, fontWeight: 600 }}
-            >
-              Войти на портал
-            </a>
-          </div>
-        )}
-
-        <div style={{ marginTop: 28, paddingTop: 20, borderTop: '1px solid #f0f0f0', textAlign: 'center', fontSize: 12, color: '#bbb' }}>
-          БЦ «Маяк» · г. Дмитров, мкр. Владимира Махалина, д. 20
+          {state === 'valid' && (
+            <form onSubmit={submit}>
+              <div style={{ fontSize: 13, color: C.muted, marginBottom: 18, lineHeight: 1.5 }}>Аккаунт: <span style={{ color: C.text }}>{email}</span></div>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 6, color: C.text }}>Пароль</label>
+              <input type="password" autoComplete="new-password" value={pw} onChange={e => setPw(e.target.value)} placeholder="Не короче 8 символов" required style={{ ...inp, marginBottom: 14 }} />
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 6, color: C.text }}>Пароль ещё раз</label>
+              <input type="password" autoComplete="new-password" value={pw2} onChange={e => setPw2(e.target.value)} required style={{ ...inp, marginBottom: 20 }} />
+              {err && <div style={{ background: 'rgba(255,68,68,0.08)', border: '1px solid rgba(255,68,68,0.2)', borderRadius: 8, padding: '10px 12px', fontSize: 13, color: '#ff6b6b', marginBottom: 16 }}>{err}</div>}
+              <button type="submit" disabled={saving} style={{ width: '100%', background: saving ? '#333' : '#fff', color: '#000', border: 'none', borderRadius: 8, padding: 12, fontSize: 15, fontWeight: 500, cursor: saving ? 'default' : 'pointer', fontFamily: C.font }}>
+                {saving ? 'Сохраняем…' : 'Сохранить и войти'}
+              </button>
+            </form>
+          )}
         </div>
       </div>
     </div>

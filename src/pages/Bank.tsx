@@ -1,3 +1,4 @@
+import { apiFetch } from '../lib/api'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 
@@ -55,7 +56,7 @@ export default function BankPage() {
       for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i])
       const b64 = btoa(binary)
 
-      const resp = await fetch('/api/parse-bank-statement', {
+      const resp = await apiFetch('/api/parse-bank-statement', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pdfBase64: b64, mimeType: file.type || 'application/pdf' }),
@@ -91,12 +92,12 @@ export default function BankPage() {
     setMatching(true)
     setMatchResult('')
     try {
-      const resp = await fetch('/api/match-transactions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) })
+      const resp = await apiFetch('/api/match-transactions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) })
       const data = await resp.json()
       if (!data.ok) { setMatchResult('Ошибка: ' + data.error); return }
       const applied = data.applied?.length ?? 0
       const total = data.matches?.length ?? 0
-      setMatchResult(`✓ AI проанализировал ${total} транзакций, автоматически сопоставлено ${applied}`)
+      setMatchResult(`Проверено платежей: ${total}. Проведено автоматически по ИНН: ${applied}. Остальные ждут разбора в разделе «Сверка».`)
       await load()
     } catch (e) {
       setMatchResult('Ошибка: ' + String(e))

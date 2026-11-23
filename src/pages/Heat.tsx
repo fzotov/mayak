@@ -1,3 +1,4 @@
+import { apiFetch } from '../lib/api'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 
@@ -137,7 +138,7 @@ export default function HeatPage() {
       supabase.from('heat_bills').select('*').order('period', { ascending: false }),
       supabase.from('heat_settings').select('coefficient, valid_from, total_area').order('valid_from', { ascending: false }).limit(1),
     ])
-    setUnits(u || [])
+    setUnits((u || []) as unknown as Unit[])
     setBills(b || [])
     if (hs?.[0]) {
       setCoefficient(Number(hs[0].coefficient))
@@ -154,7 +155,7 @@ export default function HeatPage() {
     reader.onload = async (ev) => {
       const base64 = (ev.target?.result as string).split(',')[1]
       try {
-        const res = await fetch('/api/process-heat', {
+        const res = await apiFetch('/api/process-heat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ base64, mediaType: file.type }),

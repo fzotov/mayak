@@ -1,3 +1,4 @@
+import { apiFetch, openStoredFile } from '../lib/api'
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 
@@ -131,7 +132,7 @@ export default function IncomingInvoicesPage() {
       const supportedMimes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf']
       const mimeType = supportedMimes.includes(form.fileMime) ? form.fileMime : 'image/jpeg'
 
-      const r = await fetch('/api/recognize-invoice', {
+      const r = await apiFetch('/api/recognize-invoice', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ imageBase64: form.fileBase64, mimeType }),
@@ -225,7 +226,7 @@ export default function IncomingInvoicesPage() {
     if (!approvalInvoice || !approvalEmail) return
     setSendingApproval(true)
     const member = staff.find(s => s.email === approvalEmail)
-    const r = await fetch('/api/request-invoice-approval', {
+    const r = await apiFetch('/api/request-invoice-approval', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -366,7 +367,7 @@ export default function IncomingInvoicesPage() {
                           </button>
                         )}
                         {inv.file_url && (
-                          <a href={inv.file_url} target="_blank" rel="noopener noreferrer"
+                          <a href="#" onClick={e => { e.preventDefault(); openStoredFile(inv.file_url!) }}
                             style={{ padding: '4px 9px', borderRadius: 6, border: `1px solid ${BORDER}`, background: '#fff', color: ACCENT, fontSize: 11, textDecoration: 'none', fontWeight: 500 }}>
                             📎
                           </a>

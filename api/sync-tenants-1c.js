@@ -1,5 +1,6 @@
+import { requireStaff, fetch1cDebtsXml } from './_lib/auth.js'
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY
 
 async function sb(path, method = 'GET', body = null, prefer = 'return=representation') {
   const res = await fetch(SUPABASE_URL + '/rest/v1/' + path, {
@@ -53,14 +54,14 @@ function extractContractNumber(contractName) {
   return m ? m[1] : null
 }
 
+export const config = { maxDuration: 60 }
+
 export default async function handler(req, res) {
+  if (!(await requireStaff(req, res, ['owner', 'manager', 'accountant']))) return
   if (req.method !== 'POST') return res.status(405).end()
 
   try {
-    const resp = await fetch('https://o.mayak-d.ru/export/debts.xml', {
-      headers: { 'X-Auth-Token': 'a9e385805eed6e3eab2e74547766c62d696f072dd7baef44cb110fb0a29e9957' }
-    })
-    const xml = await resp.text()
+    const xml = await fetch1cDebtsXml()
 
     // Load all tenants — index by id_1c (primary) and inn (fallback)
     const existing = await sb('tenants?select=id,inn,id_1c,full_name')

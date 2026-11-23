@@ -1,7 +1,8 @@
+import { apiFetch } from './lib/api'
 import { useState, useEffect } from 'react'
 import { supabase } from './lib/supabase'
-import TenantActivatePage from './pages/TenantActivate'
 import { AuthPage } from './pages/Auth'
+import { Icon } from './components/icons'
 import { AIAssistantPage } from './pages/AIAssistant'
 import { SettingsModal } from './pages/Settings'
 import { KnowledgeBasePage } from './pages/KnowledgeBase'
@@ -37,46 +38,46 @@ type Page = 'site' | 'dashboard' | 'tenants' | 'invoices' | 'tasks' | 'ai' | 'kb
 
 const NAV_GROUPS = [
   { label: '', items: [
-    { id: 'dashboard', label: 'Сводка дня', icon: '⊞' },
+    { id: 'dashboard', label: 'Сводка дня' },
   ] },
   { label: 'ОБЪЕКТ', items: [
-    { id: 'floorplan', label: 'План этажей', icon: '🏢' },
-    { id: 'units', label: 'Помещения', icon: '🚪' },
-    { id: 'meters', label: 'Счётчики', icon: '⊙' },
-    { id: 'heat', label: 'Тепло', icon: '🌡' },
-    { id: 'stele', label: 'Рекламная стела', icon: '📢' },
+    { id: 'floorplan', label: 'План этажей' },
+    { id: 'units', label: 'Помещения' },
+    { id: 'meters', label: 'Счётчики' },
+    { id: 'heat', label: 'Тепло' },
+    { id: 'stele', label: 'Рекламная стела' },
   ] },
   { label: 'АРЕНДА', items: [
-    { id: 'tenants', label: 'Арендаторы', icon: '◎' },
-    { id: 'contracts', label: 'Договоры', icon: '📄' },
-    { id: 'letters', label: 'Письма', icon: '✉' },
+    { id: 'tenants', label: 'Арендаторы' },
+    { id: 'contracts', label: 'Договоры' },
+    { id: 'letters', label: 'Письма' },
   ] },
   { label: 'ФИНАНСЫ', items: [
-    { id: 'invoices', label: 'Счета аренд.', icon: '◈' },
-    { id: 'billing', label: 'Биллинг', icon: '₽' },
-    { id: 'bank', label: 'Банк', icon: '🏦' },
-    { id: 'reconcile', label: 'Сверка', icon: '⚖' },
-    { id: 'ledger', label: 'Баланс', icon: '⊟' },
-    { id: 'incoming-invoices', label: 'Вх. счета', icon: '📥' },
-    { id: 'payment-calendar', label: 'Платежи', icon: '📅' },
+    { id: 'invoices', label: 'Счета аренд.' },
+    { id: 'billing', label: 'Биллинг' },
+    { id: 'bank', label: 'Банк' },
+    { id: 'reconcile', label: 'Сверка' },
+    { id: 'ledger', label: 'Баланс' },
+    { id: 'incoming-invoices', label: 'Вх. счета' },
+    { id: 'payment-calendar', label: 'Платежи' },
   ] },
   { label: 'ЭКСПЛУАТАЦИЯ', items: [
-    { id: 'repairs', label: 'Заявки на ремонт', icon: '🔧' },
-    { id: 'counterparties', label: 'Контрагенты', icon: '🏗' },
-    { id: 'inventory', label: 'Инвентарь', icon: '📦' },
+    { id: 'repairs', label: 'Заявки на ремонт' },
+    { id: 'counterparties', label: 'Контрагенты' },
+    { id: 'inventory', label: 'Инвентарь' },
   ] },
   { label: 'ЗАДАЧИ И ПЕРСОНАЛ', items: [
-    { id: 'tasks', label: 'Все задачи', icon: '✓' },
-    { id: 'my-tasks', label: 'Мои задачи', icon: '☑' },
-    { id: 'staff', label: 'Сотрудники', icon: '👥' },
+    { id: 'tasks', label: 'Все задачи' },
+    { id: 'my-tasks', label: 'Мои задачи' },
+    { id: 'staff', label: 'Сотрудники' },
   ] },
   { label: 'САЙТ', items: [
-    { id: 'site', label: 'Сайт и заявки', icon: '🌐' },
+    { id: 'site', label: 'Сайт и заявки' },
   ] },
   { label: 'СИСТЕМА', items: [
-    { id: 'kb', label: 'База знаний', icon: '◉' },
-    { id: 'ai', label: 'AI Ассистент', icon: '✦' },
-    { id: 'reference', label: 'Справочники', icon: '⚙' },
+    { id: 'kb', label: 'База знаний' },
+    { id: 'ai', label: 'AI Ассистент' },
+    { id: 'reference', label: 'Справочники' },
   ] },
 ]
 const NAV = NAV_GROUPS.flatMap(g => g.items)
@@ -370,15 +371,6 @@ function Dashboard() {
   )
 }
 
-async function sendWelcomeEmail(tenant: any) {
-  const res = await fetch('/api/send-welcome', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: tenant.email, name: tenant.fullName, password: 'temp123' })
-  })
-  const data = await res.json()
-  alert(data.ok ? 'Email sent!' : 'Error: ' + data.error)
-}
 const GROUP_TABS = [
   { key: '', label: 'Все' },
   { key: 'room', label: 'Помещения' },
@@ -472,118 +464,146 @@ function Tenants({ onOpenTenant, onAddTenant }: { onOpenTenant: (id: string) => 
   )
 }
 
+const PAGE_TITLES: Record<string, string> = {
+  dashboard: 'Сводка дня', tenants: 'Арендаторы', invoices: 'Счета арендаторов', tasks: 'Задачи', ai: 'AI-ассистент',
+  kb: 'База знаний', reference: 'Справочники', billing: 'Биллинг', 'my-tasks': 'Мои задачи', repairs: 'Заявки на ремонт',
+  contracts: 'Договоры', letters: 'Письма', bank: 'Банк', reconcile: 'Сверка', ledger: 'Взаиморасчёты', heat: 'Тепло',
+  meters: 'Счётчики', staff: 'Сотрудники', inventory: 'Инвентарь', 'tenant-card': 'Карточка арендатора', 'tenant-new': 'Новый арендатор',
+  stele: 'Рекламная стела', counterparties: 'Контрагенты', floorplan: 'План этажей', site: 'Сайт и заявки', units: 'Помещения',
+  'incoming-invoices': 'Входящие счета', 'payment-calendar': 'Платёжный календарь', 'invoice-detail': 'Счёт', 'import-tenants': 'Импорт арендаторов',
+}
+const ROLE_LABEL: Record<string, string> = { owner: 'Владелец', manager: 'Управляющий', accountant: 'Бухгалтер', technician: 'Техник' }
+// техник видит только эксплуатацию
+const TECH_PAGES = new Set(['dashboard', 'floorplan', 'units', 'meters', 'heat', 'repairs', 'inventory', 'tasks', 'my-tasks', 'kb'])
+
+/** Адрес страницы хранится в хеше: /#/tenants, /#/tenant-card/<id>. Обновление и «Назад» работают. */
+function readRoute(): { page: Page; id: string | null } {
+  const [p, id] = window.location.hash.replace(/^#\/?/, '').split('/')
+  return { page: (p && p in PAGE_TITLES ? p : 'dashboard') as Page, id: id || null }
+}
+
 export default function App() {
-  const [page, setPage] = useState<Page>('dashboard')
+  const [route, setRoute] = useState(readRoute)
+  const page = route.page
+  const selectedTenantId = route.id
   const [selectedInvoice, setSelectedInvoice] = useState<any>(null)
-  const [selectedTenantId, setSelectedTenantId] = useState<string | null>(null)
   const [showSettings, setShowSettings] = useState(false)
   const [user, setUser] = useState<any>(null)
+  // undefined — проверяем; null — входа нет или нет прав
+  const [profile, setProfile] = useState<{ full_name: string; role: string } | null | undefined>(undefined)
   const [loading, setLoading] = useState(true)
+  const [narrow, setNarrow] = useState(window.innerWidth < 960)
+  const [menuOpen, setMenuOpen] = useState(false)
+
+  const setPage = (p: Page, id?: string | null) => {
+    window.location.hash = '/' + p + (id ? '/' + id : '')
+    setMenuOpen(false)
+  }
 
   useEffect(() => {
-    const handler = (e: any) => setPage(e.detail)
-    window.addEventListener('navigate', handler)
-    return () => window.removeEventListener('navigate', handler)
+    const onHash = () => setRoute(readRoute())
+    const onNav = (e: any) => setPage(e.detail)
+    const onResize = () => setNarrow(window.innerWidth < 960)
+    window.addEventListener('hashchange', onHash)
+    window.addEventListener('navigate', onNav)
+    window.addEventListener('resize', onResize)
+    return () => { window.removeEventListener('hashchange', onHash); window.removeEventListener('navigate', onNav); window.removeEventListener('resize', onResize) }
   }, [])
+
+  const loadUser = async () => {
+    const { data } = await supabase.auth.getSession()
+    const u = data.session?.user ?? null
+    setUser(u)
+    if (u) {
+      const { data: prof } = await supabase.from('profiles').select('full_name, role').eq('user_id', u.id).maybeSingle()
+      setProfile(prof ?? null)
+    } else setProfile(null)
+    setLoading(false)
+  }
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setUser(data.session?.user ?? null)
-      setLoading(false)
+    loadUser()
+    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_OUT') { setUser(null); setProfile(null) }
     })
-    supabase.auth.onAuthStateChange((_e, session) => {
-      setUser(session?.user ?? null)
-    })
+    return () => sub.subscription.unsubscribe()
   }, [])
 
-  if (loading) return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'sans-serif', color: '#8596b4' }}>Загрузка...</div>
-  if (!user) return <AuthPage onLogin={() => supabase.auth.getSession().then(({ data }) => setUser(data.session?.user ?? null))} />
+  const logout = async () => { setShowSettings(false); await supabase.auth.signOut(); setUser(null); setProfile(null) }
+
+  if (loading || (user && profile === undefined)) return <div style={{ minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af' }}>Загрузка…</div>
+  if (!user) return <AuthPage onLogin={loadUser} />
+  if (!profile) return <AuthPage denied onLogin={loadUser} />
+
+  const isTech = profile.role === 'technician'
+  const groups = NAV_GROUPS
+    .map(g => ({ ...g, items: g.items.filter(n => !isTech || TECH_PAGES.has(n.id)) }))
+    .filter(g => g.items.length)
+  const allowed = !isTech || TECH_PAGES.has(page)
+  const activeNav = page === 'tenant-card' || page === 'tenant-new' || page === 'import-tenants' ? 'tenants' : page === 'invoice-detail' ? 'invoices' : page
+  const initials = (profile.full_name || user.email || '?').split(/\s+/).map((w: string) => w[0]).join('').slice(0, 2).toUpperCase()
+
+  const sidebar = (
+    <aside style={{ width: 232, flexShrink: 0, background: '#fff', borderRight: '1px solid #e5e7eb', display: 'flex', flexDirection: 'column', height: '100dvh', ...(narrow ? { position: 'fixed', top: 0, left: 0, zIndex: 60, transform: menuOpen ? 'none' : 'translateX(-100%)', transition: 'transform .2s ease', boxShadow: menuOpen ? '0 0 40px rgba(0,0,0,.15)' : 'none' } : { position: 'sticky', top: 0 }) }}>
+      <div style={{ padding: '14px 16px', borderBottom: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', gap: 10 }}>
+        <img src="/mayak-logo.png" style={{ width: 30, height: 30, borderRadius: 7, objectFit: 'cover' }} alt="" />
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: '#111' }}>Маяк</div>
+          <div style={{ fontSize: 11, color: '#6b7280' }}>Бизнес-центр, Дмитров</div>
+        </div>
+      </div>
+      <nav style={{ padding: '6px 8px', flex: 1, overflowY: 'auto' }}>
+        {groups.map((group, gi) => (
+          <div key={gi}>
+            {group.label ? <div style={{ fontSize: 10.5, fontWeight: 600, color: '#9ca3af', letterSpacing: '.7px', padding: '14px 10px 5px' }}>{group.label}</div> : null}
+            {group.items.map(n => {
+              const on = activeNav === n.id
+              return (
+                <button key={n.id} onClick={() => setPage(n.id as Page)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', width: '100%', border: 'none', borderRadius: 7, background: on ? '#f3f4f6' : 'transparent', color: on ? '#111' : '#4b5563', cursor: 'pointer', fontSize: 14, fontFamily: 'inherit', textAlign: 'left', fontWeight: on ? 500 : 400 }}>
+                  <span style={{ display: 'flex', color: on ? '#111' : '#9ca3af' }}><Icon name={n.id} /></span>{n.label}
+                </button>
+              )
+            })}
+          </div>
+        ))}
+      </nav>
+      <button onClick={() => setShowSettings(true)} title="Профиль и доступы"
+        style={{ padding: '12px 16px', border: 'none', borderTop: '1px solid #e5e7eb', background: '#fff', display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', width: '100%' }}>
+        <div style={{ width: 30, height: 30, borderRadius: '50%', background: '#111', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600, color: '#fff', flexShrink: 0 }}>{initials}</div>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ fontSize: 13, fontWeight: 500, color: '#111', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{profile.full_name || user.email}</div>
+          <div style={{ fontSize: 11, color: '#9ca3af' }}>{ROLE_LABEL[profile.role] || profile.role}</div>
+        </div>
+        <span style={{ color: '#9ca3af', display: 'flex' }}><Icon name="settings" /></span>
+      </button>
+    </aside>
+  )
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', background: '#fafafa', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif' }}>
-      <aside style={{ width: 220, flexShrink: 0, background: '#fff', borderRight: '1px solid #e5e7eb', display: 'flex', flexDirection: 'column' }}>
-        <div style={{ padding: '16px 16px 12px', borderBottom: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', gap: 10 }}>
-          <img src="/favicon.ico" style={{ width: 30, height: 30, borderRadius: 8, objectFit: 'contain' }} alt="Маяк" />
-          <div>
-            <div style={{ fontSize: 14, fontWeight: 600, color: '#111' }}>Маяк</div>
-            <div style={{ fontSize: 11, color: '#6b7280' }}>Property OS</div>
-          </div>
-        </div>
-        <nav style={{ padding: '8px 0', flex: 1, overflowY: 'auto' }}>
-          {NAV_GROUPS.map((group, gi) => (
-            <div key={gi}>
-              {group.label ? <div style={{ fontSize: 10, fontWeight: 600, color: '#9ca3af', letterSpacing: '.8px', padding: '12px 16px 4px', textTransform: 'uppercase' as const }}>{group.label}</div> : null}
-              {group.items.map(n => (
-                <button key={n.id} onClick={() => setPage(n.id as Page)}
-                  style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 16px', width: '100%', border: 'none', borderRadius: 0, background: page === n.id ? '#f3f4f6' : 'transparent', color: page === n.id ? '#111' : '#6b7280', cursor: 'pointer', fontSize: 14, fontFamily: 'inherit', textAlign: 'left', fontWeight: page === n.id ? 500 : 400, transition: 'background .1s' }}>
-                  <span style={{ fontSize: 14, opacity: page === n.id ? 1 : 0.6 }}>{n.icon}</span>{n.label}
-                </button>
-              ))}
-            </div>
-          ))}
-        </nav>
-        <div style={{ padding: '12px 16px', borderTop: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#f3f4f6', border: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 600, color: '#374151' }}>АС</div>
-          <div>
-            <div onClick={() => setShowSettings(true)} style={{ fontSize: 12, fontWeight: 500, color: '#111', cursor: 'pointer' }}>Андрей Соколов</div>
-            <div style={{ fontSize: 11, color: '#9ca3af' }}>Управляющий</div>
-          </div>
-        </div>
-      </aside>
+    <div style={{ display: 'flex', minHeight: '100dvh', background: '#fafafa' }}>
+      {sidebar}
+      {narrow && menuOpen && <div onClick={() => setMenuOpen(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.35)', zIndex: 55 }} />}
 
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#fafafa' }}>
-        <header style={{ background: '#fff', borderBottom: '1px solid #e5e7eb', padding: '12px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
-          <div>
-            <div style={{ fontSize: 18, fontWeight: 600, color: '#111' }}>
-              {{
-              'dashboard': 'Сводка дня',
-              'tenants': 'Арендаторы',
-              'invoices': 'Счета',
-              'tasks': 'Задачи',
-              'ai': 'AI Ассистент',
-              'kb': 'База знаний',
-              'reference': 'Справочники',
-              'billing': 'Биллинг',
-              'my-tasks': 'Мои задачи',
-              'repairs': 'Заявки на ремонт',
-              'contracts': 'Договоры',
-              'letters': 'Письма',
-              'bank': 'Банк',
-              'reconcile': 'Сверка',
-              'ledger': 'Баланс арендаторов',
-              'heat': 'Тепло',
-              'meters': 'Счётчики',
-              'staff': 'Сотрудники',
-              'inventory': 'Инвентарь',
-              'tenant-card': 'Карточка арендатора',
-              'stele': 'Рекламная стела',
-              'counterparties': 'Контрагенты',
-              'floorplan': 'План этажей',
-              'site': 'Сайт и заявки',
-              'units': 'Помещения',
-              'kb': 'База знаний',
-              'ai': 'AI Ассистент',
-              'invoices': 'Счета арендаторов',
-              'incoming-invoices': 'Входящие счета',
-              'payment-calendar': 'Платёжный календарь',
-            }[page] || 'Маяк'}
-            </div>
-            <div style={{ fontSize: 13, color: '#9ca3af', marginTop: 2 }}>Бизнес-центр Маяк</div>
-          </div>
-          <div style={{ display: 'flex', background: '#f3f4f6', borderRadius: 6, padding: 2, gap: 1 }}>
-            {['Сегодня', 'Неделя', 'Месяц'].map((p, i) => (
-              <button key={p} style={{ padding: '4px 12px', borderRadius: 4, fontSize: 12, fontWeight: 500, border: 'none', cursor: 'pointer', fontFamily: 'inherit', background: i === 0 ? '#fff' : 'transparent', color: i === 0 ? '#111' : '#6b7280', boxShadow: i === 0 ? '0 1px 2px #0001' : 'none' }}>{p}</button>
-            ))}
-          </div>
+      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+        <header style={{ background: '#fff', borderBottom: '1px solid #e5e7eb', padding: narrow ? '10px 16px' : '14px 24px', display: 'flex', alignItems: 'center', gap: 12, position: 'sticky', top: 0, zIndex: 40 }}>
+          {narrow && (
+            <button onClick={() => setMenuOpen(true)} aria-label="Меню" style={{ border: '1px solid #e5e7eb', background: '#fff', borderRadius: 8, width: 38, height: 38, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#111' }}>
+              <Icon name="menu" size={18} />
+            </button>
+          )}
+          <div style={{ fontSize: narrow ? 16 : 18, fontWeight: 600, color: '#111', letterSpacing: '-0.2px' }}>{PAGE_TITLES[page] || 'Маяк'}</div>
         </header>
-        <main style={{ flex: 1, overflowY: 'auto', padding: 24 }}>
+        <main style={{ flex: 1, padding: narrow ? 14 : 24, overflowX: 'auto' }}>
+          {!allowed && <div style={{ color: '#6b7280', padding: 24 }}>Этот раздел недоступен для вашей роли.</div>}
+          {allowed && <>
           {page === 'dashboard' && <Dashboard />}
           {page === 'invoices' && <InvoicesPage onOpenInvoice={(inv) => { setSelectedInvoice(inv); setPage('invoice-detail') }} />}
-          {page === 'tenants' && <Tenants onOpenTenant={(id) => { setSelectedTenantId(id); setPage('tenant-card') }} onAddTenant={() => setPage('tenant-new')} />}
+          {page === 'tenants' && <Tenants onOpenTenant={(id) => setPage('tenant-card', id)} onAddTenant={() => setPage('tenant-new')} />}
           {page === 'tasks' && <TasksPage />}
           {page === 'ai' && <AIAssistantPage />}
           {page === 'kb' && <KnowledgeBasePage />}
-          {page === 'tenant-card' && <TenantCardPage tenantId={selectedTenantId} onBack={() => setPage('tenants')} onCreateInvoice={() => setPage('billing')} />}
+          {page === 'tenant-card' && <TenantCardPage key={selectedTenantId} tenantId={selectedTenantId} onBack={() => setPage('tenants')} onCreateInvoice={() => setPage('billing')} />}
           {page === 'reference' && <ReferencesPage />}
           {page === 'billing' && <BillingPage />}
           {page === 'tenant-new' && <TenantNewPage onBack={() => setPage('tenants')} onSaved={() => setPage('tenants')} />}
@@ -599,15 +619,18 @@ export default function App() {
           {page === 'meters' && <MetersPage />}
           {page === 'staff' && <StaffPage />}
           {page === 'inventory' && <InventoryPage />}
-          {page === 'floorplan' && <FloorPlanPage onOpenTenant={(id) => { setSelectedTenantId(id); setPage('tenant-card') }} />}
+          {page === 'floorplan' && <FloorPlanPage onOpenTenant={(id) => setPage('tenant-card', id)} />}
           {page === 'units' && <UnitsPage />}
           {page === 'site' && <SiteAdminPage />}
-          {page === 'invoice-detail' && selectedInvoice && <InvoiceDetailPage invoice={selectedInvoice} onBack={() => setPage('invoices')} />}
+          {page === 'invoice-detail' && (selectedInvoice
+            ? <InvoiceDetailPage invoice={selectedInvoice} onBack={() => setPage('invoices')} />
+            : <InvoicesPage onOpenInvoice={(inv) => { setSelectedInvoice(inv); setPage('invoice-detail') }} />)}
           {page === 'import-tenants' && <ImportTenantsPage onDone={() => setPage('tenants')} />}
           {page === 'stele' && <AdvertisingStele />}
           {page === 'incoming-invoices' && <IncomingInvoicesPage />}
           {page === 'payment-calendar' && <PaymentCalendarPage />}
-          {showSettings && <SettingsModal onClose={() => setShowSettings(false)} onLogout={() => { setShowSettings(false); setUser(null) }} />}
+          </>}
+          {showSettings && <SettingsModal user={user} profile={profile} onClose={() => setShowSettings(false)} onLogout={logout} />}
         </main>
       </div>
     </div>

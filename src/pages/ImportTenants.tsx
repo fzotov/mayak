@@ -1,3 +1,4 @@
+import { apiFetch } from '../lib/api'
 import { useState, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 
@@ -45,7 +46,7 @@ export default function ImportTenantsPage({ onDone }: { onDone?: () => void }) {
       for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i])
       const b64 = btoa(binary)
 
-      const resp = await fetch('/api/import-tenants', {
+      const resp = await apiFetch('/api/import-tenants', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ fileBase64: b64, mimeType: file.type, fileName: file.name }),

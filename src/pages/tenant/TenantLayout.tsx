@@ -156,8 +156,7 @@ export default function TenantLayout({ children, activePage, onNavigate }: Tenan
   }, [tenantId])
 
   function logout() {
-    localStorage.removeItem('tenant_session')
-    window.location.href = '/tenant/login'
+    onNavigate('logout')
   }
 
   const ava = initials(email)

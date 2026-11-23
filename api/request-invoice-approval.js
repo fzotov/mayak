@@ -1,20 +1,20 @@
+import { requireStaff, APP_URL, esc } from './_lib/auth.js'
 import { Resend } from 'resend'
 import { createClient } from '@supabase/supabase-js'
 import crypto from 'crypto'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
-const supabase = createClient(process.env.VITE_SUPABASE_URL, process.env.VITE_SUPABASE_ANON_KEY)
+const supabase = createClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY)
 
 export default async function handler(req, res) {
+  if (!(await requireStaff(req, res, ['owner', 'manager', 'accountant']))) return
   if (req.method !== 'POST') return res.status(405).end()
 
   const { invoiceId, toEmail, toName, invoiceData } = req.body
   if (!invoiceId || !toEmail) return res.status(400).json({ ok: false, error: 'invoiceId and toEmail required' })
 
   const token = crypto.randomBytes(32).toString('hex')
-  const baseUrl = process.env.VERCEL_PROJECT_PRODUCTION_URL
-    ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
-    : 'https://mayak-xi.vercel.app'
+  const baseUrl = APP_URL
   const approveUrl = `${baseUrl}/api/approve-invoice?token=${token}&action=approve`
   const rejectUrl = `${baseUrl}/api/approve-invoice?token=${token}&action=reject`
 
@@ -59,26 +59,26 @@ export default async function handler(req, res) {
 <body>
 <div class="wrap">
   <div class="header">
-    <h1>🏢 БЦ Маяк</h1>
+    <h1>БЦ Маяк</h1>
     <p>Запрос на согласование оплаты</p>
   </div>
   <div class="body">
-    <p style="color:#1a2240;font-size:15px;margin:0 0 20px">Здравствуйте${toName ? ', ' + toName : ''}!<br><br>
+    <p style="color:#1a2240;font-size:15px;margin:0 0 20px">Здравствуйте${toName ? ', ' + esc(toName) : ''}!<br><br>
     Вам направлен счёт на согласование оплаты.</p>
 
     <div class="invoice-card">
       <div class="amount-big">${amountFmt}</div>
       <div class="vat">НДС: ${vatFmt}</div>
       <div style="margin-top:14px">
-        <div class="row"><label>Поставщик</label><value>${supplier || '—'}</value></div>
+        <div class="row"><label>Поставщик</label><value>${esc(supplier || '—')}</value></div>
         <div class="row"><label>Дата счёта</label><value>${dateFmt}</value></div>
       </div>
-      ${description ? `<div class="desc">${description}</div>` : ''}
+      ${description ? `<div class="desc">${esc(description)}</div>` : ''}
     </div>
 
     <div class="btns">
-      <a href="${approveUrl}" class="btn btn-approve">✓ Согласовать</a>
-      <a href="${rejectUrl}" class="btn btn-reject">✗ Отклонить</a>
+      <a href="${approveUrl}" class="btn btn-approve">Согласовать</a>
+      <a href="${rejectUrl}" class="btn btn-reject">Отклонить</a>
     </div>
 
     <div class="footer">
@@ -90,7 +90,7 @@ export default async function handler(req, res) {
 </html>`
 
   const { error: mailErr } = await resend.emails.send({
-    from: 'БЦ Маяк <onboarding@resend.dev>',
+    from: process.env.MAIL_FROM || 'БЦ Маяк <noreply@mayak-d.ru>',
     to: toEmail,
     subject: `Согласование оплаты: ${supplier} — ${amountFmt}`,
     html,

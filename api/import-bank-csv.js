@@ -1,5 +1,6 @@
+import { requireStaff } from './_lib/auth.js'
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY
 
 async function sb(path, method = 'GET', body = null, prefer = 'return=minimal') {
@@ -58,6 +59,7 @@ function parseAmount(str) {
 }
 
 export default async function handler(req, res) {
+  if (!(await requireStaff(req, res, ['owner', 'manager', 'accountant']))) return
   if (req.method !== 'POST') return res.status(405).end()
 
   try {

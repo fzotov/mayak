@@ -103,7 +103,7 @@ export default function TenantInvoices({ tenantId }: { tenantId: string }) {
     setUpdatingId(null)
   }
 
-  const card = (label: string, value: string, highlight?: boolean): JSX.Element => (
+  const card = (label: string, value: string, highlight?: boolean): React.ReactElement => (
     <div style={{
       background: '#fff',
       border: '1px solid #e5e7eb',
