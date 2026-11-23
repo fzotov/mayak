@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
+import { apiFetch } from '../../lib/api'
 import { T, Card, Title, Badge, Button, Loading, Empty, Note, input, label, date, page } from './ui'
 
 const CATEGORIES = ['Электрика', 'Сантехника', 'Отопление', 'Интернет', 'Уборка', 'Другое']
@@ -25,10 +26,10 @@ export default function TenantRepairs({ tenantId }: { tenantId: string }) {
     e.preventDefault()
     if (text.trim().length < 5) { setErr('Опишите проблему подробнее'); return }
     setBusy(true); setErr('')
-    const { data: unit } = await supabase.from('units').select('id').eq('tenant_id', tenantId).limit(1).maybeSingle()
-    const { error } = await supabase.from('repairs').insert({ tenant_id: tenantId, unit_id: unit?.id || null, category, description: text.trim().slice(0, 2000), priority: urgent ? 'emergency' : 'medium', status: 'new' })
+    const r = await apiFetch('/api/tenant-repair', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ category, description: text, urgent }) })
+    const d = await r.json().catch(() => ({ ok: false }))
     setBusy(false)
-    if (error) { setErr('Не удалось отправить заявку. Попробуйте ещё раз или позвоните: +7 (916) 763-02-07'); return }
+    if (!d.ok) { setErr(d.error || 'Не удалось отправить заявку. Попробуйте ещё раз или позвоните: +7 (916) 763-02-07'); return }
     setText(''); setUrgent(false); setOpen(false); load()
   }
 

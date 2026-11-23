@@ -36,6 +36,12 @@ export default function TenantApp() {
     });
     return () => sub.subscription.unsubscribe();
   }, []);
+  // фон страницы под тёмную тему кабинета (иначе по краям виден белый фон документа)
+  useEffect(() => {
+    const prev = document.body.style.background;
+    document.body.style.background = '#0a0a0a';
+    return () => { document.body.style.background = prev; };
+  }, []);
   const isAuthenticated = !!session;
 
   const onNavigate = (pageName: string) => {

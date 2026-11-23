@@ -265,7 +265,6 @@ export default function TenantLayout({ children, activePage, onNavigate }: Tenan
   // ─── MOBILE ──────────────────────────────────────────────────────────────
   const drawerItems = [
     { key: 'contract',      label: 'Договор',     icon: 'contract' },
-    { key: 'documents',     label: 'Документы',   icon: 'documents' },
     { key: 'notifications', label: 'Уведомления', icon: 'notifications' },
     { key: 'profile',       label: 'Мои данные',  icon: 'profile' },
   ] as const

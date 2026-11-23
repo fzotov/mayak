@@ -118,9 +118,7 @@ create policy tenant_own on public.tenant_premises      for select to authentica
 create policy tenant_own on public.repairs              for select to authenticated using (tenant_id = public.my_tenant_id());
 create policy tenant_own on public.tenant_notifications for select to authenticated using (tenant_id = public.my_tenant_id());
 
--- заявка на ремонт: арендатор создаёт только от своего имени и только новую
-create policy tenant_create on public.repairs for insert to authenticated
-  with check (tenant_id = public.my_tenant_id() and status = 'new' and assignee_id is null and cost is null);
+-- заявку на ремонт арендатор создаёт через функцию api/tenant-repair (служебные поля задаёт сервер)
 -- уведомления: арендатор может отметить прочитанным
 create policy tenant_mark_read on public.tenant_notifications for update to authenticated
   using (tenant_id = public.my_tenant_id()) with check (tenant_id = public.my_tenant_id());
