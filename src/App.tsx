@@ -157,7 +157,7 @@ function Dashboard() {
 
     const today = new Date().toISOString().slice(0, 10)
     const in30 = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
-    supabase.from('contracts').select('id,contract_number,end_date,tenants(full_name)').gte('end_date', today).lte('end_date', in30).order('end_date').limit(10)
+    supabase.from('contracts').select('id,number,end_date,tenants(full_name)').gte('end_date', today).lte('end_date', in30).order('end_date').limit(10)
       .then(({ data }) => {
         setEvents(data || [])
         setStats(s => ({ ...s, expiringContracts: data?.length || 0 }))
@@ -360,7 +360,7 @@ function Dashboard() {
                   <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#ef4444', flexShrink: 0 }} />
                   <div style={{ fontSize: 12, color: '#8596b4', width: 56, flexShrink: 0 }}>{e.end_date?.slice(5).replace('-', '.')}</div>
                   <div style={{ fontSize: 13, color: '#374151', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {e.tenants?.full_name || '—'}{e.contract_number ? ` · №${e.contract_number}` : ''}
+                    {e.tenants?.full_name || '—'}{e.number ? ` · №${e.number}` : ''}
                   </div>
                 </div>
               ))}

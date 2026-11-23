@@ -1,6 +1,6 @@
 # Маяк — контекст проекта для нового чата
 
-Состояние на 14.11.2026. Прочитай этот файл целиком перед началом работы. Рядом лежат `SITE.md` (структура приложений) и `DEPLOY.md` (инструкция для DevOps по переносу на другой прод).
+Состояние на 23.11.2026. Прочитай этот файл целиком перед началом работы. Рядом лежат `SITE.md` (структура приложений) и `DEPLOY.md` (инструкция для DevOps по переносу на другой прод).
 
 ## 1. Что это
 
@@ -31,7 +31,9 @@
 
 Vercel: проект админки `admin` (id `prj_Wnyag661KrToLImCh9gBjK6g1NsL`, org `team_7Za2BUH96hM0vHYBMNfo2db8`), прод-адрес `https://mayak-xi.vercel.app`. Сайт — отдельный проект `mayak-site` (`mayak-site-vizbl.vercel.app`), корень `apps/site`.
 
-1С: выгрузка долгов берётся с `https://o.mayak-d.ru/export/debts.xml` (`api/debts-1c.js`, `api/sync-tenants-1c.js`, `api/import-1c-ledger.js`).
+1С: выгрузка долгов берётся с `https://o.mayak-d.ru/export/debts.xml`. Токен — переменная `ONEC_TOKEN` (локально в `.env.local`, на проде в Vercel); в коде его нет, но он остался в истории git — при случае перевыпустить на стороне 1С. Разбор выгрузки — `api/_lib/onec.js`.
+
+Переменные окружения серверных функций: `VITE_SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `ONEC_TOKEN`, `APP_URL` (адрес прода для ссылок в письмах), `RESEND_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, необязательно `MAIL_FROM`.
 
 ## 3. Запуск и деплой
 
@@ -72,12 +74,18 @@ npx vercel alias admin-XXXX-vizbl.vercel.app mayak-xi.vercel.app
 
 - Маршрутизация в `src/main.tsx`: путь начинается с `/tenant` → `TenantApp`, иначе `AdminApp`. Внутри `TenantApp` свой ручной роутер по `window.location.pathname`.
 - Шрифт Geist подключён через `src/index.css` (Google Fonts), файл импортируется в `main.tsx`. Без этого импорта шрифт не грузится.
-- Доступ арендатора — таблица `tenant_portal_access`: `email`, `password_hash`, `invite_token`, `invite_expires_at`, `status`, `session_token`, `tenant_id`. Пароль хешируется в браузере: PBKDF2/SHA-256, 100 000 итераций, хранится как `salt:hash`. Сессия лежит в `localStorage` под ключом `tenant_session`.
-- Сброс пароля переиспользует `invite_token` и `invite_expires_at` (срок 2 часа), потому что отдельной колонки нет. Страница сброса — `/tenant/reset-password?token=...`.
+- Вход (с 23.11.2026): и сотрудники, и арендаторы — пользователи Supabase Auth. Сотрудник = строка в `profiles` (роль `owner` / `manager` / `accountant` / `technician`), арендатор = строка в `tenant_users` (привязка к `tenant_id`). Свободной регистрации нет: владелец приглашает сотрудника из окна профиля (левый нижний угол), арендатора приглашают из его карточки, вкладка «Общие».
+- Приглашение и сброс пароля — одноразовые ссылки из таблицы `auth_tokens` (в базе только SHA-256 токена; приглашение 7 дней, сброс 2 часа). Страницы `/tenant/activate?token=` и `/tenant/reset-password?token=`, функция `api/set-password.js`. Таблица `tenant_portal_access` больше не используется.
+- RLS включён на всех таблицах (`supabase/migrations/20261123_security.sql`): без входа доступна только вставка в `site_leads`; сотрудник видит всё; арендатор читает только строки своего `tenant_id`. Новую таблицу нужно добавлять вместе с политикой, иначе её не увидит никто, кроме service key.
+- Каждая функция в `api/` начинается с `requireStaff` или `requireTenant` из `api/_lib/auth.js`; клиент вызывает их через `apiFetch` (`src/lib/api.ts`), который подставляет токен входа. Публичных функций три: `set-password`, `request-password-reset`, `approve-invoice` — они защищены одноразовыми токенами.
+- Бакеты `invoices`, `meter-photos`, `tenant-documents` закрытые; файл открывается по временной ссылке (`openStoredFile`). `unit-media` публичный — фото для сайта.
+- Адреса страниц админки — в хеше (`/#/tenants`, `/#/tenant-card/<id>`), потому что `/tenant…` занят кабинетом.
+- Локально `pnpm dev` сам исполняет функции из `api/` (плагин в `vite.config.ts`); без `RESEND_API_KEY` письма не уходят, ссылка из письма печатается в консоль сервера.
+- Сальдо арендаторов по 1С лежит в `tenant_balances`, последний снимок выгрузки — в `onec_snapshot`; обновляются при открытии «Взаиморасчётов». Кабинет арендатора показывает сальдо и операции (`ledger_entries`) отсюда.
 - Статус помещения `units.status` (`free` / `occupied`) выводится из `tenants.unit_number` — это текст, в котором может быть несколько номеров и составные вроде `201.202` (такой номер есть в `units` и целиком, и по частям). Кириллические А/Б в номерах приводятся к латинским A/B.
 - Служебные помещения заняты всегда: 228 (кухня), 301 и 302 (офис управляющей компании), 326 (склад), 326А, 326Б (МФЦ).
 - Письма уходят через Resend от `noreply@mayak-d.ru`.
-- Прод-адрес `mayak-xi.vercel.app` зашит в `api/request-password-reset.js`, `api/send-tenant-invite.js`, `api/approve-invoice.js`, `api/request-invoice-approval.js` — при смене домена править все четыре.
+- Прод-адрес для ссылок в письмах берётся из переменной `APP_URL` (по умолчанию `https://mayak-xi.vercel.app`).
 - Каталог помещений сайта пока статический (`apps/site/data/offices.ts`, `floors.ts`); переключение на таблицу `units` делается заменой реализации `apps/site/lib/offices.ts`.
 
 ## 7. Грабли

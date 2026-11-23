@@ -10,7 +10,6 @@ import TenantContract from './pages/tenant/TenantContract';
 import TenantInvoices from './pages/tenant/TenantInvoices';
 import TenantMeters from './pages/tenant/TenantMeters';
 import TenantRepairs from './pages/tenant/TenantRepairs';
-import TenantDocuments from './pages/tenant/TenantDocuments';
 import TenantNotifications from './pages/tenant/TenantNotifications';
 import TenantLayout from './pages/tenant/TenantLayout';
 
@@ -84,8 +83,6 @@ export default function TenantApp() {
     page = 'meters';
   } else if (path.startsWith('/tenant/repairs')) {
     page = 'repairs';
-  } else if (path.startsWith('/tenant/documents')) {
-    page = 'documents';
   } else if (path.startsWith('/tenant/notifications')) {
     page = 'notifications';
   }
@@ -103,8 +100,6 @@ export default function TenantApp() {
     content = <TenantMeters tenantId={session.tenantId} />;
   } else if (page === 'repairs') {
     content = <TenantRepairs tenantId={session.tenantId} />;
-  } else if (page === 'documents') {
-    content = <TenantDocuments tenantId={session.tenantId} />;
   } else if (page === 'notifications') {
     content = <TenantNotifications tenantId={session.tenantId} />;
   } else {

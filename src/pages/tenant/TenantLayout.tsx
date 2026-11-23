@@ -76,24 +76,23 @@ const Icons = {
 
 const NAV_ITEMS = [
   { key: 'home',          label: 'Главная',      icon: 'home' },
-  { key: 'invoices',      label: 'Счета',         icon: 'invoices' },
+  { key: 'invoices',      label: 'Расчёты',       icon: 'invoices' },
   { key: 'contract',      label: 'Договор',       icon: 'contract' },
   { key: 'meters',        label: 'Счётчики',      icon: 'meters' },
   { key: 'repairs',       label: 'Заявки',        icon: 'repairs' },
-  { key: 'documents',     label: 'Документы',     icon: 'documents' },
   { key: 'notifications', label: 'Уведомления',   icon: 'notifications' },
   { key: 'profile',       label: 'Мои данные',    icon: 'profile' },
 ] as const
 
 const MOBILE_BOTTOM = [
   { key: 'home',     label: 'Главная',  icon: 'home' },
-  { key: 'invoices', label: 'Счета',    icon: 'invoices' },
+  { key: 'invoices', label: 'Расчёты',  icon: 'invoices' },
   { key: 'repairs',  label: 'Заявки',   icon: 'repairs' },
   { key: 'meters',   label: 'Счётчики', icon: 'meters' },
 ] as const
 
 const PAGE_TITLES: Record<string, string> = {
-  home: 'Главная', invoices: 'Счета', contract: 'Договор',
+  home: 'Главная', invoices: 'Расчёты', contract: 'Договор',
   meters: 'Счётчики', repairs: 'Заявки', documents: 'Документы',
   notifications: 'Уведомления', profile: 'Мои данные',
 }
@@ -144,15 +143,11 @@ export default function TenantLayout({ children, activePage, onNavigate }: Tenan
       .eq('tenant_id', tenantId).eq('is_read', false)
       .then(({ count }) => setUnreadCount(count ?? 0))
 
-    supabase.from('invoices').select('total_amount')
-      .eq('tenant_id', tenantId).in('status', ['SENT', 'sent', 'OVERDUE', 'overdue'])
-      .then(({ data }) => setHasDebt((data?.length ?? 0) > 0))
+    supabase.from('tenant_balances').select('debt, advance').eq('tenant_id', tenantId).maybeSingle()
+      .then(({ data }) => setHasDebt(!!data && Number(data.debt) - Number(data.advance) > 0))
 
-    supabase.from('tenants').select('full_name').eq('id', tenantId).single()
-      .then(({ data }) => setTenantName(data?.full_name ?? ''))
-
-    supabase.from('units').select('number').eq('tenant_id', tenantId).limit(1).single()
-      .then(({ data }) => setUnitNumber(data?.number ? `Офис №${data.number}` : ''))
+    supabase.from('tenants').select('full_name, unit_number').eq('id', tenantId).maybeSingle()
+      .then(({ data }) => { setTenantName(data?.full_name ?? ''); setUnitNumber(data?.unit_number ? `Помещение № ${data.unit_number}` : '') })
   }, [tenantId])
 
   function logout() {
@@ -304,13 +299,13 @@ export default function TenantLayout({ children, activePage, onNavigate }: Tenan
       </div>
 
       {/* Content */}
-      <div style={{ padding: 16, minHeight: 'calc(100vh - 112px)' }}>
+      <div style={{ padding: '16px 16px calc(84px + env(safe-area-inset-bottom))', minHeight: 'calc(100dvh - 112px)' }}>
         {children}
       </div>
 
       {/* Bottom nav */}
       <div style={{
-        position: 'fixed', bottom: 0, left: 0, right: 0, height: 60, zIndex: 100,
+        position: 'fixed', bottom: 0, left: 0, right: 0, height: 60, zIndex: 100, paddingBottom: 'env(safe-area-inset-bottom)', boxSizing: 'content-box',
         background: C.bg, borderTop: `1px solid ${C.border}`,
         display: 'flex', alignItems: 'stretch',
       }}>
