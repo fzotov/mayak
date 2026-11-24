@@ -1,5 +1,67 @@
 @import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap');
 
+/* Токены оформления. Одна палитра на админку и кабинет: светлая и тёмная тема.
+   Цвета в коде берутся только отсюда — через var(--…) или объект C из src/components/ui.tsx. */
+:root {
+  --font: 'Geist', system-ui, -apple-system, sans-serif;
+  --radius: 10px;
+  --radius-sm: 7px;
+
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --surface-2: #f8f9fb;
+  --hover: #f1f3f7;
+  --border: #e6e8ee;
+  --border-strong: #d6d9e1;
+  --text: #15171c;
+  --text-2: #5f6673;
+  --text-3: #9aa1ad;
+  --accent: #4f6ef7;
+  --accent-bg: #eef2ff;
+  --on-accent: #ffffff;
+  --red: #dc2626;
+  --red-bg: #fef2f2;
+  --red-border: #fecaca;
+  --green: #16a34a;
+  --green-bg: #effaf3;
+  --amber: #b45309;
+  --amber-bg: #fffbeb;
+  --amber-border: #fde68a;
+  --violet: #7c3aed;
+  --violet-bg: #f3efff;
+  --overlay: rgba(15, 18, 30, .4);
+  --shadow: 0 20px 50px rgba(15, 18, 30, .18);
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  --bg: #0b0b0d;
+  --surface: #141418;
+  --surface-2: #18181d;
+  --hover: #1f1f25;
+  --border: #26262d;
+  --border-strong: #34343c;
+  --text: #ededef;
+  --text-2: #a3a3ad;
+  --text-3: #6f6f7a;
+  --accent: #7088ff;
+  --accent-bg: rgba(112, 136, 255, .14);
+  --on-accent: #ffffff;
+  --red: #f87171;
+  --red-bg: rgba(248, 113, 113, .12);
+  --red-border: rgba(248, 113, 113, .3);
+  --green: #4ade80;
+  --green-bg: rgba(74, 222, 128, .12);
+  --amber: #fbbf24;
+  --amber-bg: rgba(251, 191, 36, .12);
+  --amber-border: rgba(251, 191, 36, .3);
+  --violet: #a78bfa;
+  --violet-bg: rgba(167, 139, 250, .14);
+  --overlay: rgba(0, 0, 0, .6);
+  --shadow: 0 20px 50px rgba(0, 0, 0, .5);
+  color-scheme: dark;
+}
+
 html, body {
   margin: 0;
 }
@@ -10,5 +72,11 @@ html, body {
 
 body {
   font-size: 14px;
-  font-family: 'Geist', system-ui, -apple-system, sans-serif;
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+}
+
+input, select, textarea, button {
+  font-family: inherit;
 }

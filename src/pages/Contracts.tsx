@@ -1,11 +1,12 @@
 // Договоры аренды (leases) со строками: помещения со ставкой, уборка, реклама и другие ежемесячные начисления.
 // Изменение ставки — новая строка с датой начала; старая закрывается датой окончания, история сохраняется.
 import { useEffect, useMemo, useState } from 'react'
+import { go } from '../lib/nav'
 import { supabase } from '../lib/supabase'
 import { loadArticles, type Article, type Lease, type LeaseLine } from '../lib/accounting'
 import { Page, Card, Button, Badge, Table, Field, Modal, Notice, Loading, Stats, Stat, inputStyle, money, dateRu, today, C } from '../components/ui'
 
-const go = (id?: string) => { window.location.hash = '/contracts' + (id ? '/' + id : '') }
+const goTo = (id?: string) => go('/contracts' + (id ? '/' + id : ''))
 const STATUS: Record<string, { label: string; tone: 'green' | 'neutral' | 'amber' }> = {
   active: { label: 'Действует', tone: 'green' }, draft: { label: 'Черновик', tone: 'amber' }, closed: { label: 'Закрыт', tone: 'neutral' },
 }
@@ -47,7 +48,7 @@ function LeaseList() {
       </Stats>
       <Card pad={false}>
         {rows === null ? <Loading /> : (
-          <Table rows={shown} rowKey={r => r.id} onRow={r => go(r.id)} empty="Договоров нет" cols={[
+          <Table rows={shown} rowKey={r => r.id} onRow={r => goTo(r.id)} empty="Договоров нет" cols={[
             { key: 't', title: 'Арендатор', render: r => r.tenants?.full_name || '—' },
             { key: 'n', title: 'Договор', render: r => <>№ {r.number || '—'}<div style={{ fontSize: 12, color: C.muted }}>с {dateRu(r.start_date)}{r.end_date ? ' по ' + dateRu(r.end_date) : ''}</div></> },
             { key: 'u', title: 'Помещения', render: r => [...new Set(r.lease_lines.filter(l => l.article_code === 'RENT' && activeOn(l, d)).map(l => l.unit_label).filter(Boolean))].join(', ') || '—' },
@@ -72,7 +73,7 @@ function NewLease({ onClose }: { onClose: () => void }) {
     if (!f.tenant || !f.start) { setError('Выберите арендатора и дату начала'); return }
     const { data, error } = await supabase.from('leases').insert({ tenant_id: f.tenant, number: f.number || null, start_date: f.start, end_date: f.end || null, status: 'draft' }).select('id').single()
     if (error) { setError(error.message); return }
-    go(data.id)
+    goTo(data.id)
   }
   return (
     <Modal title="Новый договор" onClose={onClose} footer={<><Button onClick={onClose}>Отмена</Button><Button kind="primary" onClick={create}>Создать</Button></>}>
@@ -148,8 +149,8 @@ function LeaseView({ id }: { id: string }) {
 
   return (
     <Page title={`Договор № ${lease.number || 'без номера'} — ${lease.tenants?.full_name || ''}`} actions={<>
-      <Button onClick={() => go()}>Все договоры</Button>
-      <Button onClick={() => { window.location.hash = '/settlements/' + lease.tenant_id }}>Расчёты</Button>
+      <Button onClick={() => goTo()}>Все договоры</Button>
+      <Button onClick={() => { go('/settlements/' + lease.tenant_id )}}>Расчёты</Button>
     </>}>
       {msg && <Notice tone={msg.tone}>{msg.text}</Notice>}
       <Card title="Условия" actions={<Button kind="primary" small onClick={save}>Сохранить</Button>}>

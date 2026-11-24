@@ -1,6 +1,7 @@
 // Биллинг: начисления за месяц по договорам, счётчикам и теплу — предпросмотр, затем проведение.
 // Считает база (billing_lines / billing_post); повторное проведение ничего не дублирует.
 import { useEffect, useMemo, useState } from 'react'
+import { go } from '../lib/nav'
 import { rpc, type BillingLine, INVOICE_KIND } from '../lib/accounting'
 import { Page, Card, Button, Badge, Stat, Stats, Table, Field, Notice, Loading, Modal, inputStyle, money, dateRu, monthRu, C } from '../components/ui'
 
@@ -56,7 +57,7 @@ export function BillingPage() {
 
   return (
     <Page actions={<>
-      <Button onClick={() => { window.location.hash = '/invoices' }}>Счета</Button>
+      <Button onClick={() => { go('/invoices') }}>Счета</Button>
       <Button kind="primary" disabled={!fresh.length || posting} onClick={() => setAsk(true)}>{posting ? 'Проводим…' : `Провести${fresh.length ? ' ' + fresh.length : ''}`}</Button>
     </>}>
       <div style={{ display: 'flex', gap: 12, alignItems: 'end', flexWrap: 'wrap' }}>

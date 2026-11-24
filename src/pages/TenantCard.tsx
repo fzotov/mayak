@@ -1,4 +1,5 @@
 import { apiFetch, openStoredFile } from '../lib/api'
+import { go } from '../lib/nav'
 import { PAY_STATUS } from '../lib/accounting'
 import { Badge } from '../components/ui'
 import { TenantPortalAccess } from '../components/TenantPortalAccess'
@@ -535,7 +536,7 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
           ) : (
             <>
               <button onClick={() => setEditing(true)} style={{ padding: '7px 14px', border: '1px solid #e8ebf3', borderRadius: 7, background: '#fff', cursor: 'pointer', fontSize: 14, fontFamily: 'inherit', color: '#374151' }}>Редактировать</button>
-              <button onClick={() => { window.location.hash = '/settlements/' + tenantId }} style={{ padding: '7px 14px', border: 'none', borderRadius: 7, background: '#4f6ef7', cursor: 'pointer', fontSize: 14, fontFamily: 'inherit', color: '#fff', fontWeight: 500 }}>Расчёты</button>
+              <button onClick={() => { go('/settlements/' + tenantId )}} style={{ padding: '7px 14px', border: 'none', borderRadius: 7, background: '#4f6ef7', cursor: 'pointer', fontSize: 14, fontFamily: 'inherit', color: '#fff', fontWeight: 500 }}>Расчёты</button>
             </>
           )}
         </div>
@@ -960,7 +961,7 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
                 {tenantInvoices.map((inv: any) => {
                   const st = PAY_STATUS[inv.pay_status]
                   return (
-                    <tr key={inv.id} onClick={() => { window.location.hash = '/invoices/' + inv.id }} style={{ borderBottom: '1px solid #f0f2f8', cursor: 'pointer' }}>
+                    <tr key={inv.id} onClick={() => { go('/invoices/' + inv.id )}} style={{ borderBottom: '1px solid #f0f2f8', cursor: 'pointer' }}>
                       <td style={{ padding: '9px 12px', fontWeight: 500, color: '#1a2240' }}>№{inv.number}</td>
                       <td style={{ padding: '9px 12px', color: '#6b7280' }}>{inv.period || '—'}</td>
                       <td style={{ padding: '9px 12px', fontWeight: 600, color: '#1a2240' }}>{Number(inv.total || 0).toLocaleString('ru')} ₽</td>

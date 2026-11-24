@@ -3,7 +3,7 @@ import { StrictMode, Suspense, lazy } from 'react'
 import { createRoot } from 'react-dom/client'
 
 // Это приложение обслуживает внутренние разделы:
-//   /admin/*   система управления зданием
+//   /*         система управления зданием (админка)
 //   /tenant/*  личный кабинет арендатора
 // Публичный сайт mayak-d.ru — отдельное приложение в apps/site (Next.js).
 const AdminApp  = lazy(() => import('./App.tsx'))
@@ -13,7 +13,7 @@ const path = window.location.pathname
 const root = createRoot(document.getElementById('root')!)
 
 const loader = (
-  <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'sans-serif', color: '#8596b4' }}>
+  <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'sans-serif', color: 'var(--text-3)' }}>
     Загрузка…
   </div>
 )
@@ -21,7 +21,7 @@ const loader = (
 root.render(
   <StrictMode>
     <Suspense fallback={loader}>
-      {path.startsWith('/tenant') ? <TenantApp /> : <AdminApp />}
+      {path === '/tenant' || path.startsWith('/tenant/') ? <TenantApp /> : <AdminApp />}
     </Suspense>
   </StrictMode>,
 )

@@ -2,6 +2,8 @@
 // очередь «Не распознано», расходы и архив выписок со сверкой остатков.
 // Поступление с ИНН арендатора (или от запомненного плательщика) база зачисляет сама; человек разбирает только остальное.
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router'
+import { go } from '../lib/nav'
 import { supabase } from '../lib/supabase'
 import { apiFetch } from '../lib/api'
 import { rpc } from '../lib/accounting'
@@ -22,7 +24,8 @@ const STATUS: Record<string, { label: string; tone: 'green' | 'amber' | 'neutral
 }
 
 export default function BankPage() {
-  const [tab, setTab] = useState<Tab>('in')
+  const [params] = useSearchParams()
+  const [tab, setTab] = useState<Tab>((['in', 'unrec', 'out', 'files'] as Tab[]).includes(params.get('tab') as Tab) ? params.get('tab') as Tab : 'in')
   const [from, setFrom] = useState(monthStart())
   const [to, setTo] = useState(today())
   const [txs, setTxs] = useState<Tx[] | null>(null)
@@ -91,7 +94,7 @@ export default function BankPage() {
   const txCols = (showTenant: boolean) => [
     { key: 'd', title: 'Дата', render: (t: Tx) => dateRu(t.date) },
     { key: 'c', title: 'Контрагент и назначение', render: (t: Tx) => <><div>{t.counterparty || '—'}{(t.payer_inn || t.counter_inn) && <span style={{ color: C.faint, fontSize: 12 }}> · ИНН {t.payer_inn || t.counter_inn}</span>}</div><div style={{ fontSize: 12, color: C.muted, maxWidth: 520 }}>{t.description}</div></> },
-    ...(showTenant ? [{ key: 't', title: 'Арендатор', render: (t: Tx) => t.tenant_id ? <a href={'#/settlements/' + t.tenant_id} style={{ color: C.accent, textDecoration: 'none' }}>{t.tenants?.full_name}</a> : '—' }] : []),
+    ...(showTenant ? [{ key: 't', title: 'Арендатор', render: (t: Tx) => t.tenant_id ? <a href={'/settlements/' + t.tenant_id} style={{ color: C.accent, textDecoration: 'none' }}>{t.tenants?.full_name}</a> : '—' }] : []),
     { key: 'a', title: 'Сумма', align: 'right' as const, render: (t: Tx) => <span style={{ color: t.direction === 'credit' ? C.green : C.red }}>{t.direction === 'credit' ? '+' : '−'}{money(t.amount)}</span> },
     { key: 's', title: 'Статус', render: (t: Tx) => <><Badge tone={STATUS[t.status]?.tone}>{STATUS[t.status]?.label || t.status}</Badge>{t.match_note && t.status === 'credited' && <div style={{ fontSize: 12, color: C.faint, marginTop: 2 }}>{t.match_note}</div>}</> },
   ]
@@ -99,7 +102,7 @@ export default function BankPage() {
   return (
     <Page actions={<>
       <input ref={fileRef} type="file" accept=".txt" style={{ display: 'none' }} onChange={e => e.target.files?.[0] && upload(e.target.files[0])} />
-      <Button onClick={() => { window.location.hash = '/reconcile' }}>Сверка расходов</Button>
+      <Button onClick={() => { go('/reconcile') }}>Сверка расходов</Button>
       <Button kind="primary" disabled={busy} onClick={() => fileRef.current?.click()}>{busy ? 'Загружаем…' : 'Загрузить выписку'}</Button>
     </>}>
       <Notice>Выписку берите в СберБизнес: «Выписка» → период → «Экспорт» → «в 1С» (файл kl_to_1c.txt). Поступления с ИНН арендатора зачисляются сами и гасят долги по очереди. Повторная загрузка того же дня ничего не задваивает.</Notice>

@@ -1,6 +1,8 @@
 // Расчёты с арендаторами по учётному ядру: оборотная ведомость, депозиты, статьи, самопроверка
 // и карточка расчётов арендатора с операциями (оплата, начисление, сторно, депозит, возврат, акт сверки).
 import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router'
+import { go } from '../lib/nav'
 import { supabase } from '../lib/supabase'
 import {
   rpc, loadArticles, summarize, DOC_TYPE, PAY_STATUS, INVOICE_KIND,
@@ -10,17 +12,19 @@ import {
   Page, Card, Button, Badge, Stat, Stats, Table, Field, Modal, Notice, Tabs, Loading, inputStyle, money, dateRu, monthRu, today, monthStart, C, type Col,
 } from '../components/ui'
 
-const go = (page: string, id?: string) => { window.location.hash = '/' + page + (id ? '/' + id : '') }
+const goTo = (page: string, id?: string) => go('/' + (page === 'tenant-card' ? 'tenants' : page) + (id ? '/' + id : ''))
 
-export default function SettlementsPage({ tenantId }: { tenantId?: string | null }) {
-  return tenantId ? <TenantSettlement key={tenantId} tenantId={tenantId} /> : <Overview />
+export default function SettlementsPage({ tenantId, initialTab }: { tenantId?: string | null; initialTab?: string }) {
+  return tenantId ? <TenantSettlement key={tenantId} tenantId={tenantId} /> : <Overview key={initialTab || 'all'} initialTab={initialTab} />
 }
 
 // ── Обзор ────────────────────────────────────────────────────────────────────
 type Tab = 'turnover' | 'deposits' | 'articles' | 'check'
 
-function Overview() {
-  const [tab, setTab] = useState<Tab>('turnover')
+function Overview({ initialTab }: { initialTab?: string }) {
+  const [params] = useSearchParams()
+  const start = (params.get('tab') || initialTab || 'turnover') as Tab
+  const [tab, setTab] = useState<Tab>(['turnover', 'deposits', 'articles', 'check'].includes(start) ? start : 'turnover')
   return (
     <Page>
       <Tabs<Tab> value={tab} onChange={setTab} tabs={[['turnover', 'Оборотная ведомость'], ['deposits', 'Депозиты'], ['articles', 'Статьи учёта'], ['check', 'Самопроверка']]} />
@@ -113,7 +117,7 @@ function Turnover() {
       </Stats>
       <Card pad={false}>
         {rows === null ? <Loading /> : (
-          <Table cols={cols} rows={tenants} rowKey={t => t.tenant_id} onRow={t => go('settlements', t.tenant_id)}
+          <Table cols={cols} rows={tenants} rowKey={t => t.tenant_id} onRow={t => goTo('settlements', t.tenant_id)}
             empty="Движений нет. Начисления появятся после проведения биллинга за месяц."
             foot={tenants.length > 0 && (
               <tr style={{ fontWeight: 600 }}>
@@ -143,7 +147,7 @@ function Deposits() {
       </Stats>
       <Card pad={false}>
         {rows === null ? <Loading /> : (
-          <Table rows={list} rowKey={r => r.lease_id} onRow={r => go('settlements', r.tenant_id)} empty="Депозитов пока нет: требуемая сумма задаётся в договоре, внесение — требованием в расчётах арендатора" cols={[
+          <Table rows={list} rowKey={r => r.lease_id} onRow={r => goTo('settlements', r.tenant_id)} empty="Депозитов пока нет: требуемая сумма задаётся в договоре, внесение — требованием в расчётах арендатора" cols={[
             { key: 't', title: 'Арендатор', render: r => r.tenant_name },
             { key: 'n', title: 'Договор', render: r => r.number || '—' },
             { key: 'r', title: 'Требуется', align: 'right', render: r => money(r.deposit_required, { zero: '—' }) },
@@ -289,8 +293,8 @@ function TenantSettlement({ tenantId }: { tenantId: string }) {
   if (loading && !tenant) return <Loading />
   return (
     <Page title={tenant ? `Расчёты: ${tenant.full_name}` : 'Расчёты'} actions={<>
-      <Button onClick={() => go('settlements')}>Все арендаторы</Button>
-      <Button onClick={() => go('tenant-card', tenantId)}>Карточка арендатора</Button>
+      <Button onClick={() => goTo('settlements')}>Все арендаторы</Button>
+      <Button onClick={() => goTo('tenant-card', tenantId)}>Карточка арендатора</Button>
       <Button onClick={() => printAct(tenant, from, to, articleFilter, articles)}>Акт сверки</Button>
       <Button kind="primary" onClick={() => setDialog('payment')}>Внести оплату</Button>
     </>}>
@@ -353,7 +357,7 @@ function TenantSettlement({ tenantId }: { tenantId: string }) {
 
       {invoices.length > 0 && (
         <Card pad={false} title="Счета">
-          <Table rows={invoices} rowKey={i => i.id} onRow={i => go('invoices', i.id)} cols={[
+          <Table rows={invoices} rowKey={i => i.id} onRow={i => goTo('invoices', i.id)} cols={[
             { key: 'n', title: 'Счёт', render: i => <>№ {i.number}<div style={{ fontSize: 12, color: C.muted }}>{INVOICE_KIND[i.kind] || i.kind}</div></> },
             { key: 'p', title: 'Период', render: i => monthRu(i.period) },
             { key: 't', title: 'Сумма', align: 'right', render: i => money(i.total) },
@@ -547,7 +551,7 @@ function ReasonDialog({ title, note, onClose, onSubmit }: { title: string; note:
 // ── Акт сверки ───────────────────────────────────────────────────────────────
 // Строится по движениям регистров «Расчёты» и «Авансы»: каждая строка — документ,
 // изменивший баланс арендатора (долг минус аванс). Внутренние разнесения баланс не меняют и в акт не попадают.
-async function printAct(tenant: any, from: string, to: string, article: string, articles: Article[]) {
+export async function printAct(tenant: any, from: string, to: string, article: string, articles: Article[]) {
   if (!tenant) return
   const w = window.open('', '_blank')
   if (!w) return

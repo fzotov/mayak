@@ -1,13 +1,14 @@
 // Счета арендаторам. Счёт собирает начисления месяца; статус оплаты вычисляется из погашения начислений.
 // Счета создаёт «Биллинг»; вручную счёт не заводится и не правится.
 import { useEffect, useMemo, useState } from 'react'
+import { go } from '../lib/nav'
 import { supabase } from '../lib/supabase'
 import { apiFetch } from '../lib/api'
 import { PAY_STATUS, INVOICE_KIND, type InvoiceState, type ChargeState } from '../lib/accounting'
 import { printInvoice } from '../lib/invoicePrint'
 import { Page, Card, Button, Badge, Stat, Stats, Table, Field, Notice, Loading, inputStyle, money, dateRu, monthRu, C } from '../components/ui'
 
-const go = (id?: string) => { window.location.hash = '/invoices' + (id ? '/' + id : '') }
+const goTo = (id?: string) => go('/invoices' + (id ? '/' + id : ''))
 
 export function InvoicesPage({ invoiceId }: { invoiceId?: string | null }) {
   return invoiceId ? <InvoiceView key={invoiceId} id={invoiceId} /> : <InvoiceList />
@@ -33,7 +34,7 @@ function InvoiceList() {
   const sum = (k: 'total' | 'paid' | 'open_amount') => shown.reduce((s, r) => s + Number(r[k]), 0)
 
   return (
-    <Page actions={<Button kind="primary" onClick={() => { window.location.hash = '/billing' }}>Выставить за месяц</Button>}>
+    <Page actions={<Button kind="primary" onClick={() => { go('/billing') }}>Выставить за месяц</Button>}>
       <div style={{ display: 'flex', gap: 12, alignItems: 'end', flexWrap: 'wrap' }}>
         <Field label="Месяц"><input type="month" style={{ ...inputStyle, width: 180 }} value={month} onChange={e => setMonth(e.target.value)} /></Field>
         <Field label="Статус"><select style={{ ...inputStyle, width: 200 }} value={status} onChange={e => setStatus(e.target.value)}>
@@ -51,7 +52,7 @@ function InvoiceList() {
       </Stats>
       <Card pad={false}>
         {rows === null ? <Loading /> : (
-          <Table rows={shown} rowKey={r => r.id} onRow={r => go(r.id)} empty="Счетов нет. Счета появляются после проведения биллинга за месяц." cols={[
+          <Table rows={shown} rowKey={r => r.id} onRow={r => goTo(r.id)} empty="Счетов нет. Счета появляются после проведения биллинга за месяц." cols={[
             { key: 'n', title: 'Счёт', render: r => <>№ {r.number}<div style={{ fontSize: 12, color: C.muted }}>{dateRu(r.date)}</div></> },
             { key: 't', title: 'Арендатор', render: r => r.tenant_name },
             { key: 'k', title: 'Вид', render: r => INVOICE_KIND[r.kind] || r.kind },
@@ -115,8 +116,8 @@ function InvoiceView({ id }: { id: string }) {
   const ps = PAY_STATUS[inv.pay_status]
   return (
     <Page title={`Счёт № ${inv.number}`} actions={<>
-      <Button onClick={() => go()}>Все счета</Button>
-      <Button onClick={() => { window.location.hash = '/settlements/' + inv.tenant_id }}>Расчёты арендатора</Button>
+      <Button onClick={() => goTo()}>Все счета</Button>
+      <Button onClick={() => { go('/settlements/' + inv.tenant_id )}}>Расчёты арендатора</Button>
       <Button onClick={print}>Печать / PDF</Button>
       <Button kind="primary" disabled={sending} onClick={send}>{sending ? 'Отправляем…' : inv.issue_status === 'SENT' ? 'Отправить ещё раз' : 'Отправить арендатору'}</Button>
     </>}>

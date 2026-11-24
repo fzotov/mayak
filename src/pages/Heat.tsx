@@ -1,4 +1,5 @@
 import { apiFetch } from '../lib/api'
+import { go } from '../lib/nav'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 
@@ -240,7 +241,7 @@ export default function HeatPage() {
 
     // Начисления за тепло создаёт биллинг по этому распределению (статья «Тепло»), отдельные счета здесь не заводятся.
     setDoneMsg('Расчёт сохранён. Тепло войдёт в счета арендаторов при проведении биллинга за этот месяц.')
-    if (createInvoices) { setSaving(false); window.location.hash = '/billing'; return }
+    if (createInvoices) { setSaving(false); go('/billing'); return }
 
     await loadAll()
     setSaving(false)

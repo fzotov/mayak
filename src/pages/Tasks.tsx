@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { go } from '../lib/nav'
 import { supabase } from '../lib/supabase'
 
 interface Task {
@@ -158,7 +159,7 @@ function TasksBoard({ sourceFilter }: { sourceFilter?: string }) {
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#8596b4' }}>
                         <span>{(t.assignee as any)?.full_name || '—'}</span>
                         {t.due_date && <span>{new Date(t.due_date).toLocaleDateString('ru')}</span>}
-                        {t.letter_id && <span style={{ color: '#7c3aed', fontSize: 11, cursor: 'pointer' }} onClick={e => { e.stopPropagation(); window.dispatchEvent(new CustomEvent('navigate', { detail: 'letters' })) }}>письмо</span>}
+                        {t.letter_id && <span style={{ color: '#7c3aed', fontSize: 11, cursor: 'pointer' }} onClick={e => { e.stopPropagation(); go('/letters') }}>письмо</span>}
                       </div>
                     </div>
                   ))}
