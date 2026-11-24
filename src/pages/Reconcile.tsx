@@ -66,6 +66,7 @@ export default function ReconcilePage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState<string | null>(null)
   const [tab, setTab] = useState<'debit' | 'credit'>('debit')
+  const [error, setError] = useState('')
 
   useEffect(() => { load() }, [])
 
@@ -109,30 +110,33 @@ export default function ReconcilePage() {
     if (best) creditSuggestions.push({ tx, tenant: best.tenant, score: best.score })
   }
 
-  async function confirmDebitMatch(tx: BankTx, inv: IncomingInvoice) {
-    setSaving(tx.id)
-    await supabase.from('bank_transactions').update({ matched_type: 'invoice', matched_id: inv.id }).eq('id', tx.id)
-    await supabase.from('incoming_invoices').update({ status: 'PAID' }).eq('id', inv.id)
+  // Операции банка меняются только функциями базы: зачисление идёт в расчёты арендатора, расход отмечается сверенным.
+  async function run(txId: string, fn: () => PromiseLike<{ error: any }>) {
+    setSaving(txId)
+    const { error } = await fn()
+    if (error) setError(error.message)
     await load()
     setSaving(null)
+  }
+
+  async function confirmDebitMatch(tx: BankTx, inv: IncomingInvoice) {
+    await run(tx.id, async () => {
+      const r = await supabase.rpc('bank_mark_expense', { p_tx: tx.id, p_invoice: inv.id })
+      if (!r.error) await supabase.from('incoming_invoices').update({ status: 'PAID' }).eq('id', inv.id)
+      return r
+    })
   }
 
   async function confirmCreditMatch(tx: BankTx, tenant: Tenant) {
-    setSaving(tx.id)
-    // Поступление проводится в расчёты арендатора и само закрывает долги по очереди погашения.
-    const { error } = await supabase.rpc('post_payment', { p_tenant: tenant.id, p_date: tx.date, p_amount: Math.abs(Number(tx.amount)), p_source: 'bank',
-      p_purpose: (tx as any).description || (tx as any).counterparty || null, p_bank_tx: tx.id })
-    if (error) { alert('Оплата не проведена: ' + error.message); setSaving(null); return }
-    await supabase.from('bank_transactions').update({ matched_type: 'tenant', matched_id: tenant.id }).eq('id', tx.id)
-    await load()
-    setSaving(null)
+    // плательщик запоминается: следующие его платежи зачислятся этому арендатору сами
+    await run(tx.id, () => supabase.rpc('bank_assign', { p_tx: tx.id, p_tenant: tenant.id, p_remember: true }))
   }
 
   async function ignore(txId: string) {
-    setSaving(txId)
-    await supabase.from('bank_transactions').update({ matched_type: 'ignored' }).eq('id', txId)
-    await load()
-    setSaving(null)
+    const tx = txs.find(t => t.id === txId)
+    await run(txId, () => tx?.direction === 'debit'
+      ? supabase.rpc('bank_mark_expense', { p_tx: txId, p_invoice: null })
+      : supabase.rpc('bank_ignore', { p_tx: txId, p_note: 'отмечено в сверке' }))
   }
 
   if (loading) return <div style={{ padding: 40, color: '#8596b4', fontSize: 14, textAlign: 'center' }}>Загрузка...</div>
@@ -148,6 +152,7 @@ export default function ReconcilePage() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {error && <div style={{ background: '#fef2f2', color: '#dc2626', borderRadius: 8, padding: '10px 14px', fontSize: 13 }}>{error}</div>}
       {/* KPI */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
         {[

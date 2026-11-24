@@ -117,6 +117,7 @@ function Dashboard() {
   const [tasks, setTasks] = useState<any[]>([])
   const [overdueInvs, setOverdueInvs] = useState<any[]>([])
   const [ledgerProblems, setLedgerProblems] = useState(0)
+  const [bankToday, setBankToday] = useState<{ unrec: number; inSum: number; inCount: number }>({ unrec: 0, inSum: 0, inCount: 0 })
   const [events, setEvents] = useState<any[]>([])
   const [hotRepairs, setHotRepairs] = useState<any[]>([])
   const [repairsLoaded, setRepairsLoaded] = useState(false)
@@ -152,6 +153,10 @@ function Dashboard() {
       })
 
     supabase.rpc('verify_ledger').then(({ data, error }) => setLedgerProblems(error ? -1 : (data || []).length))
+    Promise.all([
+      supabase.from('bank_transactions').select('id', { count: 'exact', head: true }).eq('status', 'unrecognized'),
+      supabase.from('bank_transactions').select('amount').eq('direction', 'credit').eq('status', 'credited').gte('date', new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10)),
+    ]).then(([u, c]) => setBankToday({ unrec: u.count || 0, inSum: (c.data || []).reduce((s: number, r: any) => s + Number(r.amount), 0), inCount: (c.data || []).length }))
 
     supabase.from('repairs').select('id', { count: 'exact', head: true }).in('status', ['new', 'accepted', 'in_progress'])
       .then(({ count }) => setStats(s => ({ ...s, openRepairs: count || 0 })))
@@ -189,7 +194,13 @@ function Dashboard() {
           {ledgerProblems > 0 ? `Самопроверка расчётов нашла расхождения: ${ledgerProblems}. Откройте «Расчёты» → «Самопроверка».` : 'Самопроверка расчётов не выполнилась. Откройте «Расчёты» → «Самопроверка».'}
         </button>
       )}
+      {bankToday.unrec > 0 && (
+        <button onClick={() => { window.location.hash = '/bank' }} style={{ textAlign: 'left', border: '1px solid #fde68a', background: '#fffbeb', color: '#b45309', borderRadius: 9, padding: '10px 15px', fontSize: 14, fontFamily: 'inherit', cursor: 'pointer' }}>
+          Не опознан плательщик: {bankToday.unrec} {bankToday.unrec === 1 ? 'поступление' : 'поступлений'}. Откройте «Банк» → «Не распознано» и укажите арендатора.
+        </button>
+      )}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8 }}>
+        <KpiCard label="Поступило за 7 дней" value={`${bankToday.inSum.toLocaleString('ru')} ₽`} sub={`${bankToday.inCount} платежей зачислено`} color="#16a34a" />
         <KpiCard
           label="Заявки сайта"
           value={newLeads.length}

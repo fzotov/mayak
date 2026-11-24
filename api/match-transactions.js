@@ -27,14 +27,14 @@ export default async function handler(req, res) {
 
   try {
     // Load unmatched credit transactions
-    let txQuery = 'bank_transactions?direction=eq.credit&matched_type=is.null&order=date.desc'
+    let txQuery = 'bank_transactions?direction=eq.credit&status=eq.unrecognized&order=date.desc'
     if (transactionIds?.length) {
       txQuery = `bank_transactions?id=in.(${transactionIds.join(',')})&order=date.desc`
     }
     const [txs, tenants, invoices] = await Promise.all([
       sb(txQuery + '&limit=50'),
       sb('tenants?select=id,full_name,inn,monthly_rent,type&order=full_name'),
-      sb('invoices?select=id,number,total_amount,period,status,tenant_id&status=in.(SENT,OVERDUE)&order=created_at.desc&limit=100'),
+      sb('v_invoice_state?select=id,number,total_amount:open_amount,period,tenant_id&pay_status=neq.paid&order=date.desc&limit=100'),
     ])
 
     if (!txs.length) return res.status(200).json({ ok: true, matches: [] })
@@ -98,37 +98,8 @@ ${txList}
     const text = aiData.content[0].text.replace(/```json|```/g, '').trim()
     const matches = JSON.parse(text)
 
-    // Auto-apply high-confidence matches (>= 80)
-    const applied = []
-    for (const m of matches) {
-      // Платёж проводится без человека только по твёрдому признаку: ИНН арендатора есть в реквизитах платежа.
-      // Догадка модели сама по себе деньги не проводит — такие строки остаются предложением для оператора.
-      const tx = txs.find(t => t.id === m.tx_id)
-      const tenant = tenants.find(t => t.id === m.tenant_id)
-      const inn = String(tenant?.inn || '').trim()
-      const haystack = `${tx?.counterparty || ''} ${tx?.description || ''}`
-      const innMatched = inn.length >= 10 && new RegExp(`(^|\\D)${inn}(\\D|$)`).test(haystack)
-      m.auto = !!(tx && tenant && innMatched)
-      if (m.auto) {
-        // Поступление проводится функцией учётного ядра: деньги зачисляются арендатору и гасят долги по очереди.
-        const paymentId = await sb('rpc/post_payment', {
-          method: 'POST',
-          body: JSON.stringify({
-            p_tenant: m.tenant_id, p_date: tx.date, p_amount: Math.abs(Number(tx.amount)), p_source: 'bank',
-            p_purpose: tx.description || tx.counterparty || null, p_bank_tx: tx.id,
-          })
-        })
-        const payment = { id: paymentId }
-        // Update bank transaction
-        await sb(`bank_transactions?id=eq.${tx.id}`, {
-          method: 'PATCH',
-          body: JSON.stringify({ matched_type: m.type || 'tenant', matched_id: m.tenant_id })
-        })
-        applied.push({ ...m, payment_id: payment?.id })
-      }
-    }
-
-    res.status(200).json({ ok: true, matches, applied })
+    // ИИ только подсказывает: поступление зачисляет оператор (bank_assign) или сама база по ИНН и привязкам.
+    res.status(200).json({ ok: true, matches })
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message })
   }

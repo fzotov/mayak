@@ -1,297 +1,210 @@
-import { apiFetch } from '../lib/api'
-import { useState, useEffect, useRef } from 'react'
+// Банк: загрузка выписки СберБизнес (kl_to_1c.txt), поступления и их зачисление арендаторам,
+// очередь «Не распознано», расходы и архив выписок со сверкой остатков.
+// Поступление с ИНН арендатора (или от запомненного плательщика) база зачисляет сама; человек разбирает только остальное.
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { apiFetch } from '../lib/api'
+import { rpc } from '../lib/accounting'
+import { parseClientBank } from '../lib/clientBank'
+import { Page, Card, Button, Badge, Stat, Stats, Table, Field, Modal, Notice, Tabs, Loading, inputStyle, money, dateRu, monthStart, today, C } from '../components/ui'
 
-interface BankTx {
-  id: string
-  date: string
-  amount: number
-  direction: 'credit' | 'debit'
-  counterparty: string | null
-  description: string | null
-  reference: string | null
-  matched_type: string | null
-  matched_id: string | null
-  import_id: string | null
-  created_at: string
+interface Tx {
+  id: string; date: string; amount: number; direction: 'credit' | 'debit'; counterparty: string | null; description: string | null
+  payer_inn: string | null; counter_inn: string | null; status: string; tenant_id: string | null; match_note: string | null; doc_number: string | null
+  tenants: { full_name: string } | null
+}
+interface StatementFile { id: string; file_name: string | null; account: string; date_from: string | null; date_to: string | null; opening: number | null; total_in: number | null; total_out: number | null; closing: number | null; check_status: string; check_note: string | null; added: number; skipped: number; created_at: string }
+type Tab = 'in' | 'unrec' | 'out' | 'files'
+
+const STATUS: Record<string, { label: string; tone: 'green' | 'amber' | 'neutral' | 'blue' }> = {
+  credited: { label: 'Зачислено', tone: 'green' }, unrecognized: { label: 'Не распознано', tone: 'amber' },
+  ignored: { label: 'Не от арендатора', tone: 'neutral' }, expense: { label: 'Сверено', tone: 'neutral' }, new: { label: 'Ждёт сверки', tone: 'blue' },
 }
 
-type Filter = 'all' | 'credit' | 'debit' | 'unmatched'
-
-const FMT = (n: number) => Number(n).toLocaleString('ru-RU', { minimumFractionDigits: 2 })
-const FMTD = (s: string) => new Date(s).toLocaleDateString('ru-RU', { day: '2-digit', month: 'short' })
-
 export default function BankPage() {
-  const [txs, setTxs] = useState<BankTx[]>([])
-  const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState<Filter>('all')
-  const [uploading, setUploading] = useState(false)
-  const [matching, setMatching] = useState(false)
-  const [matchResult, setMatchResult] = useState('')
-  const [parseError, setParseError] = useState('')
-  const [search, setSearch] = useState('')
-  const [imports, setImports] = useState<string[]>([])
-  const [deletingImport, setDeletingImport] = useState<string | null>(null)
+  const [tab, setTab] = useState<Tab>('in')
+  const [from, setFrom] = useState(monthStart())
+  const [to, setTo] = useState(today())
+  const [txs, setTxs] = useState<Tx[] | null>(null)
+  const [unrec, setUnrec] = useState<Tx[]>([])
+  const [files, setFiles] = useState<StatementFile[]>([])
+  const [tenants, setTenants] = useState<{ id: string; full_name: string; inn: string | null }[]>([])
+  const [msg, setMsg] = useState<{ tone: 'green' | 'red' | 'amber'; text: string } | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [assign, setAssign] = useState<{ tx: Tx; tenant?: string; note?: string } | null>(null)
+  const [hints, setHints] = useState<Record<string, { tenant_id: string | null; note: string }>>({})
   const fileRef = useRef<HTMLInputElement>(null)
 
-  useEffect(() => { load() }, [])
-
   async function load() {
-    setLoading(true)
-    const { data } = await supabase.from('bank_transactions').select('*').order('date', { ascending: false })
-    const rows = data || []
-    setTxs(rows)
-    const ids = [...new Set(rows.map(r => r.import_id).filter(Boolean))] as string[]
-    setImports(ids)
-    setLoading(false)
+    const [a, b, c, d] = await Promise.all([
+      supabase.from('bank_transactions').select('*, tenants(full_name)').gte('date', from).lte('date', to).order('date', { ascending: false }).order('created_at', { ascending: false }),
+      supabase.from('bank_transactions').select('*, tenants(full_name)').eq('status', 'unrecognized').order('date'),
+      supabase.from('bank_statement_files').select('*').order('created_at', { ascending: false }).limit(50),
+      supabase.from('tenants').select('id, full_name, inn').order('full_name'),
+    ])
+    setTxs((a.data || []) as Tx[]); setUnrec((b.data || []) as Tx[]); setFiles((c.data || []) as StatementFile[]); setTenants(d.data || [])
   }
+  useEffect(() => { load() }, [from, to])
 
-  async function handleFile(file: File) {
-    setUploading(true)
-    setParseError('')
+  async function upload(file: File) {
+    setBusy(true); setMsg(null)
     try {
-      const buf = await file.arrayBuffer()
-      const bytes = new Uint8Array(buf)
-      let binary = ''
-      for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i])
-      const b64 = btoa(binary)
-
-      const resp = await apiFetch('/api/parse-bank-statement', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pdfBase64: b64, mimeType: file.type || 'application/pdf' }),
-      })
-      const data = await resp.json()
-      if (!data.ok) {
-        setParseError(data.error + (data.raw ? '\n\n' + data.raw : ''))
-        return
+      const statements = await parseClientBank(file)
+      const parts: string[] = []
+      let warn = false
+      for (const st of statements) {
+        const r = await rpc<any>('bank_import', { p_file: st })
+        parts.push(`счёт …${st.account.slice(-4)}: новых операций ${r.added}${r.skipped ? `, уже были ${r.skipped}` : ''}, зачислено арендаторам ${r.credited}, не распознано ${r.unrecognized}` +
+          (r.check === 'mismatch' ? `. Сверка с банком не сошлась: ${r.check_note}` : ''))
+        if (r.check === 'mismatch' || r.unrecognized > 0) warn = true
       }
-
-      const importId = crypto.randomUUID()
-      const rows = (data.transactions as any[]).map(t => ({
-        date: t.date,
-        amount: Number(t.amount),
-        direction: t.direction,
-        counterparty: t.counterparty || null,
-        description: t.description || null,
-        reference: t.reference || null,
-        import_id: importId,
-      }))
-
-      const { error } = await supabase.from('bank_transactions').insert(rows)
-      if (error) { setParseError(error.message); return }
+      setMsg({ tone: warn ? 'amber' : 'green', text: 'Выписка загружена — ' + parts.join('; ') + '.' })
+      if (statements.some(s => s.date_from)) { const f = statements.map(s => s.date_from!).filter(Boolean).sort()[0]; if (f < from) setFrom(f) }
       await load()
-    } catch (e) {
-      setParseError(String(e))
-    } finally {
-      setUploading(false)
-    }
+    } catch (e: any) { setMsg({ tone: 'red', text: e.message }) }
+    setBusy(false)
+    if (fileRef.current) fileRef.current.value = ''
   }
 
-  async function runAiMatch() {
-    setMatching(true)
-    setMatchResult('')
+  async function askAi() {
+    setBusy(true); setMsg(null)
     try {
-      const resp = await apiFetch('/api/match-transactions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) })
-      const data = await resp.json()
-      if (!data.ok) { setMatchResult('Ошибка: ' + data.error); return }
-      const applied = data.applied?.length ?? 0
-      const total = data.matches?.length ?? 0
-      setMatchResult(`Проверено платежей: ${total}. Проведено автоматически по ИНН: ${applied}. Остальные ждут разбора в разделе «Сверка».`)
-      await load()
-    } catch (e) {
-      setMatchResult('Ошибка: ' + String(e))
-    } finally {
-      setMatching(false)
-    }
+      const r = await apiFetch('/api/match-transactions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) })
+      const j = await r.json()
+      if (!j.ok) throw new Error(j.error || 'Подсказки не получены')
+      const h: typeof hints = {}
+      for (const m of j.matches || []) if (m.tx_id) h[m.tx_id] = { tenant_id: m.tenant_id, note: m.note || '' }
+      setHints(h)
+    } catch (e: any) { setMsg({ tone: 'red', text: e.message }) }
+    setBusy(false)
   }
 
-  async function deleteImport(importId: string) {
-    if (!confirm('Удалить все транзакции этого импорта?')) return
-    setDeletingImport(importId)
-    await supabase.from('bank_transactions').delete().eq('import_id', importId)
-    await load()
-    setDeletingImport(null)
-  }
+  const list = txs || []
+  const credits = list.filter(t => t.direction === 'credit')
+  const debits = list.filter(t => t.direction === 'debit')
+  const sum = (rows: Tx[]) => rows.reduce((s, t) => s + Number(t.amount), 0)
+  const autoShare = useMemo(() => {
+    const c = credits.filter(t => t.status === 'credited')
+    return c.length ? Math.round(c.filter(t => t.match_note !== 'разобрано вручную').length / c.length * 100) : 0
+  }, [txs])
 
-  const filtered = txs.filter(t => {
-    if (filter === 'credit' && t.direction !== 'credit') return false
-    if (filter === 'debit' && t.direction !== 'debit') return false
-    if (filter === 'unmatched' && t.matched_type) return false
-    if (search) {
-      const q = search.toLowerCase()
-      return (t.counterparty || '').toLowerCase().includes(q) || (t.description || '').toLowerCase().includes(q)
-    }
-    return true
-  })
-
-  const totalCredit = txs.filter(t => t.direction === 'credit').reduce((s, t) => s + t.amount, 0)
-  const totalDebit = txs.filter(t => t.direction === 'debit').reduce((s, t) => s + t.amount, 0)
-  const unmatched = txs.filter(t => !t.matched_type).length
-
-  // Group by date
-  const byDate: Record<string, BankTx[]> = {}
-  for (const t of filtered) {
-    if (!byDate[t.date]) byDate[t.date] = []
-    byDate[t.date].push(t)
-  }
-  const dates = Object.keys(byDate).sort((a, b) => b.localeCompare(a))
+  const txCols = (showTenant: boolean) => [
+    { key: 'd', title: 'Дата', render: (t: Tx) => dateRu(t.date) },
+    { key: 'c', title: 'Контрагент и назначение', render: (t: Tx) => <><div>{t.counterparty || '—'}{(t.payer_inn || t.counter_inn) && <span style={{ color: C.faint, fontSize: 12 }}> · ИНН {t.payer_inn || t.counter_inn}</span>}</div><div style={{ fontSize: 12, color: C.muted, maxWidth: 520 }}>{t.description}</div></> },
+    ...(showTenant ? [{ key: 't', title: 'Арендатор', render: (t: Tx) => t.tenant_id ? <a href={'#/settlements/' + t.tenant_id} style={{ color: C.accent, textDecoration: 'none' }}>{t.tenants?.full_name}</a> : '—' }] : []),
+    { key: 'a', title: 'Сумма', align: 'right' as const, render: (t: Tx) => <span style={{ color: t.direction === 'credit' ? C.green : C.red }}>{t.direction === 'credit' ? '+' : '−'}{money(t.amount)}</span> },
+    { key: 's', title: 'Статус', render: (t: Tx) => <><Badge tone={STATUS[t.status]?.tone}>{STATUS[t.status]?.label || t.status}</Badge>{t.match_note && t.status === 'credited' && <div style={{ fontSize: 12, color: C.faint, marginTop: 2 }}>{t.match_note}</div>}</> },
+  ]
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      {/* KPI */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
-        {[
-          { label: 'Приход', value: FMT(totalCredit) + ' ₽', color: '#16a34a' },
-          { label: 'Расход', value: FMT(totalDebit) + ' ₽', color: '#ef4444' },
-          { label: 'Операций', value: txs.length, color: '#1a2240' },
-          { label: 'Не сопоставлено', value: unmatched, color: unmatched > 0 ? '#d97706' : '#16a34a' },
-        ].map(k => (
-          <div key={k.label} style={{ background: '#fff', border: '1px solid #e8ebf3', borderRadius: 9, padding: '11px 14px' }}>
-            <div style={{ fontSize: 12, color: '#8596b4', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.4px', marginBottom: 4 }}>{k.label}</div>
-            <div style={{ fontSize: 20, fontWeight: 700, color: k.color }}>{k.value}</div>
-          </div>
-        ))}
+    <Page actions={<>
+      <input ref={fileRef} type="file" accept=".txt" style={{ display: 'none' }} onChange={e => e.target.files?.[0] && upload(e.target.files[0])} />
+      <Button onClick={() => { window.location.hash = '/reconcile' }}>Сверка расходов</Button>
+      <Button kind="primary" disabled={busy} onClick={() => fileRef.current?.click()}>{busy ? 'Загружаем…' : 'Загрузить выписку'}</Button>
+    </>}>
+      <Notice>Выписку берите в СберБизнес: «Выписка» → период → «Экспорт» → «в 1С» (файл kl_to_1c.txt). Поступления с ИНН арендатора зачисляются сами и гасят долги по очереди. Повторная загрузка того же дня ничего не задваивает.</Notice>
+      {msg && <Notice tone={msg.tone}>{msg.text}</Notice>}
+      <div style={{ display: 'flex', gap: 8, alignItems: 'end', flexWrap: 'wrap' }}>
+        <Field label="С"><input type="date" style={inputStyle} value={from} onChange={e => setFrom(e.target.value)} /></Field>
+        <Field label="По"><input type="date" style={inputStyle} value={to} onChange={e => setTo(e.target.value)} /></Field>
       </div>
+      <Stats>
+        <Stat label="Поступило" value={money(sum(credits))} tone="green" />
+        <Stat label="Списано" value={money(sum(debits))} />
+        <Stat label="Зачислено автоматически" value={`${autoShare}%`} />
+        <Stat label="Не распознано" value={unrec.length} tone={unrec.length ? 'amber' : undefined} />
+      </Stats>
+      <Tabs<Tab> value={tab} onChange={setTab} tabs={[['in', 'Поступления'], ['unrec', `Не распознано${unrec.length ? ' · ' + unrec.length : ''}`], ['out', 'Расходы'], ['files', 'Выписки']]} />
 
-      {/* Toolbar */}
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', gap: 6 }}>
-          {(['all', 'credit', 'debit', 'unmatched'] as Filter[]).map(f => (
-            <button key={f} onClick={() => setFilter(f)} style={{
-              padding: '5px 12px', borderRadius: 6, border: '1px solid', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit',
-              borderColor: filter === f ? '#4f6ef7' : '#e8ebf3',
-              background: filter === f ? '#eff3ff' : '#fff',
-              color: filter === f ? '#4f6ef7' : '#6b7280',
-            }}>
-              {{ all: 'Все', credit: '↓ Приход', debit: '↑ Расход', unmatched: 'Не сопоставлено' }[f]}
-            </button>
-          ))}
-        </div>
-        <input
-          value={search} onChange={e => setSearch(e.target.value)}
-          placeholder="Поиск по контрагенту..."
-          style={{ padding: '6px 12px', borderRadius: 7, border: '1px solid #e8ebf3', fontSize: 13, fontFamily: 'inherit', outline: 'none', width: 200 }}
-        />
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
-          {unmatched > 0 && (
-            <button onClick={runAiMatch} disabled={matching}
-              style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid #8b5cf6', background: '#f5f3ff', color: '#7c3aed', fontSize: 13, fontWeight: 600, cursor: matching ? 'default' : 'pointer', opacity: matching ? 0.7 : 1, fontFamily: 'inherit' }}>
-              {matching ? 'AI анализирует...' : `✦ AI сопоставить (${unmatched})`}
-            </button>
-          )}
-          {unmatched > 0 && (
-            <button onClick={() => window.dispatchEvent(new CustomEvent('navigate', { detail: 'reconcile' }))}
-              style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid #f59e0b', background: '#fffbeb', color: '#b45309', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
-              Сверить ({unmatched})
-            </button>
-          )}
-          {imports.length > 0 && (
-            <select onChange={e => { if (e.target.value) deleteImport(e.target.value) }} defaultValue=""
-              style={{ padding: '6px 10px', borderRadius: 7, border: '1px solid #e8ebf3', fontSize: 12, fontFamily: 'inherit', color: '#8596b4', cursor: 'pointer' }}>
-              <option value="">Удалить импорт...</option>
-              {imports.map((id, i) => (
-                <option key={id} value={id} disabled={deletingImport === id}>
-                  {deletingImport === id ? 'Удаление...' : `Импорт ${imports.length - i} (${txs.filter(t => t.import_id === id).length} операций)`}
-                </option>
-              ))}
-            </select>
-          )}
-          <input ref={fileRef} type="file" accept=".pdf,image/*" style={{ display: 'none' }}
-            onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = '' }}
-          />
-          <button onClick={() => fileRef.current?.click()} disabled={uploading}
-            style={{ padding: '7px 16px', borderRadius: 8, border: 'none', background: '#4f6ef7', color: '#fff', fontSize: 13, fontWeight: 600, cursor: uploading ? 'default' : 'pointer', opacity: uploading ? 0.7 : 1, fontFamily: 'inherit' }}>
-            {uploading ? 'Распознаю...' : '+ Загрузить выписку'}
-          </button>
-        </div>
-      </div>
-
-      {matchResult && (
-        <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 8, padding: '10px 14px', color: '#16a34a', fontSize: 13 }}>
-          {matchResult}
-        </div>
-      )}
-      {parseError && (
-        <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', color: '#ef4444', fontSize: 12, whiteSpace: 'pre-wrap', fontFamily: 'monospace', maxHeight: 200, overflowY: 'auto' }}>
-          {parseError}
-        </div>
-      )}
-
-      {/* Table grouped by date */}
-      <div style={{ background: '#fff', border: '1px solid #e8ebf3', borderRadius: 9, overflow: 'hidden' }}>
-        {loading ? (
-          <div style={{ padding: 24, color: '#8596b4', fontSize: 14, textAlign: 'center' }}>Загрузка...</div>
-        ) : filtered.length === 0 ? (
-          <div style={{ padding: 40, color: '#8596b4', fontSize: 14, textAlign: 'center' }}>
-            {txs.length === 0 ? 'Загрузите банковскую выписку (PDF)' : 'Нет транзакций'}
-          </div>
-        ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-            <thead>
-              <tr style={{ background: '#f8f9fb' }}>
-                {['Дата', 'Тип', 'Контрагент', 'Назначение', 'Сумма', 'Статус'].map(h => (
-                  <th key={h} style={{ padding: '9px 12px', textAlign: 'left', fontWeight: 600, color: '#8596b4', borderBottom: '1px solid #e8ebf3', fontSize: 12 }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {dates.map(date => {
-                const rows = byDate[date]
-                const dayCredit = rows.filter(r => r.direction === 'credit').reduce((s, r) => s + r.amount, 0)
-                const dayDebit = rows.filter(r => r.direction === 'debit').reduce((s, r) => s + r.amount, 0)
-                return [
-                  <tr key={'d-' + date} style={{ background: '#f8f9fb', borderBottom: '1px solid #e8ebf3' }}>
-                    <td colSpan={3} style={{ padding: '5px 12px', fontWeight: 700, color: '#1a2240', fontSize: 12 }}>
-                      {FMTD(date)}
-                    </td>
-                    <td colSpan={3} style={{ padding: '5px 12px', fontSize: 11, color: '#8596b4', textAlign: 'right' }}>
-                      {dayCredit > 0 && <span style={{ color: '#16a34a', marginRight: 10 }}>+{FMT(dayCredit)} ₽</span>}
-                      {dayDebit > 0 && <span style={{ color: '#ef4444' }}>−{FMT(dayDebit)} ₽</span>}
-                    </td>
-                  </tr>,
-                  ...rows.map(t => (
-                    <tr key={t.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
-                      <td style={{ padding: '8px 12px', color: '#bbc4d6', fontSize: 11, whiteSpace: 'nowrap', paddingLeft: 24 }}>
-                        {new Date(t.date).toLocaleDateString('ru-RU')}
-                      </td>
-                      <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>
-                        <span style={{
-                          fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 8,
-                          background: t.direction === 'credit' ? '#dcfce7' : '#fee2e2',
-                          color: t.direction === 'credit' ? '#16a34a' : '#ef4444',
-                        }}>
-                          {t.direction === 'credit' ? '↓ Приход' : '↑ Расход'}
-                        </span>
-                      </td>
-                      <td style={{ padding: '8px 12px', fontWeight: 500, color: '#1a2240', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {t.counterparty || '—'}
-                      </td>
-                      <td style={{ padding: '8px 12px', color: '#374151', maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {t.description || '—'}
-                      </td>
-                      <td style={{ padding: '8px 12px', fontWeight: 700, whiteSpace: 'nowrap', color: t.direction === 'credit' ? '#16a34a' : '#ef4444' }}>
-                        {t.direction === 'credit' ? '+' : '−'}{FMT(t.amount)} ₽
-                      </td>
-                      <td style={{ padding: '8px 12px' }}>
-                        {t.matched_type && t.matched_type !== 'ignored' ? (
-                          <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 8, background: '#eff3ff', color: '#4f6ef7', fontWeight: 600 }}>
-                            ✓ {t.matched_type === 'invoice' ? 'Счёт' : t.matched_type === 'tenant' ? 'Аренда' : t.matched_type}
-                          </span>
-                        ) : t.matched_type === 'ignored' ? (
-                          <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 8, background: '#f3f4f6', color: '#9ca3af', fontWeight: 600 }}>Пропущено</span>
-                        ) : (
-                          <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 8, background: '#fffbeb', color: '#d97706', fontWeight: 600 }}></span>
-                        )}
-                      </td>
-                    </tr>
-                  ))
-                ]
-              })}
-            </tbody>
-          </table>
+      {txs === null ? <Loading /> : <>
+        {tab === 'in' && <Card pad={false}><Table rows={credits} rowKey={t => t.id} cols={txCols(true)} empty="Поступлений за период нет. Загрузите выписку." /></Card>}
+        {tab === 'out' && <Card pad={false}><Table rows={debits} rowKey={t => t.id} cols={txCols(false)} empty="Списаний за период нет" /></Card>}
+        {tab === 'unrec' && (
+          <Card pad={false} title="Плательщик не определён" actions={unrec.length > 0 && <Button small disabled={busy} onClick={askAi}>Подсказать по названиям</Button>}>
+            <Table rows={unrec} rowKey={t => t.id} empty="Все поступления разобраны" cols={[
+              ...txCols(false).filter(c => c.key !== 's'),
+              { key: 'x', title: '', render: (t: Tx) => {
+                const h = hints[t.id]; const ht = h?.tenant_id ? tenants.find(x => x.id === h.tenant_id) : null
+                return (
+                  <div style={{ display: 'grid', gap: 4, justifyItems: 'end' }}>
+                    {ht && <div style={{ fontSize: 12, color: C.muted, textAlign: 'right' }}>Похоже: <b>{ht.full_name}</b></div>}
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      <Button small kind="primary" onClick={() => setAssign({ tx: t, tenant: ht?.id })}>Зачислить</Button>
+                      <Button small kind="ghost" onClick={() => setAssign({ tx: t, note: '' })}>Не арендатор</Button>
+                    </div>
+                  </div>
+                )
+              } },
+            ]} />
+          </Card>
         )}
-      </div>
-    </div>
+        {tab === 'files' && (
+          <Card pad={false}>
+            <Table rows={files} rowKey={f => f.id} empty="Выписки ещё не загружались" cols={[
+              { key: 'd', title: 'Загружена', render: f => dateRu(f.created_at) },
+              { key: 'p', title: 'Период', render: f => `${dateRu(f.date_from)} — ${dateRu(f.date_to)}` },
+              { key: 'a', title: 'Счёт', render: f => '…' + f.account.slice(-4) },
+              { key: 'o', title: 'Остаток на начало', align: 'right', render: f => f.opening == null ? '—' : money(f.opening) },
+              { key: 'i', title: 'Поступило', align: 'right', render: f => f.total_in == null ? '—' : money(f.total_in) },
+              { key: 'x', title: 'Списано', align: 'right', render: f => f.total_out == null ? '—' : money(f.total_out) },
+              { key: 'c', title: 'Остаток на конец', align: 'right', render: f => f.closing == null ? '—' : money(f.closing) },
+              { key: 'n', title: 'Операций', align: 'right', render: f => `${f.added}${f.skipped ? ` (+${f.skipped} повтор)` : ''}` },
+              { key: 's', title: 'Сверка', render: f => f.check_status === 'ok' ? <Badge tone="green">сошлась</Badge> : <><Badge tone="red">расхождение</Badge><div style={{ fontSize: 12, color: C.red, marginTop: 2 }}>{f.check_note}</div></> },
+            ]} />
+          </Card>
+        )}
+      </>}
+
+      {assign && assign.note === undefined && (
+        <AssignDialog tx={assign.tx} tenants={tenants} initial={assign.tenant} onClose={() => setAssign(null)} onDone={() => { setAssign(null); load() }} />
+      )}
+      {assign && assign.note !== undefined && (
+        <IgnoreDialog tx={assign.tx} onClose={() => setAssign(null)} onDone={() => { setAssign(null); load() }} />
+      )}
+    </Page>
+  )
+}
+
+function AssignDialog({ tx, tenants, initial, onClose, onDone }: { tx: Tx; tenants: { id: string; full_name: string; inn: string | null }[]; initial?: string; onClose: () => void; onDone: () => void }) {
+  const [tenant, setTenant] = useState(initial || '')
+  const [q, setQ] = useState('')
+  const [remember, setRemember] = useState(true)
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  const shown = tenants.filter(t => !q || t.full_name.toLowerCase().includes(q.toLowerCase()) || (t.inn || '').includes(q))
+  async function go() {
+    setBusy(true); setError('')
+    try { await rpc('bank_assign', { p_tx: tx.id, p_tenant: tenant, p_remember: remember }); onDone() } catch (e: any) { setError(e.message) }
+    setBusy(false)
+  }
+  return (
+    <Modal title={`Зачислить ${money(tx.amount)} от ${tx.counterparty || 'плательщика'}`} onClose={onClose}
+      footer={<><Button onClick={onClose}>Отмена</Button><Button kind="primary" disabled={!tenant || busy} onClick={go}>Зачислить</Button></>}>
+      <div style={{ fontSize: 13, color: C.muted }}>{tx.description}</div>
+      <Field label="Арендатор">
+        <input style={inputStyle} placeholder="Поиск по названию или ИНН" value={q} onChange={e => setQ(e.target.value)} />
+        <select style={inputStyle} size={6} value={tenant} onChange={e => setTenant(e.target.value)}>
+          {shown.map(t => <option key={t.id} value={t.id}>{t.full_name}{t.inn ? ` · ${t.inn}` : ''}</option>)}
+        </select>
+      </Field>
+      <label style={{ display: 'flex', gap: 8, fontSize: 13 }}><input type="checkbox" checked={remember} onChange={e => setRemember(e.target.checked)} /> Запомнить плательщика: его следующие платежи зачислятся этому арендатору сами</label>
+      <Notice>Деньги зачисляются целиком и сами гасят долги арендатора по очереди; остаток станет авансом.</Notice>
+      {error && <Notice tone="red">{error}</Notice>}
+    </Modal>
+  )
+}
+
+function IgnoreDialog({ tx, onClose, onDone }: { tx: Tx; onClose: () => void; onDone: () => void }) {
+  const [note, setNote] = useState('')
+  const [error, setError] = useState('')
+  async function go() {
+    try { await rpc('bank_ignore', { p_tx: tx.id, p_note: note }); onDone() } catch (e: any) { setError(e.message) }
+  }
+  return (
+    <Modal title="Поступление не от арендатора" onClose={onClose} footer={<><Button onClick={onClose}>Отмена</Button><Button kind="primary" onClick={go}>Отметить</Button></>}>
+      <div style={{ fontSize: 13, color: C.muted }}>{money(tx.amount)} · {tx.counterparty} · {tx.description}</div>
+      <Field label="Что это"><input style={inputStyle} value={note} onChange={e => setNote(e.target.value)} placeholder="Например: возврат от поставщика, проценты банка" autoFocus /></Field>
+      {error && <Notice tone="red">{error}</Notice>}
+    </Modal>
   )
 }
