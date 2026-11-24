@@ -56,7 +56,7 @@ npx vercel alias admin-XXXX-vizbl.vercel.app mayak-xi.vercel.app
 ## 4. Текущее состояние
 
 - 23.11.2026 на прод выложен этап 1 ТЗ v2 (безопасность): сборка `admin-f9qkh5qek`, адрес `mayak-xi.vercel.app` переключён и проверен. Миграции `20260920_site.sql`, `20261122_schema_fixes.sql`, `20261123_security.sql`, `20261124_roles.sql` применены.
-- В Vercel заданы `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_KEY`, `ONEC_TOKEN`, `APP_URL`, `ANTHROPIC_API_KEY`. `RESEND_API_KEY` добавлен 23.11.2026; домен `mayak-d.ru` подтверждён в Resend (команда vizbl, регион eu-west-1), письмо сброса пароля с прода доставлено. Нет `OPENAI_API_KEY` — не работают база знаний с поиском и чат GPT.
+- В Vercel заданы `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_KEY`, `ONEC_TOKEN`, `APP_URL`, `ANTHROPIC_API_KEY`. `RESEND_API_KEY` добавлен 23.11.2026; домен `mayak-d.ru` подтверждён в Resend (команда vizbl, регион eu-west-1), письмо сброса пароля с прода доставлено. `ANTHROPIC_API_KEY` заменён 23.11.2026 (прежний был недействителен и все ИИ-функции молча не работали); ключ `mayak-admin` выпущен в организации Claude Console «Vizbl Systems», расходы идут с её баланса. Нет `OPENAI_API_KEY` — не работают база знаний с поиском и чат GPT.
 - Выгрузка 1С `o.mayak-d.ru/export/debts.xml` 23.11.2026 отвечала 504; взаиморасчёты и сальдо арендаторов не обновлены (в `ledger_entries` данные по 31.08.2026, `tenant_balances` пуст).
 - В Supabase остаётся включённой свободная регистрация (Auth → Sign In / Providers → Allow new users to sign up). Зарегистрировавшийся без приглашения не получает ни одной строки, но настройку стоит выключить.
 - Локальные коммиты не запушены в GitHub, если ниже не сказано иное.
