@@ -33,7 +33,7 @@ Vercel: проект админки `admin` (id `prj_Wnyag661KrToLImCh9gBjK6g1Ns
 
 1С: выгрузка долгов берётся с `https://o.mayak-d.ru/export/debts.xml`. Токен — переменная `ONEC_TOKEN` (локально в `.env.local`, на проде в Vercel); в коде его нет, но он остался в истории git — при случае перевыпустить на стороне 1С. Разбор выгрузки — `api/_lib/onec.js`.
 
-Переменные окружения серверных функций: `VITE_SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `ONEC_TOKEN`, `APP_URL` (адрес прода для ссылок в письмах), `RESEND_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, необязательно `MAIL_FROM`.
+Переменные окружения серверных функций: `VITE_SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `ONEC_TOKEN`, `APP_URL` (адрес прода для ссылок в письмах), `RESEND_API_KEY`, `ANTHROPIC_API_KEY`, необязательно `MAIL_FROM`.
 
 ## 3. Запуск и деплой
 
