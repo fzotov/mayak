@@ -110,19 +110,15 @@ ${txList}
       const innMatched = inn.length >= 10 && new RegExp(`(^|\\D)${inn}(\\D|$)`).test(haystack)
       m.auto = !!(tx && tenant && innMatched)
       if (m.auto) {
-        const [payment] = await sb('payments', {
+        // Поступление проводится функцией учётного ядра: деньги зачисляются арендатору и гасят долги по очереди.
+        const paymentId = await sb('rpc/post_payment', {
           method: 'POST',
           body: JSON.stringify({
-            tenant_id: m.tenant_id,
-            date: tx.date,
-            amount: tx.amount,
-            type: m.type || 'payment',
-            description: tx.description || tx.counterparty || '',
-            bank_transaction_id: tx.id,
-            invoice_id: m.invoice_id || null,
-            note: m.note || null,
+            p_tenant: m.tenant_id, p_date: tx.date, p_amount: Math.abs(Number(tx.amount)), p_source: 'bank',
+            p_purpose: tx.description || tx.counterparty || null, p_bank_tx: tx.id,
           })
         })
+        const payment = { id: paymentId }
         // Update bank transaction
         await sb(`bank_transactions?id=eq.${tx.id}`, {
           method: 'PATCH',

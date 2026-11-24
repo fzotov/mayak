@@ -132,6 +132,8 @@ alter table public.payments add constraint payments_source_check check (source i
 alter table public.payments drop constraint if exists payments_amount_check;
 alter table public.payments add constraint payments_amount_check check (amount > 0);
 create unique index if not exists payments_storno_uq on public.payments (storno_of) where storno_of is not null;
+-- одна банковская операция зачисляется не больше одного раза
+create unique index if not exists payments_bank_tx_uq on public.payments (bank_transaction_id) where bank_transaction_id is not null;
 create index if not exists payments_tenant_idx on public.payments (tenant_id);
 
 create table if not exists public.deposit_operations (

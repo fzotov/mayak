@@ -127,7 +127,6 @@ export default function HeatPage() {
   const [aiMsg, setAiMsg] = useState('')
   const [calculated, setCalculated] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [invoicing, setInvoicing] = useState(false)
   const [doneMsg, setDoneMsg] = useState('')
 
   useEffect(() => { loadAll() }, [])
@@ -239,37 +238,9 @@ export default function HeatPage() {
     }).select().single()
     if (error || !bill) { alert('Ошибка сохранения: ' + (error?.message ?? 'нет данных')); setSaving(false); return }
 
-    const periodYear = parseInt(period.split('-')[0])
-    const periodMonthIdx = parseInt(period.split('-')[1]) - 1
-
-    if (createInvoices) {
-      setInvoicing(true)
-      const { data: lastInv } = await supabase.from('invoices').select('number').like('number', `${periodYear}-%`).order('number', { ascending: false }).limit(1)
-      let seq = lastInv?.[0]?.number ? Number(lastInv[0].number.split('-')[1]) + 1 : 1
-
-      const withTenant = items.filter(i => i.tenant_id)
-      const { error: invErr } = await supabase.from('invoices').insert(
-        withTenant.map(item => ({
-          number: `${periodYear}-${String(seq++).padStart(3, '0')}`,
-          period,
-          due_date: period + '-25',
-          status: 'draft',
-          tenant_id: item.tenant_id,
-          unit_id: item.unit_id,
-          rent_amount: 0,
-          cleaning_amount: 0,
-          utilities_amount: item.amount_final,
-          services_amount: 0,
-          total_amount: item.amount_final,
-          notes: `Тепло ${MONTHS[periodMonthIdx]} ${periodYear}`,
-        }))
-      )
-      setInvoicing(false)
-      if (invErr) { alert('Ошибка создания счетов: ' + invErr.message); setSaving(false); return }
-      setDoneMsg(`✓ Сохранено и создано ${withTenant.length} счетов в разделе Счета`)
-    } else {
-      setDoneMsg('✓ Расчёт сохранён в истории')
-    }
+    // Начисления за тепло создаёт биллинг по этому распределению (статья «Тепло»), отдельные счета здесь не заводятся.
+    setDoneMsg('Расчёт сохранён. Тепло войдёт в счета арендаторов при проведении биллинга за этот месяц.')
+    if (createInvoices) { setSaving(false); window.location.hash = '/billing'; return }
 
     await loadAll()
     setSaving(false)
@@ -410,9 +381,9 @@ export default function HeatPage() {
                     style={{ padding: '7px 14px', border: '1px solid #e8ebf3', borderRadius: 7, background: '#fff', color: '#374151', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', opacity: saving ? 0.5 : 1 }}>
                     {saving ? 'Сохранение...' : 'Сохранить расчёт'}
                   </button>
-                  <button onClick={() => saveCalculation(true)} disabled={saving || invoicing}
-                    style={{ padding: '7px 16px', border: 'none', borderRadius: 7, background: '#16a34a', color: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', opacity: saving || invoicing ? 0.5 : 1 }}>
-                    {invoicing ? 'Создание...' : `Сформировать счета (${items.filter(i => i.tenant_id).length})`}
+                  <button onClick={() => saveCalculation(true)} disabled={saving}
+                    style={{ padding: '7px 16px', border: 'none', borderRadius: 7, background: '#16a34a', color: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', opacity: saving ? 0.5 : 1 }}>
+                    Сохранить и открыть биллинг
                   </button>
                 </>
               )}

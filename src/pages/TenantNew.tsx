@@ -39,7 +39,15 @@ export function TenantNewPage({ onBack, onSaved }: { onBack: () => void; onSaved
       if (unit.number && tenant) {
         const { data: u } = await supabase.from('units').insert({ tenant_id: tenant.id, number: unit.number, floor: parseInt(unit.floor), area: parseFloat(unit.area)||0, rent: parseFloat(unit.rent)||0, cleaning: parseFloat(unit.cleaning)||2500 }).select().single()
         if (lease.start_date && u) {
-          await supabase.from('leases').insert({ tenant_id: tenant.id, unit_id: u.id, start_date: lease.start_date, end_date: lease.end_date, rent: parseFloat(unit.rent)||0, deposit: parseFloat(lease.deposit)||0, status: 'ACTIVE' })
+          // Договор со строками: по ним биллинг начисляет аренду и уборку каждый месяц.
+          const { data: l, error: le } = await supabase.from('leases').insert({ tenant_id: tenant.id, unit_id: u.id, start_date: lease.start_date, end_date: lease.end_date || null,
+            deposit_required: parseFloat(lease.deposit) || 0, status: 'active' }).select('id').single()
+          if (le) throw le
+          const lines = [
+            { lease_id: l.id, article_code: 'RENT', unit_id: u.id, unit_label: unit.number, area: parseFloat(unit.area) || null, amount: parseFloat(unit.rent) || 0, valid_from: lease.start_date },
+            { lease_id: l.id, article_code: 'CLEAN', unit_id: u.id, unit_label: unit.number, amount: parseFloat(unit.cleaning) || 0, valid_from: lease.start_date },
+          ].filter(x => x.amount > 0)
+          if (lines.length) { const { error: lle } = await supabase.from('lease_lines').insert(lines); if (lle) throw lle }
         }
       }
       onSaved()

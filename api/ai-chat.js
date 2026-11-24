@@ -31,10 +31,10 @@ export default async function handler(req, res) {
 
     const [tenants, overdueInvs, expContracts, openTasks, recentInvs, units, balances, kbArticles] = await Promise.all([
       sb('tenants?select=full_name,type,inn,monthly_rent,contract_end_date,email,phone&order=full_name'),
-      sb('invoices?select=number,total_amount,period,tenants(full_name),units(number)&status=eq.OVERDUE&order=created_at&limit=10'),
-      sb(`contracts?select=number,end_date,tenants(full_name)&end_date=gte.${today}&end_date=lte.${in30}&order=end_date`),
+      sb('v_invoice_state?select=number,open_amount,period,due_date,tenant_name&pay_status=in.(overdue,partial_overdue)&order=due_date&limit=30'),
+      sb(`leases?select=number,end_date,tenants(full_name)&status=eq.active&end_date=gte.${today}&end_date=lte.${in30}&order=end_date`),
       sb('tasks?select=title,status,priority,source&status=in.(open,in_progress)&order=created_at.desc&limit=10'),
-      sb(`invoices?select=number,total_amount,status,period,tenants(full_name)&period=gte.${monthStart}&order=created_at.desc&limit=15`),
+      sb(`v_invoice_state?select=number,total,paid,pay_status&period=eq.${monthStart.slice(0, 7)}`),
       sb('units?select=number,floor,area,status,rent_rate&order=number'),
       sb('tenant_balances?select=debt,advance,as_of,tenants(full_name)&order=debt.desc&limit=30'),
       sb('kb_articles?select=title,content,category&order=created_at.desc&limit=300'),
@@ -48,8 +48,8 @@ export default async function handler(req, res) {
 
     const occupiedUnits = (Array.isArray(units) ? units : []).filter(u => u.status === 'occupied').length
     const totalUnits = (Array.isArray(units) ? units : []).length
-    const overdueTotal = (Array.isArray(overdueInvs) ? overdueInvs : []).reduce((s, i) => s + (i.total_amount || 0), 0)
-    const monthRevenue = (Array.isArray(recentInvs) ? recentInvs : []).filter(i => ['SENT','PAID'].includes(i.status)).reduce((s, i) => s + (i.total_amount || 0), 0)
+    const overdueTotal = (Array.isArray(overdueInvs) ? overdueInvs : []).reduce((s, i) => s + Number(i.open_amount || 0), 0)
+    const monthRevenue = (Array.isArray(recentInvs) ? recentInvs : []).reduce((s, i) => s + Number(i.total || 0), 0)
 
     const freeUnits = (Array.isArray(units) ? units : []).filter(u => u.status === 'free')
     const freeLines = freeUnits.map(u => `• №${u.number}, ${u.floor ?? '?'} этаж, ${u.area ?? '?'} м²${u.rent_rate ? `, ставка ${fmt(u.rent_rate)} ₽/м²` : ''}`).join('\n')
@@ -61,7 +61,7 @@ export default async function handler(req, res) {
     ).join('\n')
 
     const overdueLines = (Array.isArray(overdueInvs) ? overdueInvs : []).map(i =>
-      `• ${i.tenants?.full_name || '—'} офис ${i.units?.number || '—'}: ${fmt(i.total_amount)} ₽ (счёт №${i.number})`
+      `• ${i.tenant_name || '—'}: не оплачено ${fmt(i.open_amount)} ₽ по счёту №${i.number}, срок был ${i.due_date}`
     ).join('\n')
 
     const expiringLines = (Array.isArray(expContracts) ? expContracts : []).map(c =>
@@ -90,7 +90,7 @@ ${freeLines || 'Свободных помещений нет'}
 ${debtLines || 'Сальдо из 1С ещё не загружено'}
 
 ### Финансы за текущий месяц
-Выручка: ${fmt(monthRevenue)} ₽
+Выставлено счетов за месяц: ${fmt(monthRevenue)} ₽
 Просрочено счетов: ${(Array.isArray(overdueInvs) ? overdueInvs : []).length} шт. на сумму ${fmt(overdueTotal)} ₽
 
 ### Арендаторы (${(Array.isArray(tenants) ? tenants : []).length} всего)

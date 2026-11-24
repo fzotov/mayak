@@ -3,9 +3,21 @@ import { supabase } from '../../lib/supabase'
 import { useTenant } from './useTenant'
 import { OpRow } from './TenantDashboard'
 import { T, Card, Title, Row, Badge, Loading, Empty, money, date, page } from './ui'
+import { printInvoice } from '../../lib/invoicePrint'
 
 const INV_STATUS: Record<string, { t: string; tone: 'ok' | 'warn' | 'bad' | 'muted' }> = {
-  sent: { t: 'выставлен', tone: 'warn' }, overdue: { t: 'просрочен', tone: 'bad' }, paid: { t: 'оплачен', tone: 'ok' },
+  unpaid: { t: 'ожидает оплаты', tone: 'warn' }, partial: { t: 'оплачен частично', tone: 'warn' },
+  overdue: { t: 'просрочен', tone: 'bad' }, partial_overdue: { t: 'частично, просрочен', tone: 'bad' }, paid: { t: 'оплачен', tone: 'ok' },
+}
+
+/** Печатная форма счёта с QR для оплаты — те же данные, что видит бухгалтер. */
+async function downloadInvoice(inv: any, tenant: any, landlord: any) {
+  const { data: lines } = await supabase.from('v_charge_state').select('description, article_name, effective_amount, reversed').eq('invoice_id', inv.id)
+  await printInvoice({
+    number: inv.number, date: inv.date, tenantName: tenant?.full_name || '', tenantInn: tenant?.inn, basis: 'Договор аренды нежилого помещения',
+    lines: (lines || []).filter((l: any) => !l.reversed).map((l: any) => ({ name: l.description || l.article_name, amount: Number(l.effective_amount) })),
+    balanceNote: Number(inv.paid) > 0 ? `Оплачено ранее: ${money(inv.paid)}.` : null, toPay: Number(inv.open_amount),
+  }, landlord)
 }
 
 /** Расчёты: сальдо, реквизиты для оплаты, счета и история операций из бухгалтерии. */
@@ -25,8 +37,8 @@ export default function TenantInvoices({ tenantId }: { tenantId: string }) {
         setOps(all.filter(o => !String(o.id).startsWith('doc_')))
         setOpening(all.filter(o => String(o.id).startsWith('doc_')))
       })
-    supabase.from('invoices').select('id,number,period,total_amount,status,due_date').eq('tenant_id', tenantId)
-      .order('created_at', { ascending: false }).then(({ data }) => setInvoices(data || []))
+    supabase.from('v_invoice_state').select('id,number,date,period,due_date,total,paid,open_amount,pay_status').eq('tenant_id', tenantId)
+      .order('date', { ascending: false }).limit(24).then(({ data }) => setInvoices(data || []))
     supabase.from('landlords').select('*').order('is_default', { ascending: false }).limit(1).then(({ data }) => setLandlord(data?.[0] || null))
   }, [tenantId])
 
@@ -65,15 +77,16 @@ export default function TenantInvoices({ tenantId }: { tenantId: string }) {
         <Card>
           <Title>Счета</Title>
           {invoices.map(i => {
-            const s = INV_STATUS[String(i.status).toLowerCase()] || { t: i.status, tone: 'muted' as const }
+            const s = INV_STATUS[i.pay_status] || { t: i.pay_status, tone: 'muted' as const }
             return (
               <div key={i.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '11px 0', borderTop: `1px solid ${T.border}` }}>
                 <div>
                   <div style={{ fontSize: 14 }}>№ {i.number} · {i.period}</div>
-                  <div style={{ fontSize: 12, color: T.muted, marginTop: 2 }}>оплатить до {date(i.due_date)}</div>
+                  <div style={{ fontSize: 12, color: T.muted, marginTop: 2 }}>оплатить до {date(i.due_date)}{Number(i.open_amount) > 0 && Number(i.open_amount) < Number(i.total) ? ` · осталось ${money(i.open_amount)}` : ''}</div>
+                  {landlord && <button onClick={() => downloadInvoice(i, tenant, landlord)} style={{ marginTop: 6, background: 'none', border: 0, padding: 0, color: T.accent, fontSize: 13, cursor: 'pointer', fontFamily: T.font }}>Счёт с QR для оплаты</button>}
                 </div>
                 <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: 14, fontVariantNumeric: 'tabular-nums', marginBottom: 4 }}>{money(i.total_amount)}</div>
+                  <div style={{ fontSize: 14, fontVariantNumeric: 'tabular-nums', marginBottom: 4 }}>{money(i.total)}</div>
                   <Badge tone={s.tone}>{s.t}</Badge>
                 </div>
               </div>

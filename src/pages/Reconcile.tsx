@@ -119,6 +119,10 @@ export default function ReconcilePage() {
 
   async function confirmCreditMatch(tx: BankTx, tenant: Tenant) {
     setSaving(tx.id)
+    // Поступление проводится в расчёты арендатора и само закрывает долги по очереди погашения.
+    const { error } = await supabase.rpc('post_payment', { p_tenant: tenant.id, p_date: tx.date, p_amount: Math.abs(Number(tx.amount)), p_source: 'bank',
+      p_purpose: (tx as any).description || (tx as any).counterparty || null, p_bank_tx: tx.id })
+    if (error) { alert('Оплата не проведена: ' + error.message); setSaving(null); return }
     await supabase.from('bank_transactions').update({ matched_type: 'tenant', matched_id: tenant.id }).eq('id', tx.id)
     await load()
     setSaving(null)

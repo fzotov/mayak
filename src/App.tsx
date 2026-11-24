@@ -7,7 +7,7 @@ import { AIAssistantPage } from './pages/AIAssistant'
 import { SettingsModal } from './pages/Settings'
 import { KnowledgeBasePage } from './pages/KnowledgeBase'
 import { TenantCardPage } from './pages/TenantCard'
-import { InvoiceDetailPage } from './pages/InvoiceDetail'
+import SettlementsPage from './pages/Settlements'
 import ReferencesPage from './pages/References'
 import { BillingPage } from './pages/Billing'
 import { TenantNewPage } from './pages/TenantNew'
@@ -34,7 +34,7 @@ import ImportTenantsPage from './pages/ImportTenants'
 import AdvertisingStele from './pages/AdvertisingStele'
 import { useRealTenants } from './lib/useRealData'
 
-type Page = 'site' | 'dashboard' | 'tenants' | 'invoices' | 'tasks' | 'ai' | 'kb' | 'tenant-card' | 'reference' | 'billing' | 'invoice-detail' | 'settings' | 'tenant-new' | 'contracts' | 'letters' | 'floorplan' | 'units' | 'meters' | 'staff' | 'inventory' | 'my-tasks' | 'repairs' | 'bank' | 'reconcile' | 'ledger' | 'heat' | 'counterparties' | 'incoming-invoices' | 'payment-calendar' | 'import-tenants' | 'stele'
+type Page = 'site' | 'dashboard' | 'tenants' | 'invoices' | 'tasks' | 'ai' | 'kb' | 'tenant-card' | 'reference' | 'billing' | 'settings' | 'tenant-new' | 'contracts' | 'letters' | 'floorplan' | 'units' | 'meters' | 'staff' | 'inventory' | 'my-tasks' | 'repairs' | 'bank' | 'reconcile' | 'ledger' | 'heat' | 'counterparties' | 'incoming-invoices' | 'payment-calendar' | 'import-tenants' | 'stele' | 'settlements'
 
 const NAV_GROUPS = [
   { label: '', items: [
@@ -53,11 +53,12 @@ const NAV_GROUPS = [
     { id: 'letters', label: 'Письма' },
   ] },
   { label: 'ФИНАНСЫ', items: [
+    { id: 'settlements', label: 'Расчёты' },
     { id: 'invoices', label: 'Счета аренд.' },
     { id: 'billing', label: 'Биллинг' },
     { id: 'bank', label: 'Банк' },
     { id: 'reconcile', label: 'Сверка' },
-    { id: 'ledger', label: 'Баланс' },
+    { id: 'ledger', label: 'Баланс 1С' },
     { id: 'incoming-invoices', label: 'Вх. счета' },
     { id: 'payment-calendar', label: 'Платежи' },
   ] },
@@ -115,6 +116,7 @@ function Dashboard() {
   const [stats, setStats] = useState({ totalUnits: 0, occupiedUnits: 0, occupancyRate: 0, totalMonthlyRevenue: 0, overdueCount: 0, overdueTotal: 0, openRepairs: 0, expiringContracts: 0 })
   const [tasks, setTasks] = useState<any[]>([])
   const [overdueInvs, setOverdueInvs] = useState<any[]>([])
+  const [ledgerProblems, setLedgerProblems] = useState(0)
   const [events, setEvents] = useState<any[]>([])
   const [hotRepairs, setHotRepairs] = useState<any[]>([])
   const [repairsLoaded, setRepairsLoaded] = useState(false)
@@ -136,18 +138,20 @@ function Dashboard() {
       })
 
     const monthStart = new Date().toISOString().slice(0, 7) + '-01'
-    supabase.from('invoices').select('total_amount,status').gte('period', monthStart)
+    supabase.from('v_invoice_state').select('total').eq('period', monthStart.slice(0, 7))
       .then(({ data }) => {
-        const rev = (data || []).filter((i: any) => ['SENT', 'PAID'].includes(i.status)).reduce((s: number, i: any) => s + (i.total_amount || 0), 0)
+        const rev = (data || []).reduce((s: number, i: any) => s + Number(i.total || 0), 0)
         setStats(s => ({ ...s, totalMonthlyRevenue: rev }))
       })
 
-    supabase.from('invoices').select('id,number,total_amount,created_at,tenants(full_name),units(number)').eq('status', 'OVERDUE').order('created_at').limit(5)
+    supabase.from('v_invoice_state').select('id,number,open_amount,due_date,tenant_name').in('pay_status', ['overdue', 'partial_overdue']).order('due_date')
       .then(({ data }) => {
         const invs = data || []
-        setOverdueInvs(invs)
-        setStats(s => ({ ...s, overdueCount: invs.length, overdueTotal: invs.reduce((sum: number, i: any) => sum + (i.total_amount || 0), 0) }))
+        setOverdueInvs(invs.slice(0, 5))
+        setStats(s => ({ ...s, overdueCount: invs.length, overdueTotal: invs.reduce((sum: number, i: any) => sum + Number(i.open_amount || 0), 0) }))
       })
+
+    supabase.rpc('verify_ledger').then(({ data, error }) => setLedgerProblems(error ? -1 : (data || []).length))
 
     supabase.from('repairs').select('id', { count: 'exact', head: true }).in('status', ['new', 'accepted', 'in_progress'])
       .then(({ count }) => setStats(s => ({ ...s, openRepairs: count || 0 })))
@@ -157,7 +161,7 @@ function Dashboard() {
 
     const today = new Date().toISOString().slice(0, 10)
     const in30 = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
-    supabase.from('contracts').select('id,number,end_date,tenants(full_name)').gte('end_date', today).lte('end_date', in30).order('end_date').limit(10)
+    supabase.from('leases').select('id,number,end_date,tenants(full_name)').eq('status', 'active').gte('end_date', today).lte('end_date', in30).order('end_date').limit(10)
       .then(({ data }) => {
         setEvents(data || [])
         setStats(s => ({ ...s, expiringContracts: data?.length || 0 }))
@@ -180,6 +184,11 @@ function Dashboard() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {ledgerProblems !== 0 && (
+        <button onClick={() => { window.location.hash = '/settlements' }} style={{ textAlign: 'left', border: '1px solid #fecaca', background: '#fef2f2', color: '#dc2626', borderRadius: 9, padding: '10px 15px', fontSize: 14, fontFamily: 'inherit', cursor: 'pointer' }}>
+          {ledgerProblems > 0 ? `Самопроверка расчётов нашла расхождения: ${ledgerProblems}. Откройте «Расчёты» → «Самопроверка».` : 'Самопроверка расчётов не выполнилась. Откройте «Расчёты» → «Самопроверка».'}
+        </button>
+      )}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8 }}>
         <KpiCard
           label="Заявки сайта"
@@ -188,7 +197,7 @@ function Dashboard() {
           color={newLeads.length ? '#4f6ef7' : undefined}
         />
         <KpiCard label="Заполняемость" value={`${stats.occupancyRate}%`} sub={`${stats.occupiedUnits} из ${stats.totalUnits} офисов`} color="#22c55e" />
-        <KpiCard label="Выручка / месяц" value={`${stats.totalMonthlyRevenue.toLocaleString('ru')} ₽`} />
+        <KpiCard label="Выставлено за месяц" value={`${stats.totalMonthlyRevenue.toLocaleString('ru')} ₽`} />
         <KpiCard label="Просрочено счетов" value={stats.overdueCount} sub={`${stats.overdueTotal.toLocaleString('ru')} ₽ долг`} color="#ef4444" />
         <KpiCard label="Открытые заявки" value={stats.openRepairs} color="#f59e0b" />
         <KpiCard label="Истекают договоры" value={stats.expiringContracts} sub="в течение 30 дней" color="#f59e0b" />
@@ -252,11 +261,11 @@ function Dashboard() {
             : overdueInvs.map((inv: any) => (
               <div key={inv.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid #f0f2f8' }}>
                 <div>
-                  <div style={{ fontSize: 14, fontWeight: 500, color: '#1a2240' }}>{inv.tenants?.full_name || '—'}</div>
-                  <div style={{ fontSize: 12, color: '#8596b4' }}>Офис {inv.units?.number || '—'} · №{inv.number}</div>
+                  <div style={{ fontSize: 14, fontWeight: 500, color: '#1a2240' }}>{inv.tenant_name || '—'}</div>
+                  <div style={{ fontSize: 12, color: '#8596b4' }}>№{inv.number} · срок {new Date(inv.due_date).toLocaleDateString('ru-RU')}</div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: '#ef4444' }}>{(inv.total_amount || 0).toLocaleString('ru')} ₽</div>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: '#ef4444' }}>{Number(inv.open_amount || 0).toLocaleString('ru')} ₽</div>
                 </div>
               </div>
             ))
@@ -467,10 +476,10 @@ function Tenants({ onOpenTenant, onAddTenant }: { onOpenTenant: (id: string) => 
 const PAGE_TITLES: Record<string, string> = {
   dashboard: 'Сводка дня', tenants: 'Арендаторы', invoices: 'Счета арендаторов', tasks: 'Задачи', ai: 'AI-ассистент',
   kb: 'База знаний', reference: 'Справочники', billing: 'Биллинг', 'my-tasks': 'Мои задачи', repairs: 'Заявки на ремонт',
-  contracts: 'Договоры', letters: 'Письма', bank: 'Банк', reconcile: 'Сверка', ledger: 'Взаиморасчёты', heat: 'Тепло',
+  contracts: 'Договоры', letters: 'Письма', bank: 'Банк', reconcile: 'Сверка', ledger: 'Баланс по 1С', settlements: 'Расчёты', heat: 'Тепло',
   meters: 'Счётчики', staff: 'Сотрудники', inventory: 'Инвентарь', 'tenant-card': 'Карточка арендатора', 'tenant-new': 'Новый арендатор',
   stele: 'Рекламная стела', counterparties: 'Контрагенты', floorplan: 'План этажей', site: 'Сайт и заявки', units: 'Помещения',
-  'incoming-invoices': 'Входящие счета', 'payment-calendar': 'Платёжный календарь', 'invoice-detail': 'Счёт', 'import-tenants': 'Импорт арендаторов',
+  'incoming-invoices': 'Входящие счета', 'payment-calendar': 'Платёжный календарь', 'import-tenants': 'Импорт арендаторов',
 }
 const ROLE_LABEL: Record<string, string> = { owner: 'Владелец', manager: 'Управляющий' }
 
@@ -484,7 +493,6 @@ export default function App() {
   const [route, setRoute] = useState(readRoute)
   const page = route.page
   const selectedTenantId = route.id
-  const [selectedInvoice, setSelectedInvoice] = useState<any>(null)
   const [showSettings, setShowSettings] = useState(false)
   const [user, setUser] = useState<any>(null)
   // undefined — проверяем; null — входа нет или нет прав
@@ -534,7 +542,7 @@ export default function App() {
   if (!profile) return <AuthPage denied onLogin={loadUser} />
 
   const groups = NAV_GROUPS
-  const activeNav = page === 'tenant-card' || page === 'tenant-new' || page === 'import-tenants' ? 'tenants' : page === 'invoice-detail' ? 'invoices' : page
+  const activeNav = page === 'tenant-card' || page === 'tenant-new' || page === 'import-tenants' ? 'tenants' : page
   const initials = (profile.full_name || user.email || '?').split(/\s+/).map((w: string) => w[0]).join('').slice(0, 2).toUpperCase()
 
   const sidebar = (
@@ -591,7 +599,8 @@ export default function App() {
         <main style={{ flex: 1, padding: narrow ? 14 : 24, overflowX: 'auto' }}>
           <>
           {page === 'dashboard' && <Dashboard />}
-          {page === 'invoices' && <InvoicesPage onOpenInvoice={(inv) => { setSelectedInvoice(inv); setPage('invoice-detail') }} />}
+          {page === 'invoices' && <InvoicesPage invoiceId={route.id} />}
+          {page === 'settlements' && <SettlementsPage tenantId={route.id} />}
           {page === 'tenants' && <Tenants onOpenTenant={(id) => setPage('tenant-card', id)} onAddTenant={() => setPage('tenant-new')} />}
           {page === 'tasks' && <TasksPage />}
           {page === 'ai' && <AIAssistantPage />}
@@ -602,7 +611,7 @@ export default function App() {
           {page === 'tenant-new' && <TenantNewPage onBack={() => setPage('tenants')} onSaved={() => setPage('tenants')} />}
           {page === 'my-tasks' && <MyTasksPage />}
           {page === 'repairs' && <RepairsPage />}
-          {page === 'contracts' && <ContractsPage />}
+          {page === 'contracts' && <ContractsPage leaseId={route.id} />}
           {page === 'counterparties' && <CounterpartiesPage />}
           {page === 'letters' && <LettersPage />}
           {page === 'bank' && <BankPage />}
@@ -615,9 +624,6 @@ export default function App() {
           {page === 'floorplan' && <FloorPlanPage onOpenTenant={(id) => setPage('tenant-card', id)} />}
           {page === 'units' && <UnitsPage />}
           {page === 'site' && <SiteAdminPage />}
-          {page === 'invoice-detail' && (selectedInvoice
-            ? <InvoiceDetailPage invoice={selectedInvoice} onBack={() => setPage('invoices')} />
-            : <InvoicesPage onOpenInvoice={(inv) => { setSelectedInvoice(inv); setPage('invoice-detail') }} />)}
           {page === 'import-tenants' && <ImportTenantsPage onDone={() => setPage('tenants')} />}
           {page === 'stele' && <AdvertisingStele />}
           {page === 'incoming-invoices' && <IncomingInvoicesPage />}

@@ -1,4 +1,6 @@
 import { apiFetch, openStoredFile } from '../lib/api'
+import { PAY_STATUS } from '../lib/accounting'
+import { Badge } from '../components/ui'
 import { TenantPortalAccess } from '../components/TenantPortalAccess'
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
@@ -315,7 +317,7 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
           .then(({ data: cts }) => { setContracts(cts || []); setContractsLoaded(true) })
           .catch(() => { setContracts([]); setContractsLoaded(true) })
         // Load invoices
-        Promise.resolve(supabase.from('invoices').select('id,number,period,total_amount,status,units(number)').eq('tenant_id', tenantId).order('created_at', { ascending: false }))
+        Promise.resolve(supabase.from('v_invoice_state').select('id,number,period,total,open_amount,pay_status').eq('tenant_id', tenantId).order('date', { ascending: false }))
           .then(({ data: invs }) => { setTenantInvoices(invs || []); setInvoicesLoaded(true) })
           .catch(() => { setTenantInvoices([]); setInvoicesLoaded(true) })
         // Load meters via premises units
@@ -502,46 +504,12 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
     </div>
   )
 
-  const createInvoice = async () => {
-    setCreating(true)
-    try {
-      await apiFetch('/api/billing-generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ month: invoiceMonth, year: invoiceYear }) })
-      setInvoiceCreated(true); setShowInvoiceForm(false); setTimeout(() => setInvoiceCreated(false), 3000)
-    } catch { /* ignore */ } finally { setCreating(false) }
-  }
-
   if (loadingTenant) return <div style={{ padding: 40, color: '#8596b4', fontSize: 14 }}>Загрузка...</div>
 
   return (
     <div style={{ maxWidth: 900 }}>
       {invoiceCreated && <div style={{ position: 'fixed', top: 20, right: 24, background: '#111827', color: '#fff', padding: '10px 18px', borderRadius: 8, fontSize: 14, fontWeight: 500, zIndex: 200, display: 'flex', alignItems: 'center', gap: 8 }}><span style={{ color: '#34d399' }}>✓</span> Счёт создан</div>}
       {showSuccess && <SuccessToast />}
-
-      {showInvoiceForm && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
-          <div style={{ background: '#fff', borderRadius: 12, padding: 28, width: 380, boxShadow: '0 8px 32px rgba(0,0,0,0.12)' }}>
-            <div style={{ fontSize: 15, fontWeight: 600, color: '#1a2240', marginBottom: 20 }}>Выставить счёт</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
-              <div><div style={{ fontSize: 12, color: '#8596b4', marginBottom: 5 }}>Месяц</div>
-                <select value={invoiceMonth} onChange={e => setInvoiceMonth(Number(e.target.value))} style={{ width: '100%', padding: '8px 10px', border: '1px solid #e8ebf3', borderRadius: 7, fontSize: 13, fontFamily: 'inherit', outline: 'none' }}>
-                  {MONTHS.map((m, i) => <option key={i} value={i+1}>{m}</option>)}
-                </select>
-              </div>
-              <div><div style={{ fontSize: 12, color: '#8596b4', marginBottom: 5 }}>Год</div>
-                <select value={invoiceYear} onChange={e => setInvoiceYear(Number(e.target.value))} style={{ width: '100%', padding: '8px 10px', border: '1px solid #e8ebf3', borderRadius: 7, fontSize: 13, fontFamily: 'inherit', outline: 'none' }}>
-                  {[2024,2025,2026].map(y => <option key={y}>{y}</option>)}
-                </select>
-              </div>
-            </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button onClick={() => setShowInvoiceForm(false)} style={{ flex: 1, padding: '9px', border: '1px solid #e8ebf3', borderRadius: 7, background: '#fff', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', color: '#6b7280' }}>Отмена</button>
-              <button onClick={createInvoice} disabled={creating} style={{ flex: 1, padding: '9px', border: 'none', borderRadius: 7, background: '#4f6ef7', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', color: '#fff' }}>
-                {creating ? 'Создаю...' : 'Создать счёт'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
@@ -567,7 +535,7 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
           ) : (
             <>
               <button onClick={() => setEditing(true)} style={{ padding: '7px 14px', border: '1px solid #e8ebf3', borderRadius: 7, background: '#fff', cursor: 'pointer', fontSize: 14, fontFamily: 'inherit', color: '#374151' }}>Редактировать</button>
-              <button onClick={() => onCreateInvoice?.()} style={{ padding: '7px 14px', border: 'none', borderRadius: 7, background: '#4f6ef7', cursor: 'pointer', fontSize: 14, fontFamily: 'inherit', color: '#fff', fontWeight: 500 }}>Выставить счёт</button>
+              <button onClick={() => { window.location.hash = '/settlements/' + tenantId }} style={{ padding: '7px 14px', border: 'none', borderRadius: 7, background: '#4f6ef7', cursor: 'pointer', fontSize: 14, fontFamily: 'inherit', color: '#fff', fontWeight: 500 }}>Расчёты</button>
             </>
           )}
         </div>
@@ -984,28 +952,20 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
           ) : (
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
               <thead><tr style={{ background: '#f8f9fc', borderBottom: '1px solid #e8ebf3' }}>
-                {['Номер', 'Период', 'Офис', 'Итого', 'Статус'].map(h => (
+                {['Номер', 'Период', 'Итого', 'Остаток', 'Статус'].map(h => (
                   <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 500, color: '#8596b4', fontSize: 13 }}>{h}</th>
                 ))}
               </tr></thead>
               <tbody>
                 {tenantInvoices.map((inv: any) => {
-                  const STATUS_MAP: Record<string, { label: string; bg: string; color: string }> = {
-                    DRAFT:   { label: 'Черновик', bg: '#f3f4f6', color: '#6b7280' },
-                    SENT:    { label: 'Выставлен', bg: '#eff6ff', color: '#2563eb' },
-                    OVERDUE: { label: 'Просрочен', bg: '#fee2e2', color: '#ef4444' },
-                    PAID:    { label: 'Оплачен',   bg: '#f0fdf4', color: '#16a34a' },
-                  }
-                  const st = STATUS_MAP[inv.status] || { label: inv.status, bg: '#f3f4f6', color: '#6b7280' }
+                  const st = PAY_STATUS[inv.pay_status]
                   return (
-                    <tr key={inv.id} style={{ borderBottom: '1px solid #f0f2f8' }}>
+                    <tr key={inv.id} onClick={() => { window.location.hash = '/invoices/' + inv.id }} style={{ borderBottom: '1px solid #f0f2f8', cursor: 'pointer' }}>
                       <td style={{ padding: '9px 12px', fontWeight: 500, color: '#1a2240' }}>№{inv.number}</td>
-                      <td style={{ padding: '9px 12px', color: '#6b7280' }}>{inv.period?.slice(0, 7) || '—'}</td>
-                      <td style={{ padding: '9px 12px', color: '#6b7280' }}>{inv.units?.number || '—'}</td>
-                      <td style={{ padding: '9px 12px', fontWeight: 600, color: inv.status === 'OVERDUE' ? '#ef4444' : '#1a2240' }}>{(inv.total_amount || 0).toLocaleString('ru')} ₽</td>
-                      <td style={{ padding: '9px 12px' }}>
-                        <span style={{ padding: '2px 8px', borderRadius: 10, fontSize: 13, fontWeight: 500, background: st.bg, color: st.color }}>{st.label}</span>
-                      </td>
+                      <td style={{ padding: '9px 12px', color: '#6b7280' }}>{inv.period || '—'}</td>
+                      <td style={{ padding: '9px 12px', fontWeight: 600, color: '#1a2240' }}>{Number(inv.total || 0).toLocaleString('ru')} ₽</td>
+                      <td style={{ padding: '9px 12px', color: Number(inv.open_amount) > 0 ? '#ef4444' : '#6b7280' }}>{Number(inv.open_amount || 0).toLocaleString('ru')} ₽</td>
+                      <td style={{ padding: '9px 12px' }}><Badge tone={st?.tone}>{st?.label || inv.pay_status}</Badge></td>
                     </tr>
                   )
                 })}
