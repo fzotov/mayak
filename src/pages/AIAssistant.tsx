@@ -1,5 +1,6 @@
 import { apiFetch } from '../lib/api'
 import { useState, useRef, useEffect } from 'react'
+import { C, Button, Input } from '../components/ui'
 
 interface Message { role: 'user' | 'assistant'; content: string }
 
@@ -10,6 +11,8 @@ function renderText(text: string) {
       ? <strong key={i}>{part.slice(2, -2)}</strong>
       : <span key={i}>{part}</span>)
 }
+
+const bubble: React.CSSProperties = { padding: '10px 14px', borderRadius: 10, fontSize: 14, lineHeight: 1.6, maxWidth: '80%', whiteSpace: 'pre-wrap' }
 
 export function AIAssistantPage() {
   const [messages, setMessages] = useState<Message[]>([
@@ -51,44 +54,39 @@ export function AIAssistantPage() {
   ]
 
   return (
-    <div style={{ maxWidth: 800 }}>
-      <div style={{ background: '#fff', border: '1px solid #e8ebf3', borderRadius: 12, display: 'flex', flexDirection: 'column', height: 500 }}>
+    <div style={{ maxWidth: 800, color: C.text }}>
+      <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: C.radius, display: 'flex', flexDirection: 'column', height: 500 }}>
         <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
           {messages.map((m, i) => (
             <div key={i} style={{
-              padding: '10px 14px', borderRadius: 10, fontSize: 14, lineHeight: 1.6, maxWidth: '80%',
-              background: m.role === 'user' ? '#4f6ef7' : '#f8f9fc',
-              color: m.role === 'user' ? '#fff' : '#1a2240',
-              border: m.role === 'assistant' ? '1px solid #e8ebf3' : 'none',
+              ...bubble,
+              background: m.role === 'user' ? C.accent : C.card2,
+              color: m.role === 'user' ? C.onAccent : C.text,
+              border: m.role === 'assistant' ? `1px solid ${C.line}` : 'none',
               alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start',
-              whiteSpace: 'pre-wrap',
             }}>
               {renderText(m.content)}
             </div>
           ))}
           {loading && (
-            <div style={{ padding: '10px 14px', borderRadius: 10, fontSize: 14, background: '#f8f9fc', border: '1px solid #e8ebf3', alignSelf: 'flex-start', color: '#9ca3af' }}>
+            <div style={{ ...bubble, background: C.card2, border: `1px solid ${C.line}`, alignSelf: 'flex-start', color: C.faint }}>
               Думаю…
             </div>
           )}
           <div ref={bottomRef} />
         </div>
 
-        <div style={{ padding: '12px 16px', borderTop: '1px solid #e8ebf3', display: 'flex', gap: 8 }}>
-          <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && send()}
-            placeholder="Задайте вопрос об арендаторах, счетах, договорах..."
-            style={{ flex: 1, padding: '9px 12px', border: '1px solid #e8ebf3', borderRadius: 8, fontSize: 14, fontFamily: 'inherit', outline: 'none' }} />
-          <button onClick={send} disabled={loading}
-            style={{ padding: '9px 18px', background: '#4f6ef7', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', opacity: loading ? 0.7 : 1 }}>
-            Отправить
-          </button>
+        <div style={{ padding: '12px 16px', borderTop: `1px solid ${C.line}`, display: 'flex', gap: 8 }}>
+          <Input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && send()}
+            placeholder="Задайте вопрос об арендаторах, счетах, договорах..." style={{ flex: 1 }} />
+          <Button kind="primary" onClick={send} disabled={loading}>Отправить</Button>
         </div>
       </div>
 
       <div style={{ marginTop: 10, display: 'flex', gap: 7, flexWrap: 'wrap' }}>
         {PROMPTS.map(q => (
-          <button key={q} onClick={() => setInput(q)}
-            style={{ padding: '5px 12px', background: '#fff', border: '1px solid #e8ebf3', borderRadius: 20, fontSize: 14, color: '#4f6ef7', cursor: 'pointer', fontFamily: 'inherit' }}>
+          <button key={q} type="button" onClick={() => setInput(q)}
+            style={{ padding: '5px 12px', background: C.card, border: `1px solid ${C.line}`, borderRadius: 20, fontSize: 13, color: C.accent, cursor: 'pointer', fontFamily: 'inherit' }}>
             {q}
           </button>
         ))}

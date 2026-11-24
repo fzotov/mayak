@@ -1,24 +1,21 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
+import { C, Page, Card, Row, Button, Badge, Field, Input, Select, Textarea, Search, Tabs, Modal, Notice, Loading, Empty, ErrorBox, Muted, Table, dateRu } from '../components/ui'
+import { Icon } from '../components/icons'
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
-const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
 
-const c = {
-  bg: '#f0f2f8',
-  card: '#fff',
-  accent: '#4f6ef7',
-  text: '#1a2240',
-  gray: '#8596b4',
-  border: '#e8ebf3',
+const groupHead: React.CSSProperties = { padding: '10px 16px', background: C.card2, borderBottom: `1px solid ${C.line}`, fontSize: 12, fontWeight: 600, color: C.muted, textTransform: 'uppercase', letterSpacing: '.5px' }
+
+/** Подтверждение удаления вместо confirm(). */
+function ConfirmModal({ text, onCancel, onConfirm, busy, error }: { text: string; onCancel: () => void; onConfirm: () => void; busy?: boolean; error?: string }) {
+  return (
+    <Modal title="Подтверждение" onClose={onCancel} width={420}
+      footer={<><Button onClick={onCancel}>Отмена</Button><Button kind="danger" disabled={busy} onClick={onConfirm}>{busy ? 'Удаление…' : 'Удалить'}</Button></>}>
+      <div>{text}</div>
+      {error && <Notice tone="red">{error}</Notice>}
+    </Modal>
+  )
 }
-
-const inp: React.CSSProperties = {
-  width: '100%', border: `1px solid ${c.border}`, borderRadius: 6,
-  padding: '7px 10px', fontSize: 14, fontFamily: 'inherit',
-  outline: 'none', boxSizing: 'border-box', color: c.text,
-}
-const lbl: React.CSSProperties = { fontSize: 12, color: c.gray, marginBottom: 4, display: 'block', fontWeight: 500 }
 
 // ─── ТАРИФЫ ───────────────────────────────────────────────────────────────────
 
@@ -37,11 +34,11 @@ const KEY_UNITS: Record<string, string> = {
   cleaning_price: 'руб/помещение',
 }
 const KEY_ICONS: Record<string, string> = {
-  electricity_markup: '',
-  electricity_tariff: '',
-  cold_water_tariff: '',
-  hot_water_tariff: '',
-  cleaning_price: '',
+  electricity_markup: 'meters',
+  electricity_tariff: 'meters',
+  cold_water_tariff: 'heat',
+  hot_water_tariff: 'heat',
+  cleaning_price: 'repairs',
 }
 
 interface Setting { id: string; key: string; value: number; description: string; valid_from: string; created_at: string; created_by?: string }
@@ -49,18 +46,21 @@ interface Setting { id: string; key: string; value: number; description: string;
 function TariffsSection() {
   const [settings, setSettings] = useState<Setting[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
   const [editing, setEditing] = useState<string | null>(null)
   const [newValue, setNewValue] = useState('')
   const [validFrom, setValidFrom] = useState(new Date().toISOString().slice(0, 10))
   const [saving, setSaving] = useState(false)
+  const [saveErr, setSaveErr] = useState('')
   const [success, setSuccess] = useState('')
   const [expanded, setExpanded] = useState<string | null>(null)
 
   async function fetch() {
-    const res = await window.fetch(SUPABASE_URL + '/rest/v1/settings?order=key,valid_from.desc', {
-      headers: { apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY }
-    })
-    setSettings(await res.json())
+    setError('')
+    // тарифы читаются от имени вошедшего сотрудника (без входа таблица закрыта)
+    const { data, error } = await supabase.from('settings').select('*').order('key').order('valid_from', { ascending: false })
+    if (error) { setError('Не удалось загрузить тарифы: ' + error.message); setSettings([]) }
+    else setSettings((data || []) as Setting[])
     setLoading(false)
   }
 
@@ -74,35 +74,33 @@ function TariffsSection() {
 
   async function save(key: string) {
     if (!newValue) return
-    setSaving(true)
-    await window.fetch(SUPABASE_URL + '/rest/v1/settings', {
-      method: 'POST',
-      headers: { apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY, 'Content-Type': 'application/json', Prefer: 'return=representation' },
-      body: JSON.stringify({ key, value: parseFloat(newValue), description: KEY_LABELS[key], valid_from: validFrom, created_by: 'admin' })
+    setSaving(true); setSaveErr('')
+    const { data: u } = await supabase.auth.getUser()
+    const { data: prof } = u.user ? await supabase.from('profiles').select('full_name').eq('user_id', u.user.id).maybeSingle() : { data: null }
+    const { error } = await supabase.from('settings').insert({
+      key, value: parseFloat(newValue), description: KEY_LABELS[key], valid_from: validFrom,
+      created_by: prof?.full_name || u.user?.email || null,
     })
+    if (error) { setSaveErr('Не удалось сохранить: ' + error.message); setSaving(false); return }
     await fetch()
     setEditing(null); setNewValue(''); setSaving(false)
-    setSuccess('Сохранено. Новые значение применится к новым счетам.')
+    setSuccess('Сохранено. Новое значение применится к новым счетам.')
     setTimeout(() => setSuccess(''), 4000)
   }
 
   const uniqueKeys = [...new Set(settings.map(s => s.key))]
 
-  if (loading) return <div style={{ color: c.gray, fontSize: 14 }}>Загрузка...</div>
+  if (loading) return <Loading />
 
   return (
-    <div>
-      <div style={{ fontSize: 13, color: c.gray, marginBottom: 16 }}>
-        История изменений сохраняется — старые счета пересчитываться не будут.
-      </div>
+    <div style={{ display: 'grid', gap: 12 }}>
+      <Muted>История изменений сохраняется — старые счета пересчитываться не будут.</Muted>
 
-      {success && (
-        <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontSize: 14, color: '#16a34a' }}>
-          ✓ {success}
-        </div>
-      )}
+      {error && <ErrorBox error={error} onRetry={fetch} />}
+      {success && <Notice tone="green">{success}</Notice>}
+      {!error && uniqueKeys.length === 0 && <Card><Empty>Тарифов нет</Empty></Card>}
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ display: 'grid', gap: 8 }}>
         {uniqueKeys.map(key => {
           const current = getCurrent(key)
           const history = getHistory(key)
@@ -110,76 +108,57 @@ function TariffsSection() {
           const isExpanded = expanded === key
 
           return (
-            <div key={key} style={{ background: c.card, border: `1px solid ${c.border}`, borderRadius: 10, overflow: 'hidden' }}>
-              <div style={{ padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 12 }}>
-                <div style={{ fontSize: 20, width: 36, height: 36, background: '#f0f2f8', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  {KEY_ICONS[key] || ''}
+            <Card key={key} pad={false}>
+              <div style={{ padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                <div style={{ width: 36, height: 36, background: C.hover, color: C.muted, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <Icon name={KEY_ICONS[key] || 'reference'} size={18} />
                 </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: c.text }}>{KEY_LABELS[key] || key}</div>
-                  <div style={{ fontSize: 12, color: c.gray, marginTop: 2 }}>с {current?.valid_from}</div>
+                <div style={{ flex: 1, minWidth: 160 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600 }}>{KEY_LABELS[key] || key}</div>
+                  <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>с {dateRu(current?.valid_from)}</div>
                 </div>
-                <div style={{ fontSize: 18, fontWeight: 700, color: c.text, marginRight: 8 }}>
-                  {current?.value} <span style={{ fontSize: 13, color: c.gray, fontWeight: 400 }}>{KEY_UNITS[key]}</span>
+                <div style={{ fontSize: 18, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
+                  {current?.value} <span style={{ fontSize: 13, color: C.muted, fontWeight: 400 }}>{KEY_UNITS[key]}</span>
                 </div>
-                <button onClick={() => setExpanded(isExpanded ? null : key)}
-                  style={{ border: `1px solid ${c.border}`, background: '#fff', borderRadius: 6, padding: '5px 10px', fontSize: 12, color: c.gray, cursor: 'pointer', fontFamily: 'inherit' }}>
-                  {isExpanded ? '▲ Скрыть' : '▼ История'}
-                </button>
-                {isEditing
-                  ? <button onClick={() => setEditing(null)} style={{ padding: '5px 12px', border: `1px solid ${c.border}`, borderRadius: 6, background: '#fff', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', color: c.gray }}>Отмена</button>
-                  : <button onClick={() => { setEditing(key); setNewValue(String(current?.value || '')) }}
-                      style={{ padding: '5px 14px', border: 'none', borderRadius: 6, background: c.accent, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', color: '#fff', fontWeight: 500 }}>
-                      Изменить
-                    </button>
-                }
+                <Row gap={6}>
+                  <Button small onClick={() => setExpanded(isExpanded ? null : key)}>{isExpanded ? 'Скрыть историю' : 'История'}</Button>
+                  {isEditing
+                    ? <Button small onClick={() => setEditing(null)}>Отмена</Button>
+                    : <Button small kind="primary" onClick={() => { setEditing(key); setSaveErr(''); setNewValue(String(current?.value || '')) }}>Изменить</Button>}
+                </Row>
               </div>
 
               {isEditing && (
-                <div style={{ padding: '14px 18px', background: '#fffbeb', borderTop: `1px solid ${c.border}` }}>
-                  <div style={{ fontSize: 13, color: '#92400e', marginBottom: 12 }}>
-                    Новое значение применится только к новым счетам. Старые счета останутся неизменными.
-                  </div>
-                  <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-                    <div>
-                      <div style={lbl}>Новое значение ({KEY_UNITS[key]})</div>
-                      <input style={{ ...inp, width: 140 }} type="number" step="0.01" value={newValue} onChange={e => setNewValue(e.target.value)} />
+                <div style={{ padding: '14px 18px', borderTop: `1px solid ${C.line}`, display: 'grid', gap: 12 }}>
+                  <Notice tone="amber">Новое значение применится только к новым счетам. Старые счета останутся неизменными.</Notice>
+                  <Row gap={10} align="flex-end">
+                    <div style={{ width: 160 }}>
+                      <Field label={`Новое значение (${KEY_UNITS[key] || ''})`}>
+                        <Input type="number" step="0.01" value={newValue} onChange={e => setNewValue(e.target.value)} />
+                      </Field>
                     </div>
-                    <div>
-                      <div style={lbl}>Действует с</div>
-                      <input style={{ ...inp, width: 150 }} type="date" value={validFrom} onChange={e => setValidFrom(e.target.value)} />
+                    <div style={{ width: 160 }}>
+                      <Field label="Действует с">
+                        <Input type="date" value={validFrom} onChange={e => setValidFrom(e.target.value)} />
+                      </Field>
                     </div>
-                    <button onClick={() => save(key)} disabled={saving}
-                      style={{ padding: '7px 18px', border: 'none', borderRadius: 6, background: '#16a34a', color: '#fff', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500, opacity: saving ? 0.6 : 1 }}>
-                      {saving ? 'Сохранение...' : 'Сохранить'}
-                    </button>
-                  </div>
+                    <Button kind="primary" onClick={() => save(key)} disabled={saving}>{saving ? 'Сохранение…' : 'Сохранить'}</Button>
+                  </Row>
+                  {saveErr && <Notice tone="red">{saveErr}</Notice>}
                 </div>
               )}
 
               {isExpanded && (
-                <div style={{ padding: '10px 18px', borderTop: `1px solid ${c.border}`, background: '#fafbff' }}>
-                  <div style={{ fontSize: 11, fontWeight: 600, color: c.gray, textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 8 }}>История изменений</div>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                    <thead>
-                      <tr>{['Дата начала', 'Значение', 'Кто изменил', 'Записано'].map(h => (
-                        <th key={h} style={{ padding: '4px 8px', textAlign: 'left', color: c.gray, fontWeight: 500, fontSize: 12 }}>{h}</th>
-                      ))}</tr>
-                    </thead>
-                    <tbody>
-                      {history.map((h, i) => (
-                        <tr key={h.id} style={{ borderTop: `1px solid ${c.border}` }}>
-                          <td style={{ padding: '6px 8px', color: i === 0 ? c.text : c.gray, fontWeight: i === 0 ? 600 : 400 }}>{h.valid_from}</td>
-                          <td style={{ padding: '6px 8px', fontWeight: i === 0 ? 600 : 400, color: i === 0 ? c.accent : c.gray }}>{h.value} {KEY_UNITS[key]}</td>
-                          <td style={{ padding: '6px 8px', color: c.gray }}>{h.created_by || 'admin'}</td>
-                          <td style={{ padding: '6px 8px', color: '#9ca3af' }}>{h.created_at?.slice(0, 10)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                <div style={{ borderTop: `1px solid ${C.line}` }}>
+                  <Table dense rows={history} rowKey={h => h.id} empty="Истории нет" cols={[
+                    { key: 'from', title: 'Дата начала', render: h => <span style={{ fontWeight: h === history[0] ? 600 : 400 }}>{dateRu(h.valid_from)}</span> },
+                    { key: 'value', title: 'Значение', render: h => <span style={{ fontWeight: h === history[0] ? 600 : 400, color: h === history[0] ? C.accent : C.muted }}>{h.value} {KEY_UNITS[key]}</span> },
+                    { key: 'by', title: 'Кто изменил', render: h => <Muted>{h.created_by || '—'}</Muted> },
+                    { key: 'at', title: 'Записано', render: h => <span style={{ color: C.faint }}>{h.created_at ? dateRu(h.created_at.slice(0, 10)) : '—'}</span> },
+                  ]} />
                 </div>
               )}
-            </div>
+            </Card>
           )
         })}
       </div>
@@ -197,79 +176,107 @@ function ServiceModal({ service, categories, onClose, onSaved }: { service: Serv
   const [saving, setSaving] = useState(false)
   const [units, setUnits] = useState<string[]>([])
   const [newUnit, setNewUnit] = useState('')
+  const [err, setErr] = useState('')
+  const [confirmDel, setConfirmDel] = useState(false)
   const set = (k: string, v: string | number) => setForm(f => ({ ...f, [k]: v }))
 
   useEffect(() => {
-    supabase.from('service_units').select('name').order('name').then(({ data }) => {
+    supabase.from('service_units').select('name').order('name').then(({ data, error }) => {
+      if (error) setErr('Не удалось загрузить единицы измерения: ' + error.message)
       setUnits((data || []).map((u: any) => u.name))
     })
   }, [])
 
   async function addUnit() {
     if (!newUnit.trim()) return
-    await supabase.from('service_units').insert({ name: newUnit.trim() })
+    setErr('')
+    const { error } = await supabase.from('service_units').insert({ name: newUnit.trim() })
+    if (error) { setErr('Не удалось добавить единицу: ' + error.message); return }
     const { data } = await supabase.from('service_units').select('name').order('name')
     setUnits((data || []).map((u: any) => u.name))
     set('unit', newUnit.trim()); setNewUnit('')
   }
 
   async function save() {
-    if (!form.name.trim()) return alert('Введите название')
-    setSaving(true)
-    if (service?.id) await supabase.from('services').update(form).eq('id', service.id)
-    else await supabase.from('services').insert(form)
-    setSaving(false); onSaved()
-  }
-
-  async function remove() {
-    if (!service?.id || !confirm('Удалить услугу?')) return
-    await supabase.from('services').delete().eq('id', service.id)
+    if (!form.name.trim()) { setErr('Введите название'); return }
+    setSaving(true); setErr('')
+    const { error } = service?.id
+      ? await supabase.from('services').update(form).eq('id', service.id)
+      : await supabase.from('services').insert(form)
+    setSaving(false)
+    if (error) { setErr('Ошибка сохранения: ' + error.message); return }
     onSaved()
   }
 
+  async function remove() {
+    if (!service?.id) return
+    setErr('')
+    const { error } = await supabase.from('services').delete().eq('id', service.id)
+    if (error) { setErr('Не удалось удалить: ' + error.message); setConfirmDel(false); return }
+    onSaved()
+  }
+
+  const footer = confirmDel ? (
+    <Row>
+      <span style={{ color: C.muted, fontSize: 13 }}>Удалить услугу?</span>
+      <Button onClick={() => setConfirmDel(false)}>Нет</Button>
+      <Button kind="danger" onClick={remove}>Удалить</Button>
+    </Row>
+  ) : (
+    <>
+      {service && <Button kind="danger" onClick={() => setConfirmDel(true)} style={{ marginRight: 'auto' }}>Удалить</Button>}
+      <Button onClick={onClose}>Отмена</Button>
+      <Button kind="primary" onClick={save} disabled={saving}>{saving ? 'Сохранение…' : 'Сохранить'}</Button>
+    </>
+  )
+
   return (
-    <div style={{ position: 'fixed', inset: 0, background: '#00000050', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-      <div style={{ background: '#fff', borderRadius: 12, width: '100%', maxWidth: 480, boxShadow: '0 8px 32px #0003', border: `1px solid ${c.border}` }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: `1px solid ${c.border}` }}>
-          <div style={{ fontSize: 15, fontWeight: 600, color: c.text }}>{service ? 'Редактировать услугу' : 'Новая услуга'}</div>
-          <button onClick={onClose} style={{ border: 'none', background: 'none', fontSize: 18, color: c.gray, cursor: 'pointer' }}>✕</button>
-        </div>
-        <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div><label style={lbl}>Название *</label><input style={inp} value={form.name} onChange={e => set('name', e.target.value)} placeholder="Аренда офиса" autoFocus /></div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            <div>
-              <label style={lbl}>Категория</label>
-              <select style={inp} value={form.category} onChange={e => set('category', e.target.value)}>
-                <option value="">— Выбрать</option>
-                {categories.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </div>
-            <div>
-              <label style={lbl}>Единица измерения</label>
-              <select style={inp} value={form.unit} onChange={e => set('unit', e.target.value)}>
-                <option value="">— Выбрать</option>
-                {units.map(u => <option key={u} value={u}>{u}</option>)}
-              </select>
-              <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-                <input style={{ ...inp, flex: 1 }} value={newUnit} onChange={e => setNewUnit(e.target.value)} placeholder="Добавить единицу..." onKeyDown={e => e.key === 'Enter' && addUnit()} />
-                <button type="button" onClick={addUnit} style={{ padding: '7px 10px', borderRadius: 6, border: 'none', background: '#111', color: '#fff', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>+</button>
-              </div>
-            </div>
+    <Modal title={service ? 'Редактировать услугу' : 'Новая услуга'} onClose={onClose} footer={footer}>
+      <Field label="Название *"><Input value={form.name} onChange={e => set('name', e.target.value)} placeholder="Аренда офиса" autoFocus /></Field>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+        <Field label="Категория">
+          <Select value={form.category} onChange={e => set('category', e.target.value)}>
+            <option value="">— Выбрать</option>
+            {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+          </Select>
+        </Field>
+        <div style={{ display: 'grid', gap: 6, alignContent: 'start' }}>
+          <Field label="Единица измерения">
+            <Select value={form.unit} onChange={e => set('unit', e.target.value)}>
+              <option value="">— Выбрать</option>
+              {units.map(u => <option key={u} value={u}>{u}</option>)}
+            </Select>
+          </Field>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <Input style={{ flex: 1 }} value={newUnit} onChange={e => setNewUnit(e.target.value)} placeholder="Добавить единицу..." onKeyDown={e => e.key === 'Enter' && addUnit()} />
+            <Button small onClick={addUnit} aria-label="Добавить единицу">Добавить</Button>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            <div><label style={lbl}>Цена (₽)</label><input style={inp} type="number" value={form.price || ''} onChange={e => set('price', Number(e.target.value))} placeholder="0" /></div>
-            <div><label style={lbl}>НДС (%)</label><input style={inp} type="number" value={form.vat || ''} onChange={e => set('vat', Number(e.target.value))} placeholder="0" /></div>
-          </div>
-          <div><label style={lbl}>Описание</label><textarea style={{ ...inp, height: 60, resize: 'none' } as any} value={form.description} onChange={e => set('description', e.target.value)} /></div>
-        </div>
-        <div style={{ display: 'flex', gap: 8, padding: '14px 20px', borderTop: `1px solid ${c.border}` }}>
-          <button onClick={save} disabled={saving} style={{ flex: 1, padding: '8px', borderRadius: 6, border: 'none', background: '#111', color: '#fff', fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', opacity: saving ? 0.6 : 1 }}>
-            {saving ? 'Сохранение...' : 'Сохранить'}
-          </button>
-          {service && <button onClick={remove} style={{ padding: '8px 14px', borderRadius: 6, border: 'none', background: '#fee2e2', color: '#ef4444', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>Удалить</button>}
-          <button onClick={onClose} style={{ padding: '8px 14px', borderRadius: 6, border: `1px solid ${c.border}`, background: '#fff', color: c.gray, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>Отмена</button>
         </div>
       </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+        <Field label="Цена (₽)"><Input type="number" value={form.price || ''} onChange={e => set('price', Number(e.target.value))} placeholder="0" /></Field>
+        <Field label="НДС (%)"><Input type="number" value={form.vat || ''} onChange={e => set('vat', Number(e.target.value))} placeholder="0" /></Field>
+      </div>
+      <Field label="Описание"><Textarea value={form.description} onChange={e => set('description', e.target.value)} style={{ minHeight: 60 }} /></Field>
+      {err && <Notice tone="red">{err}</Notice>}
+    </Modal>
+  )
+}
+
+function ServiceRow({ s, first, withVat, onClick }: { s: Service; first: boolean; withVat: boolean; onClick: () => void }) {
+  const [hover, setHover] = useState(false)
+  return (
+    <div onClick={onClick} onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
+      style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer', borderTop: first ? 'none' : `1px solid ${C.line}`, background: hover ? C.hover : undefined, transition: 'background .1s' }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 14, fontWeight: 500 }}>{s.name}</div>
+        {s.description && <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>{s.description}</div>}
+      </div>
+      <div style={{ textAlign: 'right', flexShrink: 0 }}>
+        {s.price ? <div style={{ fontSize: 14, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{s.price.toLocaleString('ru')} ₽</div> : null}
+        <div style={{ fontSize: 12, color: C.muted }}>{s.unit}{withVat && s.vat ? ` · НДС ${s.vat}%` : ''}</div>
+      </div>
+      <span style={{ color: C.faint, display: 'inline-flex', transform: 'rotate(-90deg)' }}><Icon name="chevron" /></span>
     </div>
   )
 }
@@ -278,17 +285,19 @@ function ServicesSection() {
   const [services, setServices] = useState<Service[]>([])
   const [categories, setCategories] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
   const [selected, setSelected] = useState<Service | null>(null)
   const [showModal, setShowModal] = useState(false)
   const [catFilter, setCatFilter] = useState('')
   const [search, setSearch] = useState('')
 
   async function load() {
-    setLoading(true)
-    const [{ data: sv }, { data: cats }] = await Promise.all([
+    setLoading(true); setError('')
+    const [{ data: sv, error: e1 }, { data: cats, error: e2 }] = await Promise.all([
       supabase.from('services').select('*').order('category').order('name'),
       supabase.from('service_categories').select('name').order('name')
     ])
+    if (e1 || e2) setError('Не удалось загрузить услуги: ' + (e1 || e2)!.message)
     setServices(sv || [])
     setCategories((cats || []).map((c: any) => c.name))
     setLoading(false)
@@ -310,76 +319,45 @@ function ServicesSection() {
       }, {} as Record<string, Service[]>)
     : { '': filtered }
 
-  const uncategorized = filtered.filter(s => !s.category)
+  // Без категории — пустая категория или категория, которой больше нет в справочнике.
+  // Когда категорий нет совсем, все услуги уже показаны общим списком выше.
+  const uncategorized = categories.length > 0 ? filtered.filter(s => !s.category || !categories.includes(s.category)) : []
 
-  if (loading) return <div style={{ color: c.gray, fontSize: 14 }}>Загрузка...</div>
+  const open = (s: Service | null) => { setSelected(s); setShowModal(true) }
+
+  if (loading) return <Loading />
 
   return (
-    <div>
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
-        <input style={{ ...inp, width: 200 }} value={search} onChange={e => setSearch(e.target.value)} placeholder="Поиск услуги..." />
-        <select style={{ border: `1px solid ${c.border}`, borderRadius: 6, padding: '7px 12px', fontSize: 14, fontFamily: 'inherit', outline: 'none', background: '#fff', color: c.text }}
-          value={catFilter} onChange={e => setCatFilter(e.target.value)}>
+    <div style={{ display: 'grid', gap: 12 }}>
+      <Row gap={10}>
+        <Search value={search} onChange={setSearch} placeholder="Поиск услуги..." width={200} />
+        <Select value={catFilter} onChange={e => setCatFilter(e.target.value)} style={{ width: 200 }}>
           <option value="">Все категории</option>
           {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-        </select>
+        </Select>
         <div style={{ flex: 1 }} />
-        <div style={{ fontSize: 13, color: c.gray }}>{filtered.length} услуг</div>
-        <button onClick={() => { setSelected(null); setShowModal(true) }} style={{ padding: '7px 16px', border: 'none', borderRadius: 6, background: '#111', color: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>
-          + Добавить услугу
-        </button>
-      </div>
+        <Muted>{filtered.length} услуг</Muted>
+        <Button kind="primary" onClick={() => open(null)}>Добавить услугу</Button>
+      </Row>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {error && <ErrorBox error={error} onRetry={load} />}
+
+      <div style={{ display: 'grid', gap: 8 }}>
         {Object.entries(grouped).map(([cat, items]) => items.length === 0 ? null : (
-          <div key={cat} style={{ background: c.card, border: `1px solid ${c.border}`, borderRadius: 10, overflow: 'hidden' }}>
-            {cat && <div style={{ padding: '10px 16px', background: '#fafbff', borderBottom: `1px solid ${c.border}`, fontSize: 12, fontWeight: 600, color: c.gray, textTransform: 'uppercase', letterSpacing: '.5px' }}>{cat}</div>}
-            {items.map((s, i) => (
-              <div key={s.id} onClick={() => { setSelected(s); setShowModal(true) }}
-                style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer', borderTop: i > 0 ? `1px solid ${c.border}` : 'none', transition: 'background .1s' }}
-                onMouseEnter={e => (e.currentTarget.style.background = '#f8f9fc')}
-                onMouseLeave={e => (e.currentTarget.style.background = '')}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 14, fontWeight: 500, color: c.text }}>{s.name}</div>
-                  {s.description && <div style={{ fontSize: 12, color: c.gray, marginTop: 2 }}>{s.description}</div>}
-                </div>
-                <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                  {s.price ? <div style={{ fontSize: 14, fontWeight: 600, color: c.text }}>{s.price.toLocaleString('ru')} ₽</div> : null}
-                  <div style={{ fontSize: 12, color: c.gray }}>{s.unit}{s.vat ? ` · НДС ${s.vat}%` : ''}</div>
-                </div>
-                <div style={{ color: c.gray, fontSize: 16 }}>›</div>
-              </div>
-            ))}
-          </div>
+          <Card key={cat || '_all'} pad={false}>
+            {cat && <div style={groupHead}>{cat}</div>}
+            {items.map((s, i) => <ServiceRow key={s.id} s={s} first={i === 0} withVat onClick={() => open(s)} />)}
+          </Card>
         ))}
 
         {uncategorized.length > 0 && (
-          <div style={{ background: c.card, border: `1px solid ${c.border}`, borderRadius: 10, overflow: 'hidden' }}>
-            <div style={{ padding: '10px 16px', background: '#fafbff', borderBottom: `1px solid ${c.border}`, fontSize: 12, fontWeight: 600, color: c.gray, textTransform: 'uppercase', letterSpacing: '.5px' }}>Без категории</div>
-            {uncategorized.map((s, i) => (
-              <div key={s.id} onClick={() => { setSelected(s); setShowModal(true) }}
-                style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer', borderTop: i > 0 ? `1px solid ${c.border}` : 'none' }}
-                onMouseEnter={e => (e.currentTarget.style.background = '#f8f9fc')}
-                onMouseLeave={e => (e.currentTarget.style.background = '')}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 14, fontWeight: 500, color: c.text }}>{s.name}</div>
-                  {s.description && <div style={{ fontSize: 12, color: c.gray, marginTop: 2 }}>{s.description}</div>}
-                </div>
-                <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                  {s.price ? <div style={{ fontSize: 14, fontWeight: 600, color: c.text }}>{s.price.toLocaleString('ru')} ₽</div> : null}
-                  <div style={{ fontSize: 12, color: c.gray }}>{s.unit}</div>
-                </div>
-                <div style={{ color: c.gray, fontSize: 16 }}>›</div>
-              </div>
-            ))}
-          </div>
+          <Card pad={false}>
+            <div style={groupHead}>Без категории</div>
+            {uncategorized.map((s, i) => <ServiceRow key={s.id} s={s} first={i === 0} withVat={false} onClick={() => open(s)} />)}
+          </Card>
         )}
 
-        {filtered.length === 0 && (
-          <div style={{ textAlign: 'center', padding: 40, color: c.gray, background: c.card, borderRadius: 10, border: `1px solid ${c.border}` }}>
-            Услуги не найдены
-          </div>
-        )}
+        {filtered.length === 0 && !error && <Card><Empty>Услуги не найдены</Empty></Card>}
       </div>
 
       {showModal && <ServiceModal service={selected} categories={categories} onClose={() => setShowModal(false)} onSaved={() => { setShowModal(false); load() }} />}
@@ -387,177 +365,110 @@ function ServicesSection() {
   )
 }
 
-// ─── КАТЕГОРИИ УСЛУГ ──────────────────────────────────────────────────────────
+// ─── ПРОСТОЙ СПИСОК (категории и единицы) ─────────────────────────────────────
 
-function CategoriesSection() {
-  const [categories, setCategories] = useState<{ id: string; name: string }[]>([])
+function NameListSection({ table, placeholder, emptyText, kindLabel, mono }: { table: 'service_categories' | 'service_units'; placeholder: string; emptyText: string; kindLabel: string; mono?: boolean }) {
+  const [items, setItems] = useState<{ id: string; name: string }[]>([])
   const [loading, setLoading] = useState(true)
-  const [newCat, setNewCat] = useState('')
+  const [error, setError] = useState('')
+  const [actionErr, setActionErr] = useState('')
+  const [newName, setNewName] = useState('')
   const [adding, setAdding] = useState(false)
+  const [toDelete, setToDelete] = useState<{ id: string; name: string } | null>(null)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteErr, setDeleteErr] = useState('')
 
   async function load() {
-    setLoading(true)
-    const { data } = await supabase.from('service_categories').select('*').order('name')
-    setCategories(data || [])
+    setLoading(true); setError('')
+    const { data, error } = await supabase.from(table).select('*').order('name')
+    if (error) setError('Не удалось загрузить список: ' + error.message)
+    setItems(data || [])
     setLoading(false)
   }
 
   useEffect(() => { load() }, [])
 
   async function add() {
-    if (!newCat.trim()) return
-    setAdding(true)
-    await supabase.from('service_categories').insert({ name: newCat.trim() })
-    setNewCat(''); setAdding(false); load()
+    if (!newName.trim()) return
+    setAdding(true); setActionErr('')
+    const { error } = await supabase.from(table).insert({ name: newName.trim() })
+    setAdding(false)
+    if (error) { setActionErr('Не удалось добавить: ' + error.message); return }
+    setNewName(''); load()
   }
 
-  async function remove(id: string, name: string) {
-    if (!confirm(`Удалить категорию «${name}»?`)) return
-    await supabase.from('service_categories').delete().eq('id', id)
-    load()
+  async function remove() {
+    if (!toDelete) return
+    setDeleting(true); setDeleteErr('')
+    const { error } = await supabase.from(table).delete().eq('id', toDelete.id)
+    setDeleting(false)
+    if (error) { setDeleteErr('Не удалось удалить: ' + error.message); return }
+    setToDelete(null); load()
   }
 
-  if (loading) return <div style={{ color: c.gray, fontSize: 14 }}>Загрузка...</div>
+  if (loading) return <Loading />
 
   return (
-    <div style={{ maxWidth: 480 }}>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-        <input style={{ ...inp, flex: 1 }} value={newCat} onChange={e => setNewCat(e.target.value)}
-          placeholder="Название категории..." onKeyDown={e => e.key === 'Enter' && add()} autoFocus />
-        <button onClick={add} disabled={adding} style={{ padding: '7px 16px', borderRadius: 6, border: 'none', background: '#111', color: '#fff', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500, opacity: adding ? 0.6 : 1 }}>
-          + Добавить
-        </button>
+    <div style={{ maxWidth: 480, display: 'grid', gap: 12 }}>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <Input style={{ flex: 1 }} value={newName} onChange={e => setNewName(e.target.value)}
+          placeholder={placeholder} onKeyDown={e => e.key === 'Enter' && add()} autoFocus />
+        <Button kind="primary" onClick={add} disabled={adding}>Добавить</Button>
       </div>
+      {actionErr && <Notice tone="red">{actionErr}</Notice>}
+      {error && <ErrorBox error={error} onRetry={load} />}
 
-      <div style={{ background: c.card, border: `1px solid ${c.border}`, borderRadius: 10, overflow: 'hidden' }}>
-        {categories.length === 0
-          ? <div style={{ padding: 24, textAlign: 'center', color: c.gray, fontSize: 14 }}>Категорий нет — добавьте первую</div>
-          : categories.map((cat, i) => (
-            <div key={cat.id} style={{ display: 'flex', alignItems: 'center', padding: '12px 16px', borderTop: i > 0 ? `1px solid ${c.border}` : 'none' }}>
-              <div style={{ width: 28, height: 28, borderRadius: 6, background: '#f0f2f8', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, marginRight: 12, flexShrink: 0 }}>◈</div>
-              <div style={{ flex: 1, fontSize: 14, color: c.text, fontWeight: 500 }}>{cat.name}</div>
-              <button onClick={() => remove(cat.id, cat.name)} style={{ border: 'none', background: 'none', color: '#ef4444', fontSize: 13, cursor: 'pointer', padding: '4px 8px', borderRadius: 4, fontFamily: 'inherit' }}>
-                Удалить
-              </button>
+      <Card pad={false}>
+        {items.length === 0
+          ? <Empty>{emptyText}</Empty>
+          : items.map((it, i) => (
+            <div key={it.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', borderTop: i > 0 ? `1px solid ${C.line}` : 'none' }}>
+              <div style={{ flex: 1, fontSize: 14, fontWeight: 500, fontFamily: mono ? 'monospace' : undefined }}>{it.name}</div>
+              <Button small kind="danger" onClick={() => { setDeleteErr(''); setToDelete(it) }}>Удалить</Button>
             </div>
           ))
         }
-      </div>
+      </Card>
+
+      {toDelete && <ConfirmModal text={`Удалить ${kindLabel} «${toDelete.name}»?`} busy={deleting} error={deleteErr} onCancel={() => setToDelete(null)} onConfirm={remove} />}
     </div>
   )
 }
 
-// ─── ЕДИНИЦЫ ИЗМЕРЕНИЯ ────────────────────────────────────────────────────────
+function CategoriesSection() {
+  return <NameListSection table="service_categories" placeholder="Название категории..." emptyText="Категорий нет — добавьте первую" kindLabel="категорию" />
+}
 
 function UnitsSection() {
-  const [units, setUnits] = useState<{ id: string; name: string }[]>([])
-  const [loading, setLoading] = useState(true)
-  const [newUnit, setNewUnit] = useState('')
-  const [adding, setAdding] = useState(false)
-
-  async function load() {
-    setLoading(true)
-    const { data } = await supabase.from('service_units').select('*').order('name')
-    setUnits(data || [])
-    setLoading(false)
-  }
-
-  useEffect(() => { load() }, [])
-
-  async function add() {
-    if (!newUnit.trim()) return
-    setAdding(true)
-    await supabase.from('service_units').insert({ name: newUnit.trim() })
-    setNewUnit(''); setAdding(false); load()
-  }
-
-  async function remove(id: string, name: string) {
-    if (!confirm(`Удалить единицу «${name}»?`)) return
-    await supabase.from('service_units').delete().eq('id', id)
-    load()
-  }
-
-  if (loading) return <div style={{ color: c.gray, fontSize: 14 }}>Загрузка...</div>
-
-  return (
-    <div style={{ maxWidth: 480 }}>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-        <input style={{ ...inp, flex: 1 }} value={newUnit} onChange={e => setNewUnit(e.target.value)}
-          placeholder="Например: шт, м², кВт·ч..." onKeyDown={e => e.key === 'Enter' && add()} autoFocus />
-        <button onClick={add} disabled={adding} style={{ padding: '7px 16px', borderRadius: 6, border: 'none', background: '#111', color: '#fff', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500, opacity: adding ? 0.6 : 1 }}>
-          + Добавить
-        </button>
-      </div>
-
-      <div style={{ background: c.card, border: `1px solid ${c.border}`, borderRadius: 10, overflow: 'hidden' }}>
-        {units.length === 0
-          ? <div style={{ padding: 24, textAlign: 'center', color: c.gray, fontSize: 14 }}>Единиц измерения нет</div>
-          : units.map((u, i) => (
-            <div key={u.id} style={{ display: 'flex', alignItems: 'center', padding: '12px 16px', borderTop: i > 0 ? `1px solid ${c.border}` : 'none' }}>
-              <div style={{ flex: 1, fontSize: 14, color: c.text, fontWeight: 500, fontFamily: 'monospace' }}>{u.name}</div>
-              <button onClick={() => remove(u.id, u.name)} style={{ border: 'none', background: 'none', color: '#ef4444', fontSize: 13, cursor: 'pointer', padding: '4px 8px', borderRadius: 4, fontFamily: 'inherit' }}>
-                Удалить
-              </button>
-            </div>
-          ))
-        }
-      </div>
-    </div>
-  )
+  return <NameListSection table="service_units" placeholder="Например: шт, м², кВт·ч..." emptyText="Единиц измерения нет" kindLabel="единицу" mono />
 }
 
 // ─── ГЛАВНАЯ СТРАНИЦА ─────────────────────────────────────────────────────────
 
-const SECTIONS = [
-  { id: 'services', label: 'Услуги', icon: '◈', desc: 'Прайс-лист услуг' },
-  { id: 'tariffs', label: 'Тарифы и нормативы', icon: '', desc: 'Тарифы с историей изменений' },
-  { id: 'categories', label: 'Категории услуг', icon: '', desc: 'Группировка услуг' },
-  { id: 'units', label: 'Единицы измерения', icon: '', desc: 'шт, м², кВт·ч...' },
+type SectionId = 'services' | 'tariffs' | 'categories' | 'units'
+const SECTIONS: { id: SectionId; label: string; desc: string }[] = [
+  { id: 'services', label: 'Услуги', desc: 'Прайс-лист услуг' },
+  { id: 'tariffs', label: 'Тарифы и нормативы', desc: 'Тарифы с историей изменений' },
+  { id: 'categories', label: 'Категории услуг', desc: 'Группировка услуг' },
+  { id: 'units', label: 'Единицы измерения', desc: 'шт, м², кВт·ч...' },
 ]
 
 export default function ReferencesPage() {
-  const [active, setActive] = useState('services')
+  const [active, setActive] = useState<SectionId>('services')
   const section = SECTIONS.find(s => s.id === active)!
 
   return (
-    <div style={{ display: 'flex', gap: 0, minHeight: 'calc(100vh - 80px)' }}>
-      {/* Боковая навигация */}
-      <div style={{ width: 220, flexShrink: 0, marginRight: 20 }}>
-        <div style={{ background: c.card, border: `1px solid ${c.border}`, borderRadius: 10, overflow: 'hidden' }}>
-          {SECTIONS.map((s, i) => (
-            <button key={s.id} onClick={() => setActive(s.id)}
-              style={{
-                width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px',
-                background: active === s.id ? '#f0f2f8' : 'transparent',
-                border: 'none', borderTop: i > 0 ? `1px solid ${c.border}` : 'none',
-                cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit',
-                borderLeft: active === s.id ? `3px solid ${c.accent}` : '3px solid transparent',
-              }}>
-              <span style={{ fontSize: 16, flexShrink: 0 }}>{s.icon}</span>
-              <div>
-                <div style={{ fontSize: 13, fontWeight: active === s.id ? 600 : 500, color: active === s.id ? c.accent : c.text }}>{s.label}</div>
-                <div style={{ fontSize: 11, color: c.gray, marginTop: 1 }}>{s.desc}</div>
-              </div>
-            </button>
-          ))}
-        </div>
-      </div>
+    <Page>
+      <Tabs<SectionId> tabs={SECTIONS.map(s => [s.id, s.label] as [SectionId, string])} value={active} onChange={setActive} />
+      <Row gap={8}>
+        <Badge tone="blue">{section.label}</Badge>
+        <Muted small>{section.desc}</Muted>
+      </Row>
 
-      {/* Контент */}
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{ fontSize: 20 }}>{section.icon}</span>
-          <div>
-            <div style={{ fontSize: 16, fontWeight: 600, color: c.text }}>{section.label}</div>
-            <div style={{ fontSize: 12, color: c.gray }}>{section.desc}</div>
-          </div>
-        </div>
-
-        {active === 'services' && <ServicesSection />}
-        {active === 'tariffs' && <TariffsSection />}
-        {active === 'categories' && <CategoriesSection />}
-        {active === 'units' && <UnitsSection />}
-      </div>
-    </div>
+      {active === 'services' && <ServicesSection />}
+      {active === 'tariffs' && <TariffsSection />}
+      {active === 'categories' && <CategoriesSection />}
+      {active === 'units' && <UnitsSection />}
+    </Page>
   )
 }

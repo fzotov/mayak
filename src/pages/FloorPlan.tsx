@@ -1,5 +1,7 @@
+// План этажей: подложка-чертёж и кликабельные кабинеты; свободные подсвечены, справа — карточка выбранного кабинета.
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
+import { Page, Card, Row, Button, Badge, Segmented, ErrorBox, Muted, money, dateRu, C } from '../components/ui'
 
 // Exact SVG paths derived from pixel-accurate room fills in the source floor-plan images.
 // Floor 2 viewBox: 0 0 2048 1150 | Floor 3 viewBox: 0 0 1984 1296
@@ -95,24 +97,27 @@ type TenantInfo = {
   inn: string | null
 }
 
-function fmt(n: number | null | undefined) {
-  if (!n) return '—'
-  return new Intl.NumberFormat('ru-RU').format(n) + ' ₽'
-}
+type PathStyle = { fill: string; fillOpacity: number; stroke: string; strokeOpacity: number; strokeWidth: number }
 
 export function FloorPlanPage({ onOpenTenant }: { onOpenTenant?: (id: string) => void }) {
   const [floor, setFloor] = useState(2)
   const [hoverId, setHoverId] = useState<string | null>(null)
   const [selId, setSelId]   = useState<string | null>(null)
   const [byUnit, setByUnit] = useState<Record<string, TenantInfo>>({})
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
   const [debug] = useState(false)
 
-  useEffect(() => {
+  const load = useCallback(() => {
+    setLoading(true)
+    setError('')
     supabase
       .from('tenants')
       .select('id,full_name,unit_number,monthly_rent,monthly_total,contract_number,contract_start_date,tenant_group,inn')
       .not('unit_number', 'is', null)
-      .then(({ data }) => {
+      .then(({ data, error }) => {
+        setLoading(false)
+        if (error) setError(error.message)
         if (!data) return
         const map: Record<string, TenantInfo> = {}
         // Normalize Cyrillic А→A, Б→B so lookups match Latin keys in room data
@@ -131,6 +136,7 @@ export function FloorPlanPage({ onOpenTenant }: { onOpenTenant?: (id: string) =>
         setByUnit(map)
       })
   }, [])
+  useEffect(() => { load() }, [load])
 
   const getTenant = useCallback((room: RoomData): TenantInfo | null => {
     const norm = (s: string) => s.replace(/А/g, 'A').replace(/а/g, 'A').replace(/Б/g, 'B').replace(/б/g, 'B')
@@ -161,157 +167,126 @@ export function FloorPlanPage({ onOpenTenant }: { onOpenTenant?: (id: string) =>
     return '—'
   }
 
-  const getPathStyle = (r: RoomData) => {
+  // Цвета подсветки — из токенов темы: свободно — зелёный, наведение — акцент, выбранный — янтарный.
+  const getPathStyle = (r: RoomData): PathStyle => {
     const isSel     = selId === r.id
     const isHover   = hoverId === r.id && !isSel
     // Dynamic: green if no tenant in DB and not a service room
     const isFreeRoom = isRoomFree(r)
 
     if (debug) {
-      return {
-        fill:   isSel ? 'rgba(255,190,35,0.55)' : isFreeRoom ? 'rgba(120,220,55,0.40)' : 'rgba(35,150,243,0.25)',
-        stroke: isSel ? 'rgba(190,120,0,0.95)'  : isFreeRoom ? 'rgba(55,145,20,0.90)'  : 'rgba(35,110,210,0.90)',
-        strokeWidth: 2,
-      }
+      const c = isSel ? C.amber : isFreeRoom ? C.green : C.accent
+      return { fill: c, fillOpacity: isSel ? 0.55 : isFreeRoom ? 0.4 : 0.25, stroke: c, strokeOpacity: 0.9, strokeWidth: 2 }
     }
 
-    if (isSel) return { fill: 'rgba(255,190,35,0.28)', stroke: 'rgba(190,120,0,0.95)', strokeWidth: 4 }
-    if (isFreeRoom && isHover) return { fill: 'rgba(120,220,55,0.30)', stroke: 'rgba(55,145,20,0.95)', strokeWidth: 3 }
-    if (isFreeRoom) return { fill: 'rgba(120,220,55,0.10)', stroke: 'rgba(55,145,20,0.70)', strokeWidth: 2 }
-    if (isHover) return { fill: 'rgba(35,150,243,0.20)', stroke: 'rgba(35,110,210,0.95)', strokeWidth: 3 }
-    return { fill: 'rgba(0,0,0,0)', stroke: 'rgba(0,0,0,0)', strokeWidth: 0 }
+    if (isSel) return { fill: C.amber, fillOpacity: 0.28, stroke: C.amber, strokeOpacity: 0.95, strokeWidth: 4 }
+    if (isFreeRoom && isHover) return { fill: C.green, fillOpacity: 0.3, stroke: C.green, strokeOpacity: 0.95, strokeWidth: 3 }
+    if (isFreeRoom) return { fill: C.green, fillOpacity: 0.12, stroke: C.green, strokeOpacity: 0.7, strokeWidth: 2 }
+    if (isHover) return { fill: C.accent, fillOpacity: 0.2, stroke: C.accent, strokeOpacity: 0.95, strokeWidth: 3 }
+    return { fill: C.card, fillOpacity: 0, stroke: C.card, strokeOpacity: 0, strokeWidth: 0 }
   }
 
+  const legend: { color: string; label: string }[] = [
+    { color: C.green, label: 'Свободно' },
+    { color: C.accent, label: 'Наведение' },
+    { color: C.amber, label: 'Выбрано' },
+  ]
+
   return (
-    <div style={{ maxWidth: 1200 }}>
-      {/* Tabs + legend */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-        {[2, 3].map(f => (
-          <button key={f} onClick={() => setFloor(f)}
-            style={{
-              padding: '6px 20px',
-              border: floor === f ? '2px solid #4f6ef7' : '1px solid #d1d5db',
-              borderRadius: 8, background: floor === f ? '#4f6ef7' : '#fff',
-              color: floor === f ? '#fff' : '#374151',
-              fontSize: 13, fontWeight: floor === f ? 600 : 400,
-              cursor: 'pointer', fontFamily: 'inherit',
-            }}>
-            {f} этаж
-          </button>
-        ))}
-
-
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 18, fontSize: 12, alignItems: 'center' }}>
-          {[
-            { bg: 'rgba(120,220,55,0.20)', br: 'rgba(55,145,20,0.90)', label: 'Свободно' },
-            { bg: 'rgba(35,150,243,0.20)', br: 'rgba(35,110,210,0.90)', label: 'Наведение' },
-          ].map(s => (
+    <Page>
+      <Row gap={12}>
+        <Segmented<'2' | '3'> value={String(floor) as '2' | '3'} onChange={k => setFloor(Number(k))} options={[['2', '2 этаж'], ['3', '3 этаж']]} />
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 16, fontSize: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+          {legend.map(s => (
             <div key={s.label} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <div style={{ width: 14, height: 14, background: s.bg, border: `1.5px solid ${s.br}`, borderRadius: 2 }} />
-              <span style={{ color: '#6b7280', fontWeight: 500 }}>{s.label}</span>
+              <svg width={14} height={14} aria-hidden="true" style={{ flexShrink: 0 }}>
+                <rect x={0.75} y={0.75} width={12.5} height={12.5} rx={2} style={{ fill: s.color, fillOpacity: 0.2, stroke: s.color, strokeWidth: 1.5 }} />
+              </svg>
+              <span style={{ color: C.muted, fontWeight: 500 }}>{s.label}</span>
             </div>
           ))}
         </div>
-      </div>
+      </Row>
 
-      <div style={{ display: 'grid', gridTemplateColumns: selId ? '1fr 280px' : '1fr', gap: 14, alignItems: 'start' }}>
+      {error && <ErrorBox error={error} onRetry={load} />}
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'flex-start' }}>
         {/* Floor plan — single SVG with image + hit areas in the same coordinate system */}
-        <div style={{ background: '#fff', border: '1px solid #e8ebf3', borderRadius: 10, padding: 10 }}>
-          <div style={{ fontSize: 11, color: '#8596b4', marginBottom: 6, fontWeight: 600, letterSpacing: '0.03em' }}>
-            БЦ Маяк · {floor} этаж — нажмите на кабинет
-          </div>
-
-          <svg
-            viewBox={viewBox}
-            width="100%"
-            height="auto"
-            preserveAspectRatio="xMidYMid meet"
-            xmlns="http://www.w3.org/2000/svg"
-            style={{ display: 'block', borderRadius: 6 }}
-          >
-            {/* Floor plan image — same coordinate space as hit paths */}
-            <image
-              href={floorImg}
-              x={0} y={0}
-              width={imgW} height={imgH}
+        <div style={{ flex: '1 1 560px', minWidth: 0 }}>
+          <Card title={<span style={{ fontWeight: 500, color: C.muted, fontSize: 13 }}>БЦ Маяк · {floor} этаж — нажмите на кабинет{loading ? ' · загрузка арендаторов…' : ''}</span>}>
+            <svg
+              viewBox={viewBox}
+              width="100%"
               preserveAspectRatio="xMidYMid meet"
-            />
+              xmlns="http://www.w3.org/2000/svg"
+              style={{ display: 'block', borderRadius: 6, height: 'auto' }}
+            >
+              {/* Floor plan image — same coordinate space as hit paths */}
+              <image
+                href={floorImg}
+                x={0} y={0}
+                width={imgW} height={imgH}
+                preserveAspectRatio="xMidYMid meet"
+              />
 
-            {/* Exact SVG path hit areas — pixel-accurate, from floorplans_hitareas_EXACT.json */}
-            <g>
-              {rooms.map(r => {
-                const s = getPathStyle(r)
-                return (
-                  <path
-                    key={r.id}
-                    d={r.svg_path}
-                    fill={s.fill}
-                    stroke={s.stroke}
-                    strokeWidth={s.strokeWidth}
-                    strokeLinejoin="round"
-                    style={{ cursor: 'pointer' }}
-                    onMouseEnter={() => setHoverId(r.id)}
-                    onMouseLeave={() => setHoverId(null)}
-                    onClick={() => setSelId(selId === r.id ? null : r.id)}
-                  />
-                )
-              })}
-            </g>
-          </svg>
+              {/* Exact SVG path hit areas — pixel-accurate, from floorplans_hitareas_EXACT.json */}
+              <g>
+                {rooms.map(r => {
+                  const s = getPathStyle(r)
+                  return (
+                    <path
+                      key={r.id}
+                      d={r.svg_path}
+                      strokeLinejoin="round"
+                      style={{ cursor: 'pointer', fill: s.fill, fillOpacity: s.fillOpacity, stroke: s.stroke, strokeOpacity: s.strokeOpacity, strokeWidth: s.strokeWidth }}
+                      onMouseEnter={() => setHoverId(r.id)}
+                      onMouseLeave={() => setHoverId(null)}
+                      onClick={() => setSelId(selId === r.id ? null : r.id)}
+                    />
+                  )
+                })}
+              </g>
+            </svg>
+          </Card>
         </div>
 
         {/* Sidebar */}
         {selRoom && (
-          <div style={{ background: '#fff', border: '1px solid #e8ebf3', borderRadius: 10, padding: 16, display: 'flex', flexDirection: 'column' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <div style={{ fontSize: 15, fontWeight: 700, color: '#1a2240' }}>Кабинет №{selRoom.number}</div>
-              <button onClick={() => setSelId(null)}
-                style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#9ca3af', fontSize: 18, lineHeight: 1 }}>✕</button>
+          <div style={{ flex: '1 1 260px', maxWidth: 360, minWidth: 0 }}>
+          <Card title={`Кабинет № ${selRoom.number}`} actions={<Button small kind="ghost" onClick={() => setSelId(null)}>Закрыть</Button>}>
+            <div style={{ display: 'grid', gap: 0 }}>
+              <div style={{ marginBottom: 10 }}><Badge tone={isFree ? 'green' : 'blue'}>{isFree ? 'Свободен' : 'Занято'}</Badge></div>
+              <InfoRow label="Площадь" value={areaLabel(selRoom)} />
+
+              {selTenant && (
+                <>
+                  <div style={{ fontSize: 14, fontWeight: 600, margin: '12px 0 6px', lineHeight: 1.4 }}>{selTenant.full_name}</div>
+                  <InfoRow label="Аренда" value={money(selTenant.monthly_rent, { zero: '—' })} />
+                  <InfoRow label="Итого в мес." value={money(selTenant.monthly_total, { zero: '—' })} />
+                  <InfoRow label="Договор №" value={selTenant.contract_number || '—'} />
+                  <InfoRow label="Дата начала" value={dateRu(selTenant.contract_start_date)} />
+                  <InfoRow label="ИНН" value={selTenant.inn || '—'} />
+                  <Button kind="primary" onClick={() => onOpenTenant?.(selTenant.id)} style={{ marginTop: 14, width: '100%' }}>Открыть карточку арендатора</Button>
+                </>
+              )}
+
+              {!selTenant && (
+                <div style={{ marginTop: 10 }}><Muted small>{selRoom.serviceLabel ?? 'Нет данных об арендаторе'}</Muted></div>
+              )}
             </div>
-
-            <div style={{ padding: '5px 10px', borderRadius: 7, marginBottom: 12, background: isFree ? '#f0fdf4' : '#eff6ff' }}>
-              <span style={{ fontSize: 12, fontWeight: 600, color: isFree ? '#16a34a' : '#3b82f6' }}>
-                {isFree ? 'Свободен' : 'Занято'}
-              </span>
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid #f1f5f9' }}>
-              <span style={{ fontSize: 11, color: '#8596b4' }}>Площадь</span>
-              <span style={{ fontSize: 12, fontWeight: 500 }}>{areaLabel(selRoom)}</span>
-            </div>
-
-            {selTenant && (
-              <>
-                <div style={{ fontSize: 13, fontWeight: 600, color: '#1a2240', margin: '12px 0 8px', lineHeight: 1.4 }}>
-                  {selTenant.full_name}
-                </div>
-                {[
-                  { label: 'Аренда',       value: fmt(selTenant.monthly_rent) },
-                  { label: 'Итого в мес.', value: fmt(selTenant.monthly_total) },
-                  { label: 'Договор №',    value: selTenant.contract_number || '—' },
-                  { label: 'Дата начала',  value: selTenant.contract_start_date ? new Date(selTenant.contract_start_date).toLocaleDateString('ru-RU') : '—' },
-                  { label: 'ИНН',          value: selTenant.inn || '—' },
-                ].map(({ label, value }) => (
-                  <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '5px 0', borderBottom: '1px solid #f1f5f9' }}>
-                    <span style={{ fontSize: 11, color: '#8596b4' }}>{label}</span>
-                    <span style={{ fontSize: 12, fontWeight: 500, color: '#1a2240', textAlign: 'right', maxWidth: 160 }}>{value}</span>
-                  </div>
-                ))}
-                <button onClick={() => onOpenTenant?.(selTenant.id)}
-                  style={{ marginTop: 14, width: '100%', padding: '9px', border: 'none', borderRadius: 7, background: '#4f6ef7', color: '#fff', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
-                  Открыть карточку →
-                </button>
-              </>
-            )}
-
-            {!selTenant && (
-              <div style={{ marginTop: 8, fontSize: 12, color: '#6b7280' }}>
-                {selRoom.serviceLabel ?? 'Нет данных об арендаторе'}
-              </div>
-            )}
+          </Card>
           </div>
         )}
       </div>
+    </Page>
+  )
+}
+
+function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, padding: '6px 0', borderBottom: `1px solid ${C.line}` }}>
+      <span style={{ fontSize: 12, color: C.muted }}>{label}</span>
+      <span style={{ fontSize: 13, fontWeight: 500, textAlign: 'right' }}>{value}</span>
     </div>
   )
 }

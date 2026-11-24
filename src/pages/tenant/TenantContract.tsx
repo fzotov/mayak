@@ -33,7 +33,7 @@ export default function TenantContract({ tenantId }: { tenantId: string }) {
         {t.kpp && <Row label="КПП" value={t.kpp} />}
         <Row label="Юридический адрес" value={t.legal_address} />
       </Card>
-      <div style={{ fontSize: 13, color: '#737373', textAlign: 'center', lineHeight: 1.6 }}>
+      <div style={{ fontSize: 13, color: 'var(--text-3)', textAlign: 'center', lineHeight: 1.6 }}>
         Если данные устарели, сообщите в администрацию: +7 (916) 763-02-07
       </div>
     </div>

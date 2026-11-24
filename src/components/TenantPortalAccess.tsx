@@ -1,16 +1,18 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { apiFetch } from '../lib/api'
+import { Card, Button, Input, Notice, ErrorBox, Muted, Badge, C, dateRu } from './ui'
 
 /** Блок в карточке арендатора: кто имеет доступ в кабинет, приглашение по почте. */
 export function TenantPortalAccess({ tenantId, defaultEmail }: { tenantId: string; defaultEmail?: string }) {
   const [users, setUsers] = useState<any[]>([])
+  const [loadError, setLoadError] = useState('')
   const [email, setEmail] = useState(defaultEmail || '')
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
 
   const load = () => supabase.from('tenant_users').select('user_id, email, activated_at').eq('tenant_id', tenantId).order('created_at')
-    .then(({ data }) => setUsers(data || []))
+    .then(({ data, error }) => { setLoadError(error ? error.message : ''); setUsers(data || []) })
   useEffect(() => { load() }, [tenantId])
 
   const invite = async (e: React.FormEvent) => {
@@ -24,31 +26,33 @@ export function TenantPortalAccess({ tenantId, defaultEmail }: { tenantId: strin
 
   const unlink = async (u: any) => {
     if (!confirm(`Закрыть доступ в кабинет для ${u.email}?`)) return
-    await supabase.from('tenant_users').delete().eq('user_id', u.user_id)
+    const { error } = await supabase.from('tenant_users').delete().eq('user_id', u.user_id)
+    if (error) setMsg({ ok: false, text: error.message })
     load()
   }
 
   return (
-    <div style={{ background: '#fff', border: '1px solid #e8ebf3', borderRadius: 10, padding: 18, marginBottom: 16 }}>
-      <div style={{ fontSize: 14, fontWeight: 600, color: '#1a2240', marginBottom: 4 }}>Кабинет арендатора</div>
-      <div style={{ fontSize: 13, color: '#8596b4', marginBottom: 14 }}>
-        {users.length ? 'Доступ открыт:' : 'Доступ ещё не выдан. Отправьте приглашение — арендатор сам задаст пароль.'}
+    <Card title="Кабинет арендатора">
+      <div style={{ display: 'grid', gap: 12 }}>
+        {loadError && <ErrorBox error={loadError} onRetry={load} />}
+        <Muted>{users.length ? 'Доступ открыт:' : 'Доступ ещё не выдан. Отправьте приглашение — арендатор сам задаст пароль.'}</Muted>
+        {users.length > 0 && (
+          <div>
+            {users.map(u => (
+              <div key={u.user_id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 0', borderTop: `1px solid ${C.line}`, fontSize: 14, flexWrap: 'wrap' }}>
+                <span style={{ flex: 1, minWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis' }}>{u.email}</span>
+                <Badge tone="green">активен{u.activated_at ? ' с ' + dateRu(u.activated_at) : ''}</Badge>
+                <Button small kind="danger" onClick={() => unlink(u)}>Закрыть доступ</Button>
+              </div>
+            ))}
+          </div>
+        )}
+        <form onSubmit={invite} style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <Input type="email" required value={email} onChange={e => setEmail(e.target.value)} placeholder="Email арендатора" style={{ flex: '1 1 220px', width: 'auto' }} />
+          <Button type="submit" kind="primary" disabled={busy}>{busy ? 'Отправляем…' : 'Пригласить'}</Button>
+        </form>
+        {msg && <Notice tone={msg.ok ? 'green' : 'red'}>{msg.text}</Notice>}
       </div>
-      {users.map(u => (
-        <div key={u.user_id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 0', borderTop: '1px solid #f0f2f8', fontSize: 14 }}>
-          <span style={{ flex: 1, color: '#1a2240', overflow: 'hidden', textOverflow: 'ellipsis' }}>{u.email}</span>
-          <span style={{ fontSize: 12, color: '#16a34a' }}>активен{u.activated_at ? ' с ' + new Date(u.activated_at).toLocaleDateString('ru-RU') : ''}</span>
-          <button onClick={() => unlink(u)} style={{ border: '1px solid #e8ebf3', background: '#fff', color: '#b91c1c', borderRadius: 6, padding: '4px 10px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>Закрыть доступ</button>
-        </div>
-      ))}
-      <form onSubmit={invite} style={{ display: 'flex', gap: 8, marginTop: users.length ? 14 : 0, flexWrap: 'wrap' }}>
-        <input type="email" required value={email} onChange={e => setEmail(e.target.value)} placeholder="Email арендатора"
-          style={{ flex: '1 1 220px', padding: '8px 10px', border: '1px solid #e8ebf3', borderRadius: 7, fontSize: 14, fontFamily: 'inherit', outline: 'none' }} />
-        <button type="submit" disabled={busy} style={{ padding: '8px 16px', border: 'none', borderRadius: 7, background: '#111', color: '#fff', fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', opacity: busy ? 0.6 : 1 }}>
-          {busy ? 'Отправляем…' : 'Пригласить'}
-        </button>
-      </form>
-      {msg && <div style={{ fontSize: 13, marginTop: 10, padding: '8px 12px', borderRadius: 7, background: msg.ok ? '#f0fdf4' : '#fef2f2', color: msg.ok ? '#166534' : '#b91c1c' }}>{msg.text}</div>}
-    </div>
+    </Card>
   )
 }

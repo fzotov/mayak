@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { C, Page, Card, Row, Button, Badge, Stat, Stats, Field, Input, Select, Textarea, Segmented, Modal, Notice, Loading, Empty, ErrorBox, Muted, type Tone } from '../components/ui'
 
 interface PaymentEntry {
   id: string
@@ -23,15 +24,15 @@ interface RegularPayment {
   active: boolean
 }
 
-const ACCENT = '#4f6ef7'
-const TEXT = '#1a2240'
-const GRAY = '#8596b4'
-const BORDER = '#e8ebf3'
-
-const STATUS_CONFIG: Record<string, { label: string; bg: string; color: string }> = {
-  PENDING: { label: 'Ожидает',   bg: '#eff3ff', color: '#4f6ef7' },
-  PAID:    { label: 'Оплачен',   bg: '#f0fdf4', color: '#16a34a' },
-  OVERDUE: { label: 'Просрочен', bg: '#fef2f2', color: '#ef4444' },
+const STATUS_CONFIG: Record<string, { label: string; tone: Tone }> = {
+  PENDING: { label: 'Ожидает', tone: 'blue' },
+  PAID:    { label: 'Оплачен', tone: 'green' },
+  OVERDUE: { label: 'Просрочен', tone: 'red' },
+}
+const statusOf = (s: string) => STATUS_CONFIG[s] ?? { label: s, tone: 'neutral' as Tone }
+/** Фон и цвет плашки в сетке календаря по тону статуса. */
+const CHIP: Record<Tone, [string, string]> = {
+  neutral: [C.hover, C.muted], blue: [C.accentBg, C.accent], green: [C.greenBg, C.green], red: [C.redBg, C.red], amber: [C.amberBg, C.amber], violet: [C.violetBg, C.violet],
 }
 
 const TYPE_LABEL: Record<string, string> = {
@@ -44,24 +45,22 @@ function fmt(n: number) {
   return n.toLocaleString('ru-RU', { minimumFractionDigits: 0 }) + ' ₽'
 }
 
+/** «ГГГГ-ММ-ДД» как локальная дата, без сдвига часового пояса. */
+function localDate(s: string) {
+  const [y, m, d] = s.slice(0, 10).split('-').map(Number)
+  return new Date(y, m - 1, d)
+}
+
 function fmtDate(s: string) {
-  return new Date(s).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' })
+  return localDate(s).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' })
 }
 
 function getWeekLabel(dateStr: string, monthStart: Date) {
-  const d = new Date(dateStr)
+  const d = localDate(dateStr)
   const diff = Math.floor((d.getTime() - monthStart.getTime()) / 86400000)
   const week = Math.floor(diff / 7) + 1
   return `Неделя ${week}`
 }
-
-const inputStyle: React.CSSProperties = {
-  width: '100%', padding: '8px 12px', borderRadius: 8, border: `1px solid ${BORDER}`,
-  fontSize: 14, color: TEXT, fontFamily: 'inherit', outline: 'none', background: '#fff',
-  boxSizing: 'border-box',
-}
-
-const labelStyle: React.CSSProperties = { fontSize: 13, color: GRAY, fontWeight: 500, marginBottom: 4, display: 'block' }
 
 const CATEGORIES = ['Аренда', 'Коммунальные', 'Охрана', 'Уборка', 'Интернет', 'Страхование', 'Налоги', 'Прочее']
 
@@ -71,14 +70,19 @@ function lastDayOf(ym: string) {
   return `${ym}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`
 }
 
+const groupHead: React.CSSProperties = { fontSize: 12, fontWeight: 600, color: C.muted, textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 8 }
+
 export default function PaymentCalendarPage() {
   const [entries, setEntries] = useState<PaymentEntry[]>([])
   const [regulars, setRegulars] = useState<RegularPayment[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [actionErr, setActionErr] = useState('')
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list')
   const [showRegularForm, setShowRegularForm] = useState(false)
   const [regForm, setRegForm] = useState({ name: '', amount: '', day_of_month: '1', category: 'Прочее', description: '' })
   const [saving, setSaving] = useState(false)
+  const [formErr, setFormErr] = useState('')
   const [currentMonth] = useState(() => {
     const now = new Date()
     return new Date(now.getFullYear(), now.getMonth(), 1)
@@ -91,12 +95,13 @@ export default function PaymentCalendarPage() {
     const m = currentMonth.getMonth() + 1
     const monthStr = `${y}-${String(m).padStart(2, '0')}`
 
-    const { data: existing } = await supabase
+    const { data: existing, error } = await supabase
       .from('payment_calendar')
       .select('regular_payment_id')
       .gte('due_date', `${monthStr}-01`)
       .lte('due_date', lastDayOf(monthStr))
       .eq('type', 'REGULAR')
+    if (error) throw new Error('Не удалось проверить платежи месяца: ' + error.message)
 
     const existingIds = new Set((existing || []).map((e: any) => e.regular_payment_id))
 
@@ -115,50 +120,60 @@ export default function PaymentCalendarPage() {
       })
 
     if (toInsert.length > 0) {
-      await supabase.from('payment_calendar').insert(toInsert)
+      const { error: insErr } = await supabase.from('payment_calendar').insert(toInsert)
+      if (insErr) throw new Error('Не удалось добавить регулярные платежи месяца: ' + insErr.message)
     }
   }
 
   async function load() {
-    setLoading(true)
-    const { data: regs } = await supabase.from('regular_payments').select('*').order('day_of_month')
-    const regList = (regs as RegularPayment[]) || []
-    setRegulars(regList)
+    setLoading(true); setError('')
+    try {
+      const { data: regs, error: regErr } = await supabase.from('regular_payments').select('*').order('day_of_month')
+      if (regErr) throw new Error('Не удалось загрузить регулярные платежи: ' + regErr.message)
+      const regList = (regs as RegularPayment[]) || []
+      setRegulars(regList)
 
-    await generateMonthlyEntries(regList)
+      await generateMonthlyEntries(regList)
 
-    const y = currentMonth.getFullYear()
-    const m = currentMonth.getMonth() + 1
-    const monthStr = `${y}-${String(m).padStart(2, '0')}`
+      const y = currentMonth.getFullYear()
+      const m = currentMonth.getMonth() + 1
+      const monthStr = `${y}-${String(m).padStart(2, '0')}`
 
-    const { data } = await supabase
-      .from('payment_calendar')
-      .select('*')
-      .gte('due_date', `${monthStr}-01`)
-      .lte('due_date', lastDayOf(monthStr))
-      .order('due_date')
+      const { data, error: calErr } = await supabase
+        .from('payment_calendar')
+        .select('*')
+        .gte('due_date', `${monthStr}-01`)
+        .lte('due_date', lastDayOf(monthStr))
+        .order('due_date')
+      if (calErr) throw new Error('Не удалось загрузить календарь платежей: ' + calErr.message)
 
-    // Auto-mark overdue
-    const now = new Date()
-    const updated = ((data as PaymentEntry[]) || []).map(e => {
-      if (e.status === 'PENDING' && new Date(e.due_date) < now) return { ...e, status: 'OVERDUE' }
-      return e
-    })
-    setEntries(updated)
+      // Просрочен — срок раньше сегодняшнего дня (платёж со сроком сегодня ещё не просрочен)
+      const now = new Date()
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+      const updated = ((data as PaymentEntry[]) || []).map(e => {
+        if (e.status === 'PENDING' && localDate(e.due_date) < todayStart) return { ...e, status: 'OVERDUE' }
+        return e
+      })
+      setEntries(updated)
+    } catch (e: any) {
+      setError(e?.message || 'Не удалось загрузить данные')
+    }
     setLoading(false)
   }
 
   useEffect(() => { load() }, [])
 
   async function markPaid(id: string) {
-    await supabase.from('payment_calendar').update({ status: 'PAID' }).eq('id', id)
+    setActionErr('')
+    const { error } = await supabase.from('payment_calendar').update({ status: 'PAID' }).eq('id', id)
+    if (error) { setActionErr('Не удалось отметить оплату: ' + error.message); return }
     setEntries(prev => prev.map(e => e.id === id ? { ...e, status: 'PAID' } : e))
   }
 
   async function saveRegular() {
     if (!regForm.name || !regForm.amount) return
-    setSaving(true)
-    await supabase.from('regular_payments').insert({
+    setSaving(true); setFormErr('')
+    const { error } = await supabase.from('regular_payments').insert({
       name: regForm.name,
       amount: parseFloat(regForm.amount.replace(',', '.')) || 0,
       day_of_month: parseInt(regForm.day_of_month) || 1,
@@ -167,6 +182,7 @@ export default function PaymentCalendarPage() {
       active: true,
     })
     setSaving(false)
+    if (error) { setFormErr('Не удалось сохранить: ' + error.message); return }
     setShowRegularForm(false)
     setRegForm({ name: '', amount: '', day_of_month: '1', category: 'Прочее', description: '' })
     load()
@@ -189,172 +205,124 @@ export default function PaymentCalendarPage() {
   const firstDow = (currentMonth.getDay() + 6) % 7 // Mon-based
   const calEntries: Record<number, PaymentEntry[]> = {}
   entries.forEach(e => {
-    const day = new Date(e.due_date).getDate()
+    const day = localDate(e.due_date).getDate()
     if (!calEntries[day]) calEntries[day] = []
     calEntries[day].push(e)
   })
 
   const monthLabel = currentMonth.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' })
+  const now = new Date()
+  const cellBorder = `1px solid ${C.line}`
 
   return (
-    <div style={{ padding: 24, maxWidth: 1200 }}>
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-        <div>
-          <div style={{ fontSize: 22, fontWeight: 700, color: TEXT, textTransform: 'capitalize' }}>Платежи · {monthLabel}</div>
-          <div style={{ fontSize: 13, color: GRAY, marginTop: 2 }}>Регулярные платежи и счета за месяц</div>
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          {/* View toggle */}
-          <div style={{ display: 'flex', border: `1px solid ${BORDER}`, borderRadius: 8, overflow: 'hidden' }}>
-            {(['list', 'calendar'] as const).map(m => (
-              <button key={m} onClick={() => setViewMode(m)} style={{
-                padding: '7px 14px', border: 'none', background: viewMode === m ? ACCENT : '#fff',
-                color: viewMode === m ? '#fff' : GRAY, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500,
-              }}>
-                {m === 'list' ? 'Список' : 'Календарь'}
-              </button>
-            ))}
-          </div>
-          <button
-            onClick={() => setShowRegularForm(true)}
-            style={{ padding: '9px 16px', borderRadius: 8, border: `1px solid ${BORDER}`, background: '#fff', color: TEXT, fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}
-          >
-            + Регулярный платёж
-          </button>
-        </div>
-      </div>
+    <Page actions={<>
+      <Segmented<'list' | 'calendar'> options={[['list', 'Список'], ['calendar', 'Календарь']]} value={viewMode} onChange={setViewMode} />
+      <Button onClick={() => { setFormErr(''); setShowRegularForm(true) }}>Регулярный платёж</Button>
+    </>}>
+      <Muted><span style={{ textTransform: 'capitalize' }}>{monthLabel}</span> · регулярные платежи и счета за месяц{regulars.length > 0 ? ` · регулярных: ${regulars.length}` : ''}</Muted>
 
-      {/* KPI */}
-      <div style={{ display: 'flex', gap: 12, marginBottom: 20 }}>
-        {[
-          { label: 'Запланировано', value: fmt(totalPlanned), color: TEXT },
-          { label: 'Оплачено', value: fmt(totalPaid), color: '#16a34a' },
-          { label: 'Остаток', value: fmt(totalPending), color: totalPending > 0 ? '#ef4444' : TEXT },
-          { label: 'Всего платежей', value: String(entries.length), color: TEXT },
-        ].map(k => (
-          <div key={k.label} style={{ background: '#fff', border: `1px solid ${BORDER}`, borderRadius: 10, padding: '14px 18px', flex: 1 }}>
-            <div style={{ fontSize: 12, color: GRAY, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.4px', marginBottom: 6 }}>{k.label}</div>
-            <div style={{ fontSize: 20, fontWeight: 700, color: k.color }}>{k.value}</div>
-          </div>
-        ))}
-      </div>
+      <Stats>
+        <Stat label="Запланировано" value={fmt(totalPlanned)} />
+        <Stat label="Оплачено" value={fmt(totalPaid)} tone="green" />
+        <Stat label="Остаток" value={fmt(totalPending)} tone={totalPending > 0 ? 'red' : undefined} />
+        <Stat label="Всего платежей" value={String(entries.length)} />
+      </Stats>
 
-      {loading ? (
-        <div style={{ padding: 40, textAlign: 'center', color: GRAY }}>Загрузка...</div>
-      ) : viewMode === 'list' ? (
-        /* LIST VIEW */
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {error && <ErrorBox error={error} onRetry={load} />}
+      {actionErr && <Notice tone="red">{actionErr}</Notice>}
+
+      {loading ? <Loading /> : viewMode === 'list' ? (
+        <div style={{ display: 'grid', gap: 16 }}>
           {Object.entries(weeks).map(([week, items]) => (
             <div key={week}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: GRAY, textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 8 }}>{week}</div>
-              <div style={{ background: '#fff', border: `1px solid ${BORDER}`, borderRadius: 10, overflow: 'hidden' }}>
+              <div style={groupHead}>{week}</div>
+              <Card pad={false}>
                 {items.map((e, idx) => {
-                  const sc = STATUS_CONFIG[e.status] ?? { label: e.status, bg: '#f3f4f6', color: GRAY }
+                  const sc = statusOf(e.status)
                   return (
-                    <div key={e.id} style={{ display: 'flex', alignItems: 'center', padding: '12px 16px', borderBottom: idx < items.length - 1 ? `1px solid #f3f4f6` : 'none' }}>
-                      <div style={{ width: 36, height: 36, borderRadius: 8, background: '#f0f2f8', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, color: GRAY, marginRight: 12, flexShrink: 0 }}>
-                        {new Date(e.due_date).getDate()}
+                    <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', padding: '12px 16px', borderBottom: idx < items.length - 1 ? cellBorder : 'none' }}>
+                      <div style={{ width: 36, height: 36, borderRadius: 8, background: C.hover, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, color: C.muted, flexShrink: 0 }}>
+                        {localDate(e.due_date).getDate()}
                       </div>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: 14, fontWeight: 600, color: TEXT }}>{e.name}</div>
-                        <div style={{ fontSize: 12, color: GRAY, marginTop: 2 }}>{TYPE_LABEL[e.type] ?? e.type} · {fmtDate(e.due_date)}</div>
+                      <div style={{ flex: 1, minWidth: 160 }}>
+                        <div style={{ fontSize: 14, fontWeight: 600 }}>{e.name}</div>
+                        <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>{TYPE_LABEL[e.type] ?? e.type} · {fmtDate(e.due_date)}</div>
                       </div>
-                      <div style={{ fontSize: 16, fontWeight: 700, color: e.status === 'PAID' ? '#16a34a' : TEXT, marginRight: 16 }}>{fmt(e.amount)}</div>
-                      <span style={{ background: sc.bg, color: sc.color, padding: '3px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600, marginRight: 12, whiteSpace: 'nowrap' }}>{sc.label}</span>
-                      {e.status !== 'PAID' && (
-                        <button onClick={() => markPaid(e.id)} style={{ padding: '5px 12px', borderRadius: 6, border: 'none', background: '#dcfce7', color: '#15803d', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, whiteSpace: 'nowrap' }}>✓ Оплачен</button>
-                      )}
+                      <div style={{ fontSize: 16, fontWeight: 700, color: e.status === 'PAID' ? C.green : C.text, fontVariantNumeric: 'tabular-nums' }}>{fmt(e.amount)}</div>
+                      <Badge tone={sc.tone}>{sc.label}</Badge>
+                      {e.status !== 'PAID' && <Button small onClick={() => markPaid(e.id)}>Отметить оплату</Button>}
+                    </div>
+                  )
+                })}
+              </Card>
+            </div>
+          ))}
+          {entries.length === 0 && !error && <Card><Empty>Нет платежей в этом месяце</Empty></Card>}
+        </div>
+      ) : (
+        <Card pad={false}>
+          <div style={{ overflowX: 'auto' }}>
+            <div style={{ minWidth: 560 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', borderBottom: cellBorder }}>
+                {['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map(d => (
+                  <div key={d} style={{ padding: '10px 8px', textAlign: 'center', fontSize: 12, fontWeight: 600, color: C.muted, background: C.card2 }}>{d}</div>
+                ))}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
+                {Array.from({ length: firstDow }).map((_, i) => (
+                  <div key={`e${i}`} style={{ minHeight: 90, borderRight: cellBorder, borderBottom: cellBorder, background: C.card2 }} />
+                ))}
+                {Array.from({ length: daysInMonth }, (_, i) => i + 1).map(day => {
+                  const items = calEntries[day] || []
+                  const isToday = day === now.getDate() && currentMonth.getMonth() === now.getMonth() && currentMonth.getFullYear() === now.getFullYear()
+                  return (
+                    <div key={day} style={{ minHeight: 90, borderRight: cellBorder, borderBottom: cellBorder, padding: 6, minWidth: 0 }}>
+                      <div style={{ fontSize: 12, fontWeight: isToday ? 700 : 500, color: isToday ? C.onAccent : C.muted, background: isToday ? C.accent : 'transparent', width: 22, height: 22, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 4 }}>{day}</div>
+                      {items.map(e => {
+                        const [bg, fg] = CHIP[statusOf(e.status).tone]
+                        return (
+                          <div key={e.id} style={{ background: bg, color: fg, borderRadius: 4, padding: '2px 5px', fontSize: 11, fontWeight: 600, marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={`${e.name} — ${fmt(e.amount)}`}>
+                            {e.name}
+                          </div>
+                        )
+                      })}
                     </div>
                   )
                 })}
               </div>
             </div>
-          ))}
-          {entries.length === 0 && <div style={{ padding: 40, textAlign: 'center', color: GRAY, background: '#fff', borderRadius: 10, border: `1px solid ${BORDER}` }}>Нет платежей в этом месяце</div>}
-        </div>
-      ) : (
-        /* CALENDAR VIEW */
-        <div style={{ background: '#fff', border: `1px solid ${BORDER}`, borderRadius: 10, overflow: 'hidden' }}>
-          {/* Day headers */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', borderBottom: `1px solid ${BORDER}` }}>
-            {['Пн','Вт','Ср','Чт','Пт','Сб','Вс'].map(d => (
-              <div key={d} style={{ padding: '10px 8px', textAlign: 'center', fontSize: 12, fontWeight: 700, color: GRAY, background: '#f8f9fb' }}>{d}</div>
-            ))}
           </div>
-          {/* Day cells */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
-            {Array.from({ length: firstDow }).map((_, i) => (
-              <div key={`e${i}`} style={{ minHeight: 90, borderRight: `1px solid #f3f4f6`, borderBottom: `1px solid #f3f4f6`, background: '#fafbfc' }} />
-            ))}
-            {Array.from({ length: daysInMonth }, (_, i) => i + 1).map(day => {
-              const items = calEntries[day] || []
-              const isToday = day === new Date().getDate() && currentMonth.getMonth() === new Date().getMonth()
-              return (
-                <div key={day} style={{ minHeight: 90, borderRight: `1px solid #f3f4f6`, borderBottom: `1px solid #f3f4f6`, padding: 6 }}>
-                  <div style={{ fontSize: 12, fontWeight: isToday ? 700 : 500, color: isToday ? '#fff' : GRAY, background: isToday ? ACCENT : 'transparent', width: 22, height: 22, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 4 }}>{day}</div>
-                  {items.map(e => {
-                    const sc = STATUS_CONFIG[e.status] ?? { label: e.status, bg: '#f3f4f6', color: GRAY }
-                    return (
-                      <div key={e.id} style={{ background: sc.bg, color: sc.color, borderRadius: 4, padding: '2px 5px', fontSize: 11, fontWeight: 600, marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={`${e.name} — ${fmt(e.amount)}`}>
-                        {e.name}
-                      </div>
-                    )
-                  })}
-                </div>
-              )
-            })}
-          </div>
-        </div>
+        </Card>
       )}
 
-      {/* Regular payment form modal */}
       {showRegularForm && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div style={{ background: '#fff', borderRadius: 14, padding: 28, width: 460, boxShadow: '0 20px 60px rgba(0,0,0,.2)' }}>
-            <div style={{ fontSize: 18, fontWeight: 700, color: TEXT, marginBottom: 20 }}>Регулярный платёж</div>
-
-            <div style={{ marginBottom: 14 }}>
-              <label style={labelStyle}>Название *</label>
-              <input style={inputStyle} value={regForm.name} onChange={e => setRegForm(f => ({ ...f, name: e.target.value }))} placeholder="Аренда офиса" />
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
-              <div>
-                <label style={labelStyle}>Сумма (₽) *</label>
-                <input style={inputStyle} value={regForm.amount} onChange={e => setRegForm(f => ({ ...f, amount: e.target.value }))} placeholder="25000" />
-              </div>
-              <div>
-                <label style={labelStyle}>День месяца</label>
-                <input style={inputStyle} type="number" min="1" max="31" value={regForm.day_of_month} onChange={e => setRegForm(f => ({ ...f, day_of_month: e.target.value }))} />
-              </div>
-            </div>
-
-            <div style={{ marginBottom: 14 }}>
-              <label style={labelStyle}>Категория</label>
-              <select style={inputStyle} value={regForm.category} onChange={e => setRegForm(f => ({ ...f, category: e.target.value }))}>
-                {CATEGORIES.map(c => <option key={c}>{c}</option>)}
-              </select>
-            </div>
-
-            <div style={{ marginBottom: 20 }}>
-              <label style={labelStyle}>Описание</label>
-              <textarea style={{ ...inputStyle, resize: 'vertical', minHeight: 60 }} value={regForm.description} onChange={e => setRegForm(f => ({ ...f, description: e.target.value }))} />
-            </div>
-
-            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-              <button onClick={() => setShowRegularForm(false)} style={{ padding: '9px 18px', borderRadius: 8, border: `1px solid ${BORDER}`, background: '#fff', color: GRAY, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>Отмена</button>
-              <button
-                onClick={saveRegular}
-                disabled={saving || !regForm.name || !regForm.amount}
-                style={{ padding: '9px 20px', borderRadius: 8, border: 'none', background: ACCENT, color: '#fff', fontSize: 14, fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: saving || !regForm.name || !regForm.amount ? .6 : 1 }}
-              >
-                {saving ? 'Сохраняю...' : 'Сохранить'}
-              </button>
-            </div>
+        <Modal title="Регулярный платёж" onClose={() => setShowRegularForm(false)} width={460}
+          footer={<>
+            <Button onClick={() => setShowRegularForm(false)}>Отмена</Button>
+            <Button kind="primary" onClick={saveRegular} disabled={saving || !regForm.name || !regForm.amount}>{saving ? 'Сохраняю…' : 'Сохранить'}</Button>
+          </>}>
+          <Field label="Название *">
+            <Input value={regForm.name} onChange={e => setRegForm(f => ({ ...f, name: e.target.value }))} placeholder="Аренда офиса" />
+          </Field>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <Field label="Сумма (₽) *">
+              <Input value={regForm.amount} onChange={e => setRegForm(f => ({ ...f, amount: e.target.value }))} placeholder="25000" />
+            </Field>
+            <Field label="День месяца">
+              <Input type="number" min="1" max="31" value={regForm.day_of_month} onChange={e => setRegForm(f => ({ ...f, day_of_month: e.target.value }))} />
+            </Field>
           </div>
-        </div>
+          <Field label="Категория">
+            <Select value={regForm.category} onChange={e => setRegForm(f => ({ ...f, category: e.target.value }))}>
+              {CATEGORIES.map(c => <option key={c}>{c}</option>)}
+            </Select>
+          </Field>
+          <Field label="Описание">
+            <Textarea value={regForm.description} onChange={e => setRegForm(f => ({ ...f, description: e.target.value }))} style={{ minHeight: 60 }} />
+          </Field>
+          {formErr && <Notice tone="red">{formErr}</Notice>}
+        </Modal>
       )}
-    </div>
+    </Page>
   )
 }

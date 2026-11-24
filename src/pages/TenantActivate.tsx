@@ -3,10 +3,10 @@ import { supabase } from '../lib/supabase'
 
 type State = 'loading' | 'valid' | 'expired' | 'done'
 
-const C = { bg: '#0a0a0a', surface: '#111', border: '#1f1f1f', text: '#ededed', muted: '#888', font: '"Geist", system-ui, -apple-system, sans-serif' }
+const C = { bg: 'var(--bg)', surface: 'var(--surface)', border: 'var(--border)', text: 'var(--text)', muted: 'var(--text-2)', font: '"Geist", system-ui, -apple-system, sans-serif' }
 const inp: React.CSSProperties = {
-  width: '100%', padding: '12px', background: '#0f0f0f', border: '1px solid #1f1f1f', borderRadius: 8,
-  fontSize: 16, color: '#ededed', outline: 'none', fontFamily: C.font, boxSizing: 'border-box',
+  width: '100%', padding: '12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8,
+  fontSize: 16, color: 'var(--text)', outline: 'none', fontFamily: C.font, boxSizing: 'border-box',
 }
 
 /** Задать пароль по одноразовой ссылке из письма: приглашение арендатора, приглашение сотрудника, сброс пароля. */
@@ -66,14 +66,14 @@ export default function SetPasswordPage({ mode = 'activate' }: { mode?: 'activat
               <div style={{ color: C.muted, fontSize: 14, lineHeight: 1.6, marginBottom: 20 }}>
                 Ссылка уже использована или её срок истёк. Запросите новую на странице входа или обратитесь в администрацию бизнес-центра.
               </div>
-              <a href="/tenant/login" style={{ display: 'block', background: '#fff', color: '#000', borderRadius: 8, padding: 12, fontSize: 15, fontWeight: 500, textDecoration: 'none' }}>Перейти ко входу</a>
+              <a href="/tenant/login" style={{ display: 'block', background: 'var(--text)', color: 'var(--bg)', borderRadius: 8, padding: 12, fontSize: 15, fontWeight: 500, textDecoration: 'none' }}>Перейти ко входу</a>
             </div>
           )}
 
           {state === 'done' && (
             <div style={{ textAlign: 'center' }}>
               <div style={{ color: C.muted, fontSize: 14, lineHeight: 1.6, marginBottom: 20 }}>Теперь войдите с новым паролем.</div>
-              <a href="/tenant/login" style={{ display: 'block', background: '#fff', color: '#000', borderRadius: 8, padding: 12, fontSize: 15, fontWeight: 500, textDecoration: 'none' }}>Войти</a>
+              <a href="/tenant/login" style={{ display: 'block', background: 'var(--text)', color: 'var(--bg)', borderRadius: 8, padding: 12, fontSize: 15, fontWeight: 500, textDecoration: 'none' }}>Войти</a>
             </div>
           )}
 
@@ -84,8 +84,8 @@ export default function SetPasswordPage({ mode = 'activate' }: { mode?: 'activat
               <input type="password" autoComplete="new-password" value={pw} onChange={e => setPw(e.target.value)} placeholder="Не короче 8 символов" required style={{ ...inp, marginBottom: 14 }} />
               <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 6, color: C.text }}>Пароль ещё раз</label>
               <input type="password" autoComplete="new-password" value={pw2} onChange={e => setPw2(e.target.value)} required style={{ ...inp, marginBottom: 20 }} />
-              {err && <div style={{ background: 'rgba(255,68,68,0.08)', border: '1px solid rgba(255,68,68,0.2)', borderRadius: 8, padding: '10px 12px', fontSize: 13, color: '#ff6b6b', marginBottom: 16 }}>{err}</div>}
-              <button type="submit" disabled={saving} style={{ width: '100%', background: saving ? '#333' : '#fff', color: '#000', border: 'none', borderRadius: 8, padding: 12, fontSize: 15, fontWeight: 500, cursor: saving ? 'default' : 'pointer', fontFamily: C.font }}>
+              {err && <div style={{ background: 'var(--red-bg)', border: '1px solid var(--red-border)', borderRadius: 8, padding: '10px 12px', fontSize: 13, color: 'var(--red)', marginBottom: 16 }}>{err}</div>}
+              <button type="submit" disabled={saving} style={{ width: '100%', background: saving ? 'var(--border-strong)' : 'var(--text)', color: 'var(--bg)', border: 'none', borderRadius: 8, padding: 12, fontSize: 15, fontWeight: 500, cursor: saving ? 'default' : 'pointer', fontFamily: C.font }}>
                 {saving ? 'Сохраняем…' : 'Сохранить и войти'}
               </button>
             </form>

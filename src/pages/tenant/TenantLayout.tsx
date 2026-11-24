@@ -98,15 +98,15 @@ const PAGE_TITLES: Record<string, string> = {
 }
 
 const C = {
-  bg: '#0a0a0a',
-  surface: '#111',
-  border: '#1f1f1f',
-  borderSubtle: '#1a1a1a',
-  text: '#ededed',
-  muted: '#666',
-  mutedMid: '#888',
-  accent: '#fff',
-  danger: '#ff4444',
+  bg: 'var(--bg)',
+  surface: 'var(--surface)',
+  border: 'var(--border)',
+  borderSubtle: 'var(--surface-2)',
+  text: 'var(--text)',
+  muted: 'var(--text-3)',
+  mutedMid: 'var(--text-2)',
+  accent: 'var(--text)',
+  danger: 'var(--red)',
   font: '"Geist", system-ui, -apple-system, sans-serif',
 }
 
@@ -202,8 +202,8 @@ export default function TenantLayout({ children, activePage, onNavigate }: Tenan
                   <span style={{ flex: 1 }}>{item.label}</span>
                   {badge !== null && (
                     <span style={{
-                      minWidth: 16, height: 16, borderRadius: 8, background: '#ef4444',
-                      color: '#fff', fontSize: 10, fontWeight: 700,
+                      minWidth: 16, height: 16, borderRadius: 8, background: 'var(--red)',
+                      color: 'var(--text)', fontSize: 10, fontWeight: 700,
                       display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px',
                     }}>{badge}</span>
                   )}
@@ -216,7 +216,7 @@ export default function TenantLayout({ children, activePage, onNavigate }: Tenan
           <div style={{ borderTop: `1px solid ${C.border}`, padding: '12px 12px 16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
               <div style={{
-                width: 32, height: 32, borderRadius: '50%', background: '#333',
+                width: 32, height: 32, borderRadius: '50%', background: 'var(--border-strong)',
                 color: C.accent, display: 'flex', alignItems: 'center', justifyContent: 'center',
                 fontSize: 12, fontWeight: 600, flexShrink: 0,
               }}>{ava}</div>
@@ -285,13 +285,13 @@ export default function TenantLayout({ children, activePage, onNavigate }: Tenan
             {unreadCount > 0 && (
               <span style={{
                 position: 'absolute', top: 0, right: 0, minWidth: 14, height: 14, borderRadius: 7,
-                background: '#ef4444', color: '#fff', fontSize: 9, fontWeight: 700,
+                background: 'var(--red)', color: 'var(--text)', fontSize: 9, fontWeight: 700,
                 display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px',
               }}>{unreadCount}</span>
             )}
           </button>
           <button onClick={() => setDrawerOpen(true)} style={{
-            width: 30, height: 30, borderRadius: '50%', background: '#333',
+            width: 30, height: 30, borderRadius: '50%', background: 'var(--border-strong)',
             color: C.accent, border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 600,
           }}>{ava}</button>
         </div>
@@ -335,7 +335,7 @@ export default function TenantLayout({ children, activePage, onNavigate }: Tenan
       {drawerOpen && (
         <div
           onClick={() => setDrawerOpen(false)}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 200 }}
+          style={{ position: 'fixed', inset: 0, background: 'var(--overlay)', zIndex: 200 }}
         />
       )}
 
@@ -350,7 +350,7 @@ export default function TenantLayout({ children, activePage, onNavigate }: Tenan
         <div style={{ width: 32, height: 3, borderRadius: 2, background: C.border, margin: '0 auto 16px' }} />
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '0 16px 14px', borderBottom: `1px solid ${C.border}` }}>
-          <div style={{ width: 36, height: 36, borderRadius: '50%', background: '#333', color: C.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 600 }}>{ava}</div>
+          <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--border-strong)', color: C.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 600 }}>{ava}</div>
           <div>
             <div style={{ fontSize: 14, fontWeight: 500, color: C.text }}>{tenantName || email}</div>
             {unitNumber && <div style={{ fontSize: 12, color: C.muted }}>{unitNumber}</div>}
@@ -368,7 +368,7 @@ export default function TenantLayout({ children, activePage, onNavigate }: Tenan
               <span style={{ color: C.mutedMid, display: 'flex' }}>{Icons[item.icon as keyof typeof Icons]}</span>
               <span style={{ flex: 1 }}>{item.label}</span>
               {badge !== null && (
-                <span style={{ minWidth: 18, height: 18, borderRadius: 9, background: '#ef4444', color: '#fff', fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px' }}>{badge}</span>
+                <span style={{ minWidth: 18, height: 18, borderRadius: 9, background: 'var(--red)', color: 'var(--text)', fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px' }}>{badge}</span>
               )}
             </button>
           )

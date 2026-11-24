@@ -44,7 +44,7 @@ export default function TenantRepairs({ tenantId }: { tenantId: string }) {
             <label style={label}>Что случилось</label>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
               {CATEGORIES.map(c => (
-                <button type="button" key={c} onClick={() => setCategory(c)} style={{ minHeight: 40, padding: '0 14px', borderRadius: 20, fontSize: 14, fontFamily: T.font, cursor: 'pointer', border: `1px solid ${category === c ? T.accent : T.border}`, background: category === c ? T.accent : 'transparent', color: category === c ? '#000' : T.text }}>{c}</button>
+                <button type="button" key={c} onClick={() => setCategory(c)} style={{ minHeight: 40, padding: '0 14px', borderRadius: 20, fontSize: 14, fontFamily: T.font, cursor: 'pointer', border: `1px solid ${category === c ? T.accent : T.border}`, background: category === c ? T.accent : 'transparent', color: category === c ? 'var(--bg)' : T.text }}>{c}</button>
               ))}
             </div>
             <label style={label}>Описание</label>

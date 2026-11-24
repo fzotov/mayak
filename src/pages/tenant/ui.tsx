@@ -2,9 +2,9 @@
 import type { CSSProperties, ReactNode } from 'react'
 
 export const T = {
-  bg: '#0a0a0a', surface: '#111', raised: '#161616', border: '#1f1f1f', text: '#ededed', sub: '#a1a1a1', muted: '#737373',
-  ok: '#3ecf8e', warn: '#f5a524', bad: '#ff6166', accent: '#fff',
-  font: '"Geist", system-ui, -apple-system, sans-serif',
+  bg: 'var(--bg)', surface: 'var(--surface)', raised: 'var(--surface-2)', border: 'var(--border)', text: 'var(--text)', sub: 'var(--text-2)', muted: 'var(--text-3)',
+  ok: 'var(--green)', warn: 'var(--amber)', bad: 'var(--red)', accent: 'var(--text)',
+  font: 'var(--font)',
 }
 
 export const money = (n: number | null | undefined) =>
@@ -34,13 +34,13 @@ export function Row({ label, value }: { label: string; value: ReactNode }) {
 }
 
 export function Badge({ children, tone = 'muted' }: { children: ReactNode; tone?: 'ok' | 'warn' | 'bad' | 'muted' }) {
-  const c = { ok: T.ok, warn: T.warn, bad: T.bad, muted: T.sub }[tone]
-  return <span style={{ display: 'inline-block', padding: '2px 9px', borderRadius: 20, fontSize: 12, fontWeight: 500, color: c, border: `1px solid ${c}44`, background: `${c}14`, whiteSpace: 'nowrap' }}>{children}</span>
+  const [c, bg] = { ok: [T.ok, 'var(--green-bg)'], warn: [T.warn, 'var(--amber-bg)'], bad: [T.bad, 'var(--red-bg)'], muted: [T.sub, 'var(--hover)'] }[tone]
+  return <span style={{ display: 'inline-block', padding: '2px 9px', borderRadius: 20, fontSize: 12, fontWeight: 500, color: c, border: `1px solid ${bg}`, background: bg, whiteSpace: 'nowrap' }}>{children}</span>
 }
 
 export const input: CSSProperties = {
-  width: '100%', padding: 12, background: '#0f0f0f', border: `1px solid ${T.border}`, borderRadius: 8,
-  fontSize: 16, color: T.text, outline: 'none', fontFamily: T.font, boxSizing: 'border-box',
+  width: '100%', padding: 12, background: 'var(--surface)', border: `1px solid ${T.border}`, borderRadius: 8,
+  fontSize: 16, color: T.text, outline: 'none', fontFamily: 'var(--font)', boxSizing: 'border-box',
 }
 export const label: CSSProperties = { display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 6, color: T.sub }
 
@@ -48,9 +48,9 @@ export function Button({ children, onClick, disabled, kind = 'primary', type = '
   const primary = kind === 'primary'
   return (
     <button type={type} onClick={onClick} disabled={disabled} style={{
-      minHeight: 44, padding: '0 18px', borderRadius: 8, fontSize: 15, fontWeight: 500, fontFamily: T.font, cursor: disabled ? 'default' : 'pointer',
+      minHeight: 44, padding: '0 18px', borderRadius: 8, fontSize: 15, fontWeight: 500, fontFamily: 'var(--font)', cursor: disabled ? 'default' : 'pointer',
       width: full ? '100%' : undefined, opacity: disabled ? 0.5 : 1,
-      background: primary ? T.accent : 'transparent', color: primary ? '#000' : T.text, border: primary ? 'none' : `1px solid ${T.border}`,
+      background: primary ? T.accent : 'transparent', color: primary ? 'var(--bg)' : T.text, border: primary ? 'none' : `1px solid ${T.border}`,
     }}>{children}</button>
   )
 }
@@ -61,6 +61,7 @@ export function Empty({ children }: { children: ReactNode }) {
 export function Loading() { return <div style={{ padding: 40, textAlign: 'center', color: T.muted, fontSize: 14 }}>Загрузка…</div> }
 export function Note({ children, tone = 'bad' }: { children: ReactNode; tone?: 'ok' | 'bad' }) {
   const c = tone === 'ok' ? T.ok : T.bad
-  return <div style={{ background: `${c}14`, border: `1px solid ${c}33`, borderRadius: 8, padding: '10px 12px', fontSize: 13, color: c, marginTop: 12 }}>{children}</div>
+  const bg = tone === 'ok' ? 'var(--green-bg)' : 'var(--red-bg)'
+  return <div style={{ background: bg, border: `1px solid ${tone === 'ok' ? 'var(--green-bg)' : 'var(--red-border)'}`, borderRadius: 8, padding: '10px 12px', fontSize: 13, color: c, marginTop: 12 }}>{children}</div>
 }
-export const page: CSSProperties = { display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 760, margin: '0 auto', fontFamily: T.font, color: T.text }
+export const page: CSSProperties = { display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 760, margin: '0 auto', fontFamily: 'var(--font)', color: T.text }

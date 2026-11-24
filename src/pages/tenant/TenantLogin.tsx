@@ -7,18 +7,18 @@ interface TenantLoginProps {
 }
 
 const C = {
-  bg: '#0a0a0a',
-  surface: '#111',
-  border: '#1f1f1f',
-  text: '#ededed',
-  muted: '#666',
+  bg: 'var(--bg)',
+  surface: 'var(--surface)',
+  border: 'var(--border)',
+  text: 'var(--text)',
+  muted: 'var(--text-3)',
   font: '"Geist", system-ui, -apple-system, sans-serif',
 }
 
 const inp: React.CSSProperties = {
-  width: '100%', padding: '12px', background: '#0f0f0f',
-  border: `1px solid #1f1f1f`, borderRadius: 8, fontSize: 16,
-  color: '#ededed', outline: 'none', fontFamily: C.font, boxSizing: 'border-box',
+  width: '100%', padding: '12px', background: 'var(--surface)',
+  border: `1px solid var(--border)`, borderRadius: 8, fontSize: 16,
+  color: 'var(--text)', outline: 'none', fontFamily: C.font, boxSizing: 'border-box',
 }
 
 export default function TenantLogin({ onNavigate }: TenantLoginProps) {
@@ -100,11 +100,11 @@ export default function TenantLogin({ onNavigate }: TenantLoginProps) {
                 <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" autoComplete="current-password" required style={inp} />
               </div>
               {error && (
-                <div style={{ background: 'rgba(255,68,68,0.08)', border: '1px solid rgba(255,68,68,0.2)', borderRadius: 6, padding: '10px 12px', fontSize: 13, color: '#ff6b6b', marginBottom: 16 }}>
+                <div style={{ background: 'var(--red-bg)', border: '1px solid var(--red-border)', borderRadius: 6, padding: '10px 12px', fontSize: 13, color: 'var(--red)', marginBottom: 16 }}>
                   {error}
                 </div>
               )}
-              <button type="submit" disabled={loading} style={{ width: '100%', background: loading ? '#333' : '#fff', color: '#000', border: 'none', borderRadius: 6, padding: '10px', fontSize: 14, fontWeight: 500, cursor: loading ? 'not-allowed' : 'pointer', fontFamily: C.font }}>
+              <button type="submit" disabled={loading} style={{ width: '100%', background: loading ? 'var(--border-strong)' : 'var(--text)', color: 'var(--bg)', border: 'none', borderRadius: 6, padding: '10px', fontSize: 14, fontWeight: 500, cursor: loading ? 'not-allowed' : 'pointer', fontFamily: C.font }}>
                 {loading ? 'Входим...' : 'Войти'}
               </button>
             </form>
@@ -121,7 +121,7 @@ export default function TenantLogin({ onNavigate }: TenantLoginProps) {
           <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: 28 }}>
             {resetSent ? (
               <div style={{ textAlign: 'center' }}>
-                <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', fontSize: 20, color: '#22c55e' }}>✓</div>
+                <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'var(--green-bg)', border: '1px solid var(--green-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', fontSize: 20, color: 'var(--green)' }}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5" /></svg></div>
                 <div style={{ fontSize: 15, fontWeight: 600, color: C.text, marginBottom: 8 }}>Письмо отправлено</div>
                 <div style={{ fontSize: 13, color: C.muted, lineHeight: 1.6, marginBottom: 20 }}>
                   Если аккаунт с таким email существует — вы получите ссылку для сброса пароля. Ссылка действительна 2 часа.
@@ -139,7 +139,7 @@ export default function TenantLogin({ onNavigate }: TenantLoginProps) {
                   <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: C.text, marginBottom: 6 }}>Email</label>
                   <input type="email" required value={resetEmail} onChange={e => setResetEmail(e.target.value)} placeholder="you@company.ru" style={inp} />
                 </div>
-                <button type="submit" disabled={resetLoading} style={{ width: '100%', padding: '10px', background: resetLoading ? '#333' : '#fff', color: '#000', border: 'none', borderRadius: 6, fontSize: 14, fontWeight: 500, cursor: resetLoading ? 'not-allowed' : 'pointer', fontFamily: C.font, marginBottom: 14 }}>
+                <button type="submit" disabled={resetLoading} style={{ width: '100%', padding: '10px', background: resetLoading ? 'var(--border-strong)' : 'var(--text)', color: 'var(--bg)', border: 'none', borderRadius: 6, fontSize: 14, fontWeight: 500, cursor: resetLoading ? 'not-allowed' : 'pointer', fontFamily: C.font, marginBottom: 14 }}>
                   {resetLoading ? 'Отправляем...' : 'Отправить ссылку'}
                 </button>
                 <div style={{ textAlign: 'center' }}>

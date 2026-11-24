@@ -199,7 +199,7 @@ export function Segmented<K extends string>({ options, value, onChange }: { opti
         <button key={k} type="button" onClick={() => onChange(k)} style={{
           border: 0, borderRadius: 6, padding: '5px 12px', fontSize: 13, fontFamily: 'inherit', cursor: 'pointer',
           background: value === k ? C.card : 'transparent', color: value === k ? C.text : C.muted, fontWeight: value === k ? 500 : 400,
-          boxShadow: value === k ? '0 1px 2px rgba(0,0,0,.08)' : 'none',
+          boxShadow: value === k ? '0 1px 2px var(--overlay)' : 'none',
         }}>{label}</button>
       ))}
     </div>

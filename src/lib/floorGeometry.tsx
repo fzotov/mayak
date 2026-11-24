@@ -6,15 +6,22 @@
 // Используется и в админке (План этажей), и на публичном сайте.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { C } from '../components/ui'
+
 export type Room = { id: string; number: string; area: number; x: number; y: number; w: number; h: number }
 
-export const OCC  = '#e8d9bc'
-export const FREE = '#b8e0a0'
-export const SEL  = '#1a3a6c'
-export const CORR = '#cfc3b0'
-export const WALL = '#b0a28e'
-export const BLUE = '#6ab4d8'
-export const BRD  = '#5a4a38'
+// Цвета плана — токены темы (светлая и тёмная), без жёстких значений.
+export const OCC  = C.amberBg
+export const FREE = C.greenBg
+export const SEL  = C.accent
+export const CORR = C.hover
+export const WALL = C.lineStrong
+export const BLUE = C.accent
+export const BRD  = C.muted
+const FLOOR = C.card2
+const BLOCK = C.card
+const STAIR = C.hover
+const WC    = C.bg
 export const W = 900, H = 505
 
 // ── F2 rooms (exact from rooms.json, scaled × 0.574) ────────────────────────
@@ -136,13 +143,13 @@ export function Stair({ x, y, w, h, label = 'лестница' }: { x: number; y
     lines.push(<line key={d}
       x1={x + Math.max(0, d)} y1={d < 0 ? y - d : y}
       x2={x + Math.min(w, d + h)} y2={d + h > w ? y + h - (d + h - w) : y + h}
-      stroke="#bbb" strokeWidth="0.8" />)
+      style={{ stroke: C.faint }} strokeWidth="0.8" />)
   return (
     <g>
       <defs><clipPath id={id}><rect x={x} y={y} width={w} height={h} /></clipPath></defs>
-      <rect x={x} y={y} width={w} height={h} fill="#cfc0a8" stroke={BRD} strokeWidth="2" />
+      <rect x={x} y={y} width={w} height={h} style={{ fill: STAIR, stroke: BRD }} strokeWidth="2" />
       <g clipPath={`url(#${id})`}>{lines}</g>
-      <text x={x + w / 2} y={y + h / 2 + 4} textAnchor="middle" fontSize="8" fill="#666">{label}</text>
+      <text x={x + w / 2} y={y + h / 2 + 4} textAnchor="middle" fontSize="8" style={{ fill: C.muted }}>{label}</text>
     </g>
   )
 }
@@ -151,32 +158,32 @@ export function Stair({ x, y, w, h, label = 'лестница' }: { x: number; y
 export function FloorChrome() {
   return (
     <>
-      <rect x={1} y={1} width={W - 2} height={H - 2} fill="#f5ede2" />
-      <rect x={15}  y={15}  width={859} height={124} fill="#f0e5d0" stroke={BRD} strokeWidth="2.5" />
-      <rect x={52}  y={178} width={822} height={144} fill="#f0e5d0" stroke={BRD} strokeWidth="2.5" />
-      <rect x={15}  y={366} width={859} height={119} fill="#f0e5d0" stroke={BRD} strokeWidth="2.5" />
-      <rect x={762} y={366} width={113} height={119} fill="#f0e5d0" stroke={BRD} strokeWidth="1" />
+      <rect x={1} y={1} width={W - 2} height={H - 2} style={{ fill: FLOOR }} />
+      <rect x={15}  y={15}  width={859} height={124} style={{ fill: BLOCK, stroke: BRD }} strokeWidth="2.5" />
+      <rect x={52}  y={178} width={822} height={144} style={{ fill: BLOCK, stroke: BRD }} strokeWidth="2.5" />
+      <rect x={15}  y={366} width={859} height={119} style={{ fill: BLOCK, stroke: BRD }} strokeWidth="2.5" />
+      <rect x={762} y={366} width={113} height={119} style={{ fill: BLOCK, stroke: BRD }} strokeWidth="1" />
 
-      <rect x={15}  y={139} width={37} height={227} fill={WALL} stroke={BRD} strokeWidth="1.5" />
-      <rect x={760} y={139} width={51} height={162} fill={WALL} stroke={BRD} strokeWidth="1.5" />
+      <rect x={15}  y={139} width={37} height={227} style={{ fill: WALL, stroke: BRD }} strokeWidth="1.5" />
+      <rect x={760} y={139} width={51} height={162} style={{ fill: WALL, stroke: BRD }} strokeWidth="1.5" />
 
-      <rect x={52} y={139} width={708} height={39} fill={CORR} />
-      <line x1={52} y1={139} x2={760} y2={139} stroke={BRD} strokeWidth="1" />
-      <line x1={52} y1={178} x2={167} y2={178} stroke={BRD} strokeWidth="1" />
-      <rect x={52} y={322} width={708} height={44} fill={CORR} />
-      <line x1={52}  y1={322} x2={760} y2={322} stroke={BRD} strokeWidth="1" />
-      <line x1={167} y1={366} x2={760} y2={366} stroke={BRD} strokeWidth="1" />
-      <rect x={167} y={178} width={45} height={144} fill={WALL} stroke={BRD} strokeWidth="1" />
+      <rect x={52} y={139} width={708} height={39} style={{ fill: CORR }} />
+      <line x1={52} y1={139} x2={760} y2={139} style={{ stroke: BRD }} strokeWidth="1" />
+      <line x1={52} y1={178} x2={167} y2={178} style={{ stroke: BRD }} strokeWidth="1" />
+      <rect x={52} y={322} width={708} height={44} style={{ fill: CORR }} />
+      <line x1={52}  y1={322} x2={760} y2={322} style={{ stroke: BRD }} strokeWidth="1" />
+      <line x1={167} y1={366} x2={760} y2={366} style={{ stroke: BRD }} strokeWidth="1" />
+      <rect x={167} y={178} width={45} height={144} style={{ fill: WALL, stroke: BRD }} strokeWidth="1" />
 
-      <rect x={759} y={178} width={52}  height={72} fill="#e0d5c5" stroke={BRD} strokeWidth="1" />
-      <rect x={706} y={251} width={105} height={71} fill="#e0d5c5" stroke={BRD} strokeWidth="1" />
-      <text x={760} y={225} fontSize="20" fill="#bbb">♂</text>
-      <text x={782} y={225} fontSize="20" fill="#bbb">♀</text>
-      <text x={756} y={300} textAnchor="middle" fontSize="8" fill="#aaa">санузел</text>
+      <rect x={759} y={178} width={52}  height={72} style={{ fill: WC, stroke: BRD }} strokeWidth="1" />
+      <rect x={706} y={251} width={105} height={71} style={{ fill: WC, stroke: BRD }} strokeWidth="1" />
+      <text x={772} y={220} textAnchor="middle" fontSize="14" fontWeight="600" style={{ fill: C.faint }}>М</text>
+      <text x={796} y={220} textAnchor="middle" fontSize="14" fontWeight="600" style={{ fill: C.faint }}>Ж</text>
+      <text x={756} y={300} textAnchor="middle" fontSize="8" style={{ fill: C.faint }}>санузел</text>
 
-      <rect x={15}  y={10}  width={745} height={5}   fill={BLUE} rx="1" />
-      <rect x={167} y={485} width={594} height={5}   fill={BLUE} rx="1" />
-      <rect x={47}  y={178} width={5}   height={144} fill={BLUE} rx="1" />
+      <rect x={15}  y={10}  width={745} height={5}   style={{ fill: BLUE }} rx="1" />
+      <rect x={167} y={485} width={594} height={5}   style={{ fill: BLUE }} rx="1" />
+      <rect x={47}  y={178} width={5}   height={144} style={{ fill: BLUE }} rx="1" />
 
       <Stair x={760} y={15}  w={114} h={163} />
       <Stair x={15}  y={366} w={152} h={119} />

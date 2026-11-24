@@ -38,7 +38,7 @@ export default function TodayPage() {
     fetchSiteLeads(50).then(({ leads }) => setLeads(leads))
     fetchHotRepairs().then(setRepairs)
     supabase.from('repairs').select('id', { count: 'exact', head: true }).in('status', ['new', 'accepted', 'in_progress']).then(({ count }) => setOpenRepairs(count || 0))
-    supabase.from('tasks').select('id, title, status, priority').in('status', ['open', 'in_progress']).order('created_at', { ascending: false }).limit(6).then(({ data }) => setTasks(data || []))
+    supabase.from('tasks').select('id, title, status, priority').in('status', ['todo', 'open', 'in_progress']).order('created_at', { ascending: false }).limit(6).then(({ data }) => setTasks(data || []))
     supabase.from('incoming_invoices').select('id, supplier, amount, description, due_date').eq('status', 'APPROVED').order('due_date').then(({ data }) => setToPay(data || []))
     supabase.from('leases').select('id, number, end_date, tenants(full_name)').eq('status', 'active').gte('end_date', d).lte('end_date', in30).order('end_date').then(({ data }) => setExpiring(data || []))
     supabase.from('units').select('status').then(({ data }) => setOccupancy({ total: data?.length || 0, busy: (data || []).filter((u: any) => u.status === 'occupied').length }))

@@ -1,6 +1,10 @@
+// Письма: входящие и исходящие, распознавание загруженного письма и генерация текста через AI, задача по входящему письму.
 import { apiFetch } from '../lib/api'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
+import {
+  Page, Card, Row, Button, Badge, Table, Field, Input, Select, Textarea, Modal, Notice, Loading, ErrorBox, Muted, dateRu, C, type Tone,
+} from '../components/ui'
 
 interface Letter {
   id: string
@@ -18,16 +22,15 @@ interface Letter {
   created_at: string
 }
 
-const statusLabel: Record<string, { label: string; bg: string; color: string }> = {
-  draft: { label: 'Черновик', bg: '#f3f4f6', color: '#6b7280' },
-  sent: { label: 'Отправлено', bg: '#dbeafe', color: '#1d4ed8' },
-  received: { label: 'Получено', bg: '#dcfce7', color: '#16a34a' },
-  processed: { label: 'Обработано', bg: '#ede9fe', color: '#7c3aed' },
+const statusLabel: Record<string, { label: string; tone: Tone }> = {
+  draft: { label: 'Черновик', tone: 'neutral' },
+  sent: { label: 'Отправлено', tone: 'blue' },
+  received: { label: 'Получено', tone: 'green' },
+  processed: { label: 'Обработано', tone: 'violet' },
 }
 
-const inp: React.CSSProperties = { width: '100%', border: '1px solid #e5e7eb', borderRadius: 6, padding: '7px 10px', fontSize: 14, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' as const }
-const lbl: React.CSSProperties = { fontSize: 12, color: '#6b7280', marginBottom: 4, display: 'block', fontWeight: 500 }
-
+const two: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }
+const noop = () => {}
 
 function TaskFromLetterModal({ letter, onClose, onSaved }: { letter: any; onClose: () => void; onSaved: () => void }) {
   const [staff, setStaff] = useState<any[]>([])
@@ -37,89 +40,67 @@ function TaskFromLetterModal({ letter, onClose, onSaved }: { letter: any; onClos
   const [priority, setPriority] = useState('normal')
   const [dueDate, setDueDate] = useState('')
   const [saving, setSaving] = useState(false)
-  const si: React.CSSProperties = { width: '100%', border: '1px solid #e5e7eb', borderRadius: 6, padding: '7px 10px', fontSize: 14, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' as const }
-  const sl: React.CSSProperties = { fontSize: 12, color: '#6b7280', marginBottom: 4, display: 'block', fontWeight: 500 }
+  const [error, setError] = useState('')
 
   useEffect(() => {
     supabase.from('staff').select('id, full_name').eq('status', 'active').order('full_name').then(({ data }) => setStaff(data || []))
   }, [])
 
   async function save() {
-    if (!title.trim()) return alert('Введите заголовок')
+    if (!title.trim()) { setError('Введите заголовок'); return }
+    setError('')
     setSaving(true)
-    await supabase.from('tasks').insert({ title, description, assignee_id: assigneeId || null, status: 'todo', priority, due_date: dueDate || null, letter_id: letter.id })
+    const { error } = await supabase.from('tasks').insert({ title, description, assignee_id: assigneeId || null, status: 'todo', priority, due_date: dueDate || null, letter_id: letter.id })
     setSaving(false)
+    if (error) { setError('Задача не создана: ' + error.message); return }
     onSaved()
   }
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: '#00000060', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-      <div style={{ background: '#fff', borderRadius: 12, width: '100%', maxWidth: 480, boxShadow: '0 8px 32px #0003', border: '1px solid #e5e7eb' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid #e5e7eb' }}>
-          <div style={{ fontSize: 15, fontWeight: 600 }}>Создать задачу по письму</div>
-          <button onClick={onClose} style={{ border: 'none', background: 'none', fontSize: 18, color: '#9ca3af', cursor: 'pointer' }}>x</button>
-        </div>
-        <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: 10, fontSize: 13, color: '#15803d' }}>
-            Письмо зарегистрировано. Создайте задачу для ответа.
-          </div>
-          <div><label style={sl}>Задача</label><input style={si} value={title} onChange={e => setTitle(e.target.value)} /></div>
-          <div><label style={sl}>Описание</label><textarea style={{ ...si, height: 70, resize: 'none' }} value={description} onChange={e => setDescription(e.target.value)} /></div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            <div><label style={sl}>Исполнитель</label>
-              <select style={si} value={assigneeId} onChange={e => setAssigneeId(e.target.value)}>
-                <option value="">— Не назначен</option>
-                {staff.map((s: any) => <option key={s.id} value={s.id}>{s.full_name}</option>)}
-              </select>
-            </div>
-            <div><label style={sl}>Приоритет</label>
-              <select style={si} value={priority} onChange={e => setPriority(e.target.value)}>
-                <option value="low">Низкий</option>
-                <option value="normal">Обычный</option>
-                <option value="high">Высокий</option>
-              </select>
-            </div>
-          </div>
-          <div><label style={sl}>Срок ответа</label><input style={si} type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} /></div>
-        </div>
-        <div style={{ display: 'flex', gap: 8, padding: '14px 20px', borderTop: '1px solid #e5e7eb' }}>
-          <button onClick={save} disabled={saving} style={{ flex: 1, padding: '8px', borderRadius: 6, border: 'none', background: '#111', color: '#fff', fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', opacity: saving ? 0.6 : 1 }}>
-            {saving ? 'Создание...' : 'Создать задачу'}
-          </button>
-          <button onClick={onClose} style={{ padding: '8px 14px', borderRadius: 6, border: '1px solid #e5e7eb', background: '#fff', color: '#6b7280', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>Пропустить</button>
-        </div>
+    <Modal title="Создать задачу по письму" onClose={onClose} footer={<>
+      <Button onClick={onClose}>Пропустить</Button>
+      <Button kind="primary" onClick={save} disabled={saving}>{saving ? 'Создание…' : 'Создать задачу'}</Button>
+    </>}>
+      <Notice tone="green">Письмо зарегистрировано. Создайте задачу для ответа.</Notice>
+      {error && <Notice tone="red">{error}</Notice>}
+      <Field label="Задача"><Input value={title} onChange={e => setTitle(e.target.value)} /></Field>
+      <Field label="Описание"><Textarea style={{ height: 70, resize: 'none' }} value={description} onChange={e => setDescription(e.target.value)} /></Field>
+      <div style={two}>
+        <Field label="Исполнитель">
+          <Select value={assigneeId} onChange={e => setAssigneeId(e.target.value)}>
+            <option value="">Не назначен</option>
+            {staff.map((s: any) => <option key={s.id} value={s.id}>{s.full_name}</option>)}
+          </Select>
+        </Field>
+        <Field label="Приоритет">
+          <Select value={priority} onChange={e => setPriority(e.target.value)}>
+            <option value="low">Низкий</option>
+            <option value="normal">Обычный</option>
+            <option value="high">Высокий</option>
+          </Select>
+        </Field>
       </div>
-    </div>
+      <Field label="Срок ответа"><Input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} /></Field>
+    </Modal>
   )
 }
 
 function PromptModal({ onClose, onGenerate }: { onClose: () => void; onGenerate: (prompt: string) => void }) {
   const [prompt, setPrompt] = useState('')
   return (
-    <div style={{ position: 'fixed', inset: 0, background: '#00000060', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-      <div style={{ background: '#fff', borderRadius: 12, width: '100%', maxWidth: 500, boxShadow: '0 8px 32px #0003', border: '1px solid #e5e7eb' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid #e5e7eb' }}>
-          <div style={{ fontSize: 15, fontWeight: 600 }}>✦ Генерация письма AI</div>
-          <button onClick={onClose} style={{ border: 'none', background: 'none', fontSize: 18, color: '#9ca3af', cursor: 'pointer' }}>✕</button>
-        </div>
-        <div style={{ padding: 20 }}>
-          <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 10 }}>Опишите подробно содержание письма — тон, ключевые моменты, требования, сроки.</div>
-          <textarea
-            style={{ ...inp, height: 140, resize: 'vertical' }}
-            placeholder="Например: письмо-напоминание об оплате аренды за июнь, срок оплаты был 5 числа, прошло уже 10 дней, попросить оплатить в течение 3 дней иначе будут начислены пени согласно договору"
-            value={prompt}
-            onChange={e => setPrompt(e.target.value)}
-            autoFocus
-          />
-        </div>
-        <div style={{ display: 'flex', gap: 8, padding: '14px 20px', borderTop: '1px solid #e5e7eb' }}>
-          <button onClick={() => onGenerate(prompt)} disabled={!prompt.trim()} style={{ flex: 1, padding: '8px', borderRadius: 6, border: 'none', background: '#111', color: '#fff', fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', opacity: !prompt.trim() ? 0.5 : 1 }}>
-            Сгенерировать
-          </button>
-          <button onClick={onClose} style={{ padding: '8px 14px', borderRadius: 6, border: '1px solid #e5e7eb', background: '#fff', color: '#6b7280', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>Отмена</button>
-        </div>
-      </div>
-    </div>
+    <Modal title="Генерация письма AI" onClose={onClose} width={500} footer={<>
+      <Button onClick={onClose}>Отмена</Button>
+      <Button kind="primary" onClick={() => onGenerate(prompt)} disabled={!prompt.trim()}>Сгенерировать</Button>
+    </>}>
+      <Muted>Опишите подробно содержание письма — тон, ключевые моменты, требования, сроки.</Muted>
+      <Textarea
+        style={{ height: 140 }}
+        placeholder="Например: письмо-напоминание об оплате аренды за июнь, срок оплаты был 5 числа, прошло уже 10 дней, попросить оплатить в течение 3 дней иначе будут начислены пени согласно договору"
+        value={prompt}
+        onChange={e => setPrompt(e.target.value)}
+        autoFocus
+      />
+    </Modal>
   )
 }
 
@@ -141,24 +122,26 @@ function LetterModal({ letter, onClose, onSaved }: { letter: Letter | null; onCl
   const [showPrompt, setShowPrompt] = useState(false)
   const [savedLetter, setSavedLetter] = useState<any>(null)
   const [file, setFile] = useState<File | null>(null)
+  const [error, setError] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }))
 
   async function generateLetter(prompt: string) {
     setShowPrompt(false)
     setGenerating(true)
+    setError('')
     try {
       const res = await apiFetch('/api/generate-letter', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ subject: form.subject, recipient: form.recipient, sender: form.sender, prompt })
+        body: JSON.stringify({ subject: form.subject, recipient: form.recipient, sender: form.sender, prompt }),
       })
       const data = await res.json()
       const text = data.text || ''
       if (!text) throw new Error('empty')
       set('body', text)
-    } catch (e) {
-      alert('Ошибка генерации')
+    } catch {
+      setError('Ошибка генерации')
     }
     setGenerating(false)
   }
@@ -166,6 +149,7 @@ function LetterModal({ letter, onClose, onSaved }: { letter: Letter | null; onCl
   async function processFile() {
     if (!file) return
     setProcessing(true)
+    setError('')
     try {
       const base64 = await new Promise<string>((res) => {
         const reader = new FileReader()
@@ -175,7 +159,7 @@ function LetterModal({ letter, onClose, onSaved }: { letter: Letter | null; onCl
       const res = await apiFetch('/api/process-letter', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ base64, mediaType: file.type })
+        body: JSON.stringify({ base64, mediaType: file.type }),
       })
       const parsed = await res.json()
       if (parsed.subject) set('subject', parsed.subject)
@@ -187,23 +171,24 @@ function LetterModal({ letter, onClose, onSaved }: { letter: Letter | null; onCl
       if (parsed.action) set('ai_action', parsed.action)
       set('type', 'incoming')
       set('status', 'received')
-    } catch (e) {
-      alert('Ошибка обработки файла')
+    } catch {
+      setError('Ошибка обработки файла')
     }
     setProcessing(false)
   }
 
   async function save() {
-    if (!form.subject) return alert('Введите тему')
+    if (!form.subject) { setError('Введите тему'); return }
+    setError('')
     setSaving(true)
     if (letter?.id) {
       const r = await supabase.from('letters').update(form).eq('id', letter.id)
-      if (r.error) { alert('Ошибка: ' + r.error.message); setSaving(false); return }
+      if (r.error) { setError('Ошибка: ' + r.error.message); setSaving(false); return }
       setSaving(false)
       onSaved()
     } else {
       const r = await supabase.from('letters').insert({ ...form }).select('*').single()
-      if (r.error) { alert('Ошибка: ' + r.error.message); setSaving(false); return }
+      if (r.error) { setError('Ошибка: ' + r.error.message); setSaving(false); return }
       setSaving(false)
       // Если входящее письмо — предлагаем создать задачу
       if (form.type === 'incoming') {
@@ -216,95 +201,81 @@ function LetterModal({ letter, onClose, onSaved }: { letter: Letter | null; onCl
 
   async function remove() {
     if (!letter?.id || !confirm('Удалить письмо?')) return
-    await supabase.from('letters').delete().eq('id', letter.id)
+    const { error } = await supabase.from('letters').delete().eq('id', letter.id)
+    if (error) { setError('Ошибка удаления: ' + error.message); return }
     onSaved()
   }
 
   if (savedLetter) return <TaskFromLetterModal letter={savedLetter} onClose={onSaved} onSaved={onSaved} />
 
+  const fileName = file ? (file.name.length > 30 ? file.name.slice(0, 30) + '…' : file.name) : ''
+
   return (
     <>
-      <div style={{ position: 'fixed', inset: 0, background: '#00000050', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-        <div style={{ background: '#fff', borderRadius: 12, width: '100%', maxWidth: 680, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 8px 32px #0003', border: '1px solid #e5e7eb' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid #e5e7eb' }}>
-            <div style={{ fontSize: 15, fontWeight: 600, color: '#111' }}>{letter ? 'Письмо' : 'Новое письмо'}</div>
-            <button onClick={onClose} style={{ border: 'none', background: 'none', fontSize: 18, color: '#9ca3af', cursor: 'pointer' }}>✕</button>
-          </div>
-
-          <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <div style={{ background: '#f9fafb', border: '2px dashed #e5e7eb', borderRadius: 8, padding: 16, textAlign: 'center' }}>
-              <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 8 }}>Загрузить входящее письмо (PDF, фото)</div>
-              <input ref={fileRef} type="file" accept=".pdf,image/*" style={{ display: 'none' }} onChange={e => setFile(e.target.files?.[0] || null)} />
-              <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
-                <button onClick={() => fileRef.current?.click()} style={{ padding: '6px 14px', borderRadius: 6, border: '1px solid #e5e7eb', background: '#fff', color: '#374151', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>
-                  {file ? (file.name.length > 30 ? file.name.slice(0, 30) + '...' : file.name) : 'Выбрать файл'}
-                </button>
-                {file && (
-                  <button onClick={processFile} disabled={processing} style={{ padding: '6px 14px', borderRadius: 6, border: 'none', background: '#7c3aed', color: '#fff', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', opacity: processing ? 0.6 : 1 }}>
-                    {processing ? 'Обработка...' : '✦ Обработать AI'}
-                  </button>
-                )}
-              </div>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-              <div><label style={lbl}>Тип</label>
-                <select style={inp} value={form.type} onChange={e => set('type', e.target.value)}>
-                  <option value="outgoing">Исходящее</option>
-                  <option value="incoming">Входящее</option>
-                </select>
-              </div>
-              <div><label style={lbl}>Статус</label>
-                <select style={inp} value={form.status} onChange={e => set('status', e.target.value)}>
-                  <option value="draft">Черновик</option>
-                  <option value="sent">Отправлено</option>
-                  <option value="received">Получено</option>
-                  <option value="processed">Обработано</option>
-                </select>
-              </div>
-            </div>
-
-            <div><label style={lbl}>Тема *</label><input style={inp} value={form.subject} onChange={e => set('subject', e.target.value)} placeholder="Уведомление об изменении арендной ставки" /></div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-              <div><label style={lbl}>От кого</label><input style={inp} value={form.sender} onChange={e => set('sender', e.target.value)} placeholder="Администрация БЦ Маяк" /></div>
-              <div><label style={lbl}>Кому</label><input style={inp} value={form.recipient} onChange={e => set('recipient', e.target.value)} placeholder="ООО Техцентр" /></div>
-            </div>
-
-            <div><label style={lbl}>Дата</label><input style={inp} type="date" value={form.date} onChange={e => set('date', e.target.value)} /></div>
-
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                <label style={lbl}>Текст письма</label>
-                {form.type === 'outgoing' && (
-                  <button onClick={() => setShowPrompt(true)} disabled={generating} style={{ padding: '4px 12px', borderRadius: 6, border: 'none', background: '#111', color: '#fff', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', opacity: generating ? 0.6 : 1 }}>
-                    {generating ? 'Генерация...' : '✦ Сгенерировать AI'}
-                  </button>
-                )}
-              </div>
-              <textarea style={{ ...inp, height: 180, resize: 'vertical' }} value={form.body} onChange={e => set('body', e.target.value)} placeholder="Текст письма..." />
-            </div>
-
-            {(form.ai_summary || form.ai_action) && (
-              <div style={{ background: '#f5f3ff', border: '1px solid #ede9fe', borderRadius: 8, padding: 12 }}>
-                <div style={{ fontSize: 12, fontWeight: 600, color: '#7c3aed', marginBottom: 6 }}>✦ AI Анализ</div>
-                {form.ai_summary && <div style={{ fontSize: 13, color: '#374151', marginBottom: 4 }}><b>Резюме:</b> {form.ai_summary}</div>}
-                {form.ai_action && <div style={{ fontSize: 13, color: '#374151' }}><b>Требуемое действие:</b> {form.ai_action}</div>}
-              </div>
+      {/* Пока открыто окно генерации, Esc закрывает только его. */}
+      <Modal title={letter ? 'Письмо' : 'Новое письмо'} onClose={showPrompt ? noop : onClose} width={680} footer={<>
+        {letter && <Button kind="danger" onClick={remove} style={{ marginRight: 'auto' }}>Удалить</Button>}
+        <Button onClick={onClose}>Отмена</Button>
+        <Button kind="primary" onClick={save} disabled={saving}>{saving ? 'Сохранение…' : 'Сохранить'}</Button>
+      </>}>
+        <div style={{ background: C.card2, border: `2px dashed ${C.line}`, borderRadius: C.radiusSm, padding: 16, textAlign: 'center', display: 'grid', gap: 8 }}>
+          <Muted>Загрузить входящее письмо (PDF, фото)</Muted>
+          <input ref={fileRef} type="file" accept=".pdf,image/*" style={{ display: 'none' }} onChange={e => setFile(e.target.files?.[0] || null)} />
+          <Row gap={8} justify="center">
+            <Button onClick={() => fileRef.current?.click()}>{file ? fileName : 'Выбрать файл'}</Button>
+            {file && (
+              <Button kind="primary" onClick={processFile} disabled={processing}>{processing ? 'Обработка…' : 'Обработать AI'}</Button>
             )}
-          </div>
-
-          <div style={{ display: 'flex', gap: 8, padding: '14px 20px', borderTop: '1px solid #e5e7eb' }}>
-            <button onClick={save} disabled={saving} style={{ flex: 1, padding: '8px', borderRadius: 6, border: 'none', background: '#111', color: '#fff', fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', opacity: saving ? 0.6 : 1 }}>
-              {saving ? 'Сохранение...' : 'Сохранить'}
-            </button>
-            {letter && <button onClick={remove} style={{ padding: '8px 14px', borderRadius: 6, border: 'none', background: '#fee2e2', color: '#ef4444', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>Удалить</button>}
-            <button onClick={onClose} style={{ padding: '8px 14px', borderRadius: 6, border: '1px solid #e5e7eb', background: '#fff', color: '#6b7280', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>Отмена</button>
-          </div>
+          </Row>
         </div>
-      </div>
-      {showPrompt && <PromptModal onClose={() => setShowPrompt(false)} onGenerate={generateLetter} />}
 
+        {error && <Notice tone="red">{error}</Notice>}
+
+        <div style={two}>
+          <Field label="Тип">
+            <Select value={form.type} onChange={e => set('type', e.target.value)}>
+              <option value="outgoing">Исходящее</option>
+              <option value="incoming">Входящее</option>
+            </Select>
+          </Field>
+          <Field label="Статус">
+            <Select value={form.status} onChange={e => set('status', e.target.value)}>
+              <option value="draft">Черновик</option>
+              <option value="sent">Отправлено</option>
+              <option value="received">Получено</option>
+              <option value="processed">Обработано</option>
+            </Select>
+          </Field>
+        </div>
+
+        <Field label="Тема *"><Input value={form.subject} onChange={e => set('subject', e.target.value)} placeholder="Уведомление об изменении арендной ставки" /></Field>
+
+        <div style={two}>
+          <Field label="От кого"><Input value={form.sender} onChange={e => set('sender', e.target.value)} placeholder="Администрация БЦ Маяк" /></Field>
+          <Field label="Кому"><Input value={form.recipient} onChange={e => set('recipient', e.target.value)} placeholder="ООО Техцентр" /></Field>
+        </div>
+
+        <Field label="Дата"><Input type="date" value={form.date} onChange={e => set('date', e.target.value)} /></Field>
+
+        <div style={{ display: 'grid', gap: 4 }}>
+          <Row justify="space-between">
+            <span style={{ fontSize: 12, color: C.muted, fontWeight: 500 }}>Текст письма</span>
+            {form.type === 'outgoing' && (
+              <Button small onClick={() => setShowPrompt(true)} disabled={generating}>{generating ? 'Генерация…' : 'Сгенерировать AI'}</Button>
+            )}
+          </Row>
+          <Textarea style={{ height: 180 }} value={form.body} onChange={e => set('body', e.target.value)} placeholder="Текст письма…" aria-label="Текст письма" />
+        </div>
+
+        {(form.ai_summary || form.ai_action) && (
+          <div style={{ background: C.violetBg, borderRadius: C.radiusSm, padding: 12, display: 'grid', gap: 4, fontSize: 13 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: C.violet }}>AI анализ</div>
+            {form.ai_summary && <div><b>Резюме:</b> {form.ai_summary}</div>}
+            {form.ai_action && <div><b>Требуемое действие:</b> {form.ai_action}</div>}
+          </div>
+        )}
+      </Modal>
+      {showPrompt && <PromptModal onClose={() => setShowPrompt(false)} onGenerate={generateLetter} />}
     </>
   )
 }
@@ -312,6 +283,7 @@ function LetterModal({ letter, onClose, onSaved }: { letter: Letter | null; onCl
 export default function LettersPage() {
   const [letters, setLetters] = useState<Letter[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
   const [selected, setSelected] = useState<Letter | null>(null)
   const [showModal, setShowModal] = useState(false)
   const [typeFilter, setTypeFilter] = useState('')
@@ -321,7 +293,9 @@ export default function LettersPage() {
 
   async function fetchLetters() {
     setLoading(true)
-    const { data } = await supabase.from('letters').select('*').order('date', { ascending: false })
+    setError('')
+    const { data, error } = await supabase.from('letters').select('*').order('date', { ascending: false })
+    if (error) setError(error.message)
     setLetters(data || [])
     setLoading(false)
   }
@@ -333,66 +307,42 @@ export default function LettersPage() {
   })
 
   return (
-    <div>
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
-        <select style={{ border: '1px solid #e5e7eb', borderRadius: 6, padding: '7px 12px', fontSize: 14, fontFamily: 'inherit', outline: 'none', background: '#fff' }}
-          value={typeFilter} onChange={e => setTypeFilter(e.target.value)}>
+    <Page>
+      <Row gap={8}>
+        <Select style={{ width: 'auto' }} value={typeFilter} onChange={e => setTypeFilter(e.target.value)}>
           <option value="">Все типы</option>
           <option value="incoming">Входящие</option>
           <option value="outgoing">Исходящие</option>
-        </select>
-        <select style={{ border: '1px solid #e5e7eb', borderRadius: 6, padding: '7px 12px', fontSize: 14, fontFamily: 'inherit', outline: 'none', background: '#fff' }}
-          value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+        </Select>
+        <Select style={{ width: 'auto' }} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
           <option value="">Все статусы</option>
           <option value="draft">Черновик</option>
           <option value="sent">Отправлено</option>
           <option value="received">Получено</option>
           <option value="processed">Обработано</option>
-        </select>
+        </Select>
         <div style={{ flex: 1 }} />
-        <button onClick={() => { setSelected(null); setShowModal(true) }} style={{ padding: '7px 16px', border: 'none', borderRadius: 6, background: '#111', color: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>
-          + Новое письмо
-        </button>
-      </div>
+        <Button kind="primary" onClick={() => { setSelected(null); setShowModal(true) }}>Новое письмо</Button>
+      </Row>
 
-      {loading ? <div style={{ color: '#9ca3af', fontSize: 14 }}>Загрузка...</div> : (
-        <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 8, overflow: 'hidden' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
-            <thead>
-              <tr style={{ background: '#f9fafb', borderBottom: '1px solid #e5e7eb' }}>
-                {['Тип', 'Дата', 'Тема', 'От/Кому', 'Статус', 'AI резюме'].map(h => (
-                  <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 500, color: '#6b7280', fontSize: 12 }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map(l => (
-                <tr key={l.id} onClick={() => { setSelected(l); setShowModal(true) }} style={{ borderBottom: '1px solid #f3f4f6', cursor: 'pointer' }}
-                  onMouseEnter={e => (e.currentTarget.style.background = '#f9fafb')}
-                  onMouseLeave={e => (e.currentTarget.style.background = '#fff')}>
-                  <td style={{ padding: '10px 14px' }}>
-                    <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 10, background: l.type === 'incoming' ? '#dcfce7' : '#dbeafe', color: l.type === 'incoming' ? '#16a34a' : '#1d4ed8' }}>
-                      {l.type === 'incoming' ? '↓ Входящее' : '↑ Исходящее'}
-                    </span>
-                  </td>
-                  <td style={{ padding: '10px 14px', color: '#6b7280' }}>{l.date ? new Date(l.date).toLocaleDateString('ru') : '—'}</td>
-                  <td style={{ padding: '10px 14px', fontWeight: 500, color: '#111' }}>{l.subject || '—'}</td>
-                  <td style={{ padding: '10px 14px', color: '#6b7280', fontSize: 13 }}>{l.type === 'incoming' ? l.sender : l.recipient}</td>
-                  <td style={{ padding: '10px 14px' }}>
-                    {(() => { const s = statusLabel[l.status] || statusLabel.draft; return <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 10, background: s.bg, color: s.color }}>{s.label}</span> })()}
-                  </td>
-                  <td style={{ padding: '10px 14px', color: '#9ca3af', fontSize: 12, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.ai_summary || '—'}</td>
-                </tr>
-              ))}
-              {filtered.length === 0 && (
-                <tr><td colSpan={6} style={{ padding: 20, textAlign: 'center', color: '#9ca3af' }}>Писем не найдено</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
+      {error && <ErrorBox error={error} onRetry={fetchLetters} />}
+
+      <Card pad={false}>
+        {loading ? <Loading /> : (
+          <Table rows={filtered} rowKey={l => l.id} onRow={l => { setSelected(l); setShowModal(true) }} empty="Писем не найдено" cols={[
+            { key: 't', title: 'Тип', sort: l => l.type, render: l => <Badge tone={l.type === 'incoming' ? 'green' : 'blue'}>{l.type === 'incoming' ? 'Входящее' : 'Исходящее'}</Badge> },
+            { key: 'd', title: 'Дата', sort: l => l.date || null, render: l => <span style={{ color: C.muted, whiteSpace: 'nowrap' }}>{dateRu(l.date)}</span> },
+            { key: 's', title: 'Тема', sort: l => l.subject || null, render: l => <span style={{ fontWeight: 500 }}>{l.subject || '—'}</span> },
+            { key: 'w', title: 'От / кому', render: l => <span style={{ color: C.muted }}>{l.type === 'incoming' ? l.sender : l.recipient}</span> },
+            { key: 'st', title: 'Статус', sort: l => l.status, render: l => { const s = statusLabel[l.status] || statusLabel.draft; return <Badge tone={s.tone}>{s.label}</Badge> } },
+            { key: 'ai', title: 'AI резюме', render: l => (
+              <div style={{ color: C.faint, fontSize: 12, maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.ai_summary || '—'}</div>
+            ) },
+          ]} />
+        )}
+      </Card>
 
       {showModal && <LetterModal letter={selected} onClose={() => setShowModal(false)} onSaved={() => { setShowModal(false); fetchLetters() }} />}
-    </div>
+    </Page>
   )
 }

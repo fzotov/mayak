@@ -1,5 +1,7 @@
+// Контрагенты: категории слева, список справа, карточка в окне с вкладками.
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
+import { Page, Card, Button, Badge, Table, Field, Input, Select, Textarea, Tabs, Modal, Notice, Loading, ErrorBox, Muted, Sub, C } from '../components/ui'
 
 interface Category { id: string; name: string }
 interface Counterparty {
@@ -37,16 +39,20 @@ const empty: Omit<Counterparty, 'id'> = {
 }
 
 const TYPE_LABELS: Record<string, string> = { company: 'Юрлицо', ip: 'ИП', person: 'Физлицо' }
-const STATUS_LABELS: Record<string, { label: string; bg: string; color: string }> = {
-  active: { label: 'Активен', bg: '#dcfce7', color: '#16a34a' },
-  archive: { label: 'Архив', bg: '#f3f4f6', color: '#9ca3af' },
+const STATUS_LABELS: Record<string, { label: string; tone: 'green' | 'neutral' }> = {
+  active: { label: 'Активен', tone: 'green' },
+  archive: { label: 'Архив', tone: 'neutral' },
 }
 
-const inp: React.CSSProperties = { width: '100%', border: '1px solid #e8ebf3', borderRadius: 7, padding: '8px 10px', fontSize: 14, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' }
-const lbl: React.CSSProperties = { fontSize: 12, color: '#8596b4', marginBottom: 4, display: 'block', fontWeight: 500 }
-const section: React.CSSProperties = { fontSize: 12, fontWeight: 600, color: '#8596b4', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 10, marginTop: 4 }
+const cols = (n: number): React.CSSProperties => ({ display: 'grid', gridTemplateColumns: `repeat(${n}, minmax(0, 1fr))`, gap: 10 })
 
-// ─── Modal ───────────────────────────────────────────────────────────────────
+function SectionTitle({ children }: { children: React.ReactNode }) {
+  return <div style={{ fontSize: 12, fontWeight: 600, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.5px', marginTop: 4 }}>{children}</div>
+}
+
+// ─── Окно контрагента ─────────────────────────────────────────────────────────
+
+type CpTab = 'main' | 'contacts' | 'bank' | 'extra'
 
 function CounterpartyModal({ cp, categories, onClose, onSaved }: {
   cp: Counterparty | null
@@ -56,143 +62,131 @@ function CounterpartyModal({ cp, categories, onClose, onSaved }: {
 }) {
   const [form, setForm] = useState<Omit<Counterparty, 'id'>>(cp ? { ...cp } : { ...empty })
   const [saving, setSaving] = useState(false)
-  const [tab, setTab] = useState<'main' | 'contacts' | 'bank' | 'extra'>('main')
+  const [err, setErr] = useState('')
+  const [tab, setTab] = useState<CpTab>('main')
   const set = (k: string, v: string | null) => setForm(f => ({ ...f, [k]: v }))
 
   async function save() {
-    if (!form.name.trim()) return alert('Введите название')
+    if (!form.name.trim()) { setTab('main'); setErr('Введите название'); return }
+    setErr('')
     setSaving(true)
     const { error } = cp?.id
       ? await supabase.from('counterparties').update(form).eq('id', cp.id)
       : await supabase.from('counterparties').insert(form)
     setSaving(false)
-    if (error) { alert('Ошибка: ' + error.message); return }
+    if (error) { setErr('Ошибка: ' + error.message); return }
     onSaved()
   }
 
   async function remove() {
     if (!cp?.id || !confirm('Удалить контрагента?')) return
     const { error } = await supabase.from('counterparties').delete().eq('id', cp.id)
-    if (error) { alert('Ошибка: ' + error.message); return }
+    if (error) { setErr('Ошибка: ' + error.message); return }
     onSaved()
   }
 
-  const TABS = [
-    { key: 'main', label: 'Основное' },
-    { key: 'contacts', label: 'Контакты' },
-    { key: 'bank', label: 'Банк' },
-    { key: 'extra', label: 'Доп.' },
-  ] as const
-
   return (
-    <div style={{ position: 'fixed', inset: 0, background: '#00000066', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-      <div style={{ background: '#fff', borderRadius: 14, width: '100%', maxWidth: 600, maxHeight: '92vh', overflowY: 'auto', boxShadow: '0 20px 60px #0002' }}>
-        {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid #e8ebf3' }}>
-          <div style={{ fontSize: 16, fontWeight: 600, color: '#1a2240' }}>{cp ? cp.name : 'Новый контрагент'}</div>
-          <button onClick={onClose} style={{ border: 'none', background: 'none', fontSize: 20, color: '#8596b4', cursor: 'pointer' }}>✕</button>
+    <Modal title={cp ? cp.name : 'Новый контрагент'} onClose={onClose} width={600} footer={<>
+      {cp && <Button kind="danger" onClick={remove} style={{ marginRight: 'auto' }}>Удалить</Button>}
+      <Button onClick={onClose}>Отмена</Button>
+      <Button kind="primary" onClick={save} disabled={saving}>{saving ? 'Сохранение…' : 'Сохранить'}</Button>
+    </>}>
+      <Tabs<CpTab> value={tab} onChange={setTab} tabs={[['main', 'Основное'], ['contacts', 'Контакты'], ['bank', 'Банк'], ['extra', 'Доп.']]} />
+
+      {tab === 'main' && <>
+        <div style={cols(2)}>
+          <Field label="Категория">
+            <Select value={form.category_id || ''} onChange={e => set('category_id', e.target.value || null)}>
+              <option value="">Без категории</option>
+              {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </Select>
+          </Field>
+          <Field label="Тип">
+            <Select value={form.type} onChange={e => set('type', e.target.value)}>
+              <option value="company">Юрлицо</option>
+              <option value="ip">ИП</option>
+              <option value="person">Физлицо</option>
+            </Select>
+          </Field>
         </div>
-
-        {/* Tabs */}
-        <div style={{ display: 'flex', borderBottom: '1px solid #e8ebf3' }}>
-          {TABS.map(t => (
-            <button key={t.key} onClick={() => setTab(t.key)} style={{ flex: 1, padding: '10px 6px', border: 'none', background: 'none', fontSize: 13, fontWeight: tab === t.key ? 600 : 400, color: tab === t.key ? '#4f6ef7' : '#8596b4', borderBottom: `2px solid ${tab === t.key ? '#4f6ef7' : 'transparent'}`, cursor: 'pointer', fontFamily: 'inherit' }}>
-              {t.label}
-            </button>
-          ))}
+        <Field label="Название / ФИО *"><Input value={form.name} onChange={e => set('name', e.target.value)} placeholder="ООО Пример или Иванов Иван Иванович" /></Field>
+        <Field label="Краткое название"><Input value={form.short_name} onChange={e => set('short_name', e.target.value)} placeholder="Пример" /></Field>
+        <SectionTitle>Реквизиты</SectionTitle>
+        <div style={cols(3)}>
+          <Field label="ИНН"><Input value={form.inn} onChange={e => set('inn', e.target.value)} placeholder="7700000000" /></Field>
+          <Field label="КПП"><Input value={form.kpp} onChange={e => set('kpp', e.target.value)} placeholder="770001001" /></Field>
+          <Field label="ОГРН / ОГРНИП"><Input value={form.ogrn} onChange={e => set('ogrn', e.target.value)} placeholder="1027700000000" /></Field>
         </div>
+        <Field label="Юридический адрес"><Input value={form.legal_address} onChange={e => set('legal_address', e.target.value)} placeholder="123456, Москва, ул. Примерная, д. 1" /></Field>
+        <Field label="Фактический адрес"><Input value={form.actual_address} onChange={e => set('actual_address', e.target.value)} placeholder="Тот же или другой" /></Field>
+      </>}
 
-        <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
-          {/* Основное */}
-          {tab === 'main' && <>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-              <div>
-                <label style={lbl}>Категория</label>
-                <select style={inp} value={form.category_id || ''} onChange={e => set('category_id', e.target.value || null)}>
-                  <option value="">— Без категории</option>
-                  {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-              </div>
-              <div>
-                <label style={lbl}>Тип</label>
-                <select style={inp} value={form.type} onChange={e => set('type', e.target.value)}>
-                  <option value="company">Юрлицо</option>
-                  <option value="ip">ИП</option>
-                  <option value="person">Физлицо</option>
-                </select>
-              </div>
-            </div>
-            <div><label style={lbl}>Название / ФИО *</label><input style={inp} value={form.name} onChange={e => set('name', e.target.value)} placeholder="ООО Пример или Иванов Иван Иванович" /></div>
-            <div><label style={lbl}>Краткое название</label><input style={inp} value={form.short_name} onChange={e => set('short_name', e.target.value)} placeholder="Пример" /></div>
-            <div style={{ ...section as React.CSSProperties }}>Реквизиты</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
-              <div><label style={lbl}>ИНН</label><input style={inp} value={form.inn} onChange={e => set('inn', e.target.value)} placeholder="7700000000" /></div>
-              <div><label style={lbl}>КПП</label><input style={inp} value={form.kpp} onChange={e => set('kpp', e.target.value)} placeholder="770001001" /></div>
-              <div><label style={lbl}>ОГРН / ОГРНИП</label><input style={inp} value={form.ogrn} onChange={e => set('ogrn', e.target.value)} placeholder="1027700000000" /></div>
-            </div>
-            <div><label style={lbl}>Юридический адрес</label><input style={inp} value={form.legal_address} onChange={e => set('legal_address', e.target.value)} placeholder="123456, Москва, ул. Примерная, д. 1" /></div>
-            <div><label style={lbl}>Фактический адрес</label><input style={inp} value={form.actual_address} onChange={e => set('actual_address', e.target.value)} placeholder="Тот же или другой" /></div>
-          </>}
-
-          {/* Контакты */}
-          {tab === 'contacts' && <>
-            <div style={section}>Организация</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-              <div><label style={lbl}>Телефон</label><input style={inp} value={form.phone} onChange={e => set('phone', e.target.value)} placeholder="+7 900 000-00-00" /></div>
-              <div><label style={lbl}>Email</label><input style={inp} value={form.email} onChange={e => set('email', e.target.value)} placeholder="info@example.ru" /></div>
-            </div>
-            <div><label style={lbl}>Сайт</label><input style={inp} value={form.website} onChange={e => set('website', e.target.value)} placeholder="https://example.ru" /></div>
-            <div style={section}>Контактное лицо</div>
-            <div><label style={lbl}>ФИО</label><input style={inp} value={form.contact_person} onChange={e => set('contact_person', e.target.value)} placeholder="Иванов Иван Иванович" /></div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-              <div><label style={lbl}>Должность</label><input style={inp} value={form.contact_position} onChange={e => set('contact_position', e.target.value)} placeholder="Менеджер" /></div>
-              <div><label style={lbl}>Телефон</label><input style={inp} value={form.contact_phone} onChange={e => set('contact_phone', e.target.value)} placeholder="+7 900 000-00-00" /></div>
-            </div>
-          </>}
-
-          {/* Банк */}
-          {tab === 'bank' && <>
-            <div style={section}>Банковские реквизиты</div>
-            <div><label style={lbl}>Банк</label><input style={inp} value={form.bank} onChange={e => set('bank', e.target.value)} placeholder="ПАО Сбербанк" /></div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-              <div><label style={lbl}>БИК</label><input style={inp} value={form.bik} onChange={e => set('bik', e.target.value)} placeholder="044525225" /></div>
-              <div><label style={lbl}>Корр. счёт</label><input style={inp} value={form.corr_account} onChange={e => set('corr_account', e.target.value)} placeholder="30101810400000000225" /></div>
-            </div>
-            <div><label style={lbl}>Расчётный счёт</label><input style={inp} value={form.account} onChange={e => set('account', e.target.value)} placeholder="40702810000000000001" /></div>
-          </>}
-
-          {/* Доп. */}
-          {tab === 'extra' && <>
-            <div>
-              <label style={lbl}>Статус</label>
-              <select style={inp} value={form.status} onChange={e => set('status', e.target.value)}>
-                <option value="active">Активен</option>
-                <option value="archive">Архив</option>
-              </select>
-            </div>
-            <div><label style={lbl}>Заметки</label><textarea style={{ ...inp, height: 120, resize: 'none' }} value={form.notes} onChange={e => set('notes', e.target.value)} placeholder="Дополнительная информация..." /></div>
-          </>}
+      {tab === 'contacts' && <>
+        <SectionTitle>Организация</SectionTitle>
+        <div style={cols(2)}>
+          <Field label="Телефон"><Input value={form.phone} onChange={e => set('phone', e.target.value)} placeholder="+7 900 000-00-00" /></Field>
+          <Field label="Email"><Input value={form.email} onChange={e => set('email', e.target.value)} placeholder="info@example.ru" /></Field>
         </div>
-
-        {/* Footer */}
-        <div style={{ display: 'flex', gap: 8, padding: '14px 20px', borderTop: '1px solid #e8ebf3' }}>
-          <button onClick={save} disabled={saving} style={{ flex: 1, padding: '9px', borderRadius: 8, border: 'none', background: '#4f6ef7', color: '#fff', fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', opacity: saving ? 0.6 : 1 }}>
-            {saving ? 'Сохранение...' : 'Сохранить'}
-          </button>
-          {cp && <button onClick={remove} style={{ padding: '9px 16px', borderRadius: 8, border: 'none', background: '#fee2e2', color: '#ef4444', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>Удалить</button>}
-          <button onClick={onClose} style={{ padding: '9px 16px', borderRadius: 8, border: '1px solid #e8ebf3', background: '#fff', color: '#6b7280', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>Отмена</button>
+        <Field label="Сайт"><Input value={form.website} onChange={e => set('website', e.target.value)} placeholder="https://example.ru" /></Field>
+        <SectionTitle>Контактное лицо</SectionTitle>
+        <Field label="ФИО"><Input value={form.contact_person} onChange={e => set('contact_person', e.target.value)} placeholder="Иванов Иван Иванович" /></Field>
+        <div style={cols(2)}>
+          <Field label="Должность"><Input value={form.contact_position} onChange={e => set('contact_position', e.target.value)} placeholder="Менеджер" /></Field>
+          <Field label="Телефон"><Input value={form.contact_phone} onChange={e => set('contact_phone', e.target.value)} placeholder="+7 900 000-00-00" /></Field>
         </div>
-      </div>
+      </>}
+
+      {tab === 'bank' && <>
+        <SectionTitle>Банковские реквизиты</SectionTitle>
+        <Field label="Банк"><Input value={form.bank} onChange={e => set('bank', e.target.value)} placeholder="ПАО Сбербанк" /></Field>
+        <div style={cols(2)}>
+          <Field label="БИК"><Input value={form.bik} onChange={e => set('bik', e.target.value)} placeholder="044525225" /></Field>
+          <Field label="Корр. счёт"><Input value={form.corr_account} onChange={e => set('corr_account', e.target.value)} placeholder="30101810400000000225" /></Field>
+        </div>
+        <Field label="Расчётный счёт"><Input value={form.account} onChange={e => set('account', e.target.value)} placeholder="40702810000000000001" /></Field>
+      </>}
+
+      {tab === 'extra' && <>
+        <Field label="Статус">
+          <Select value={form.status} onChange={e => set('status', e.target.value)}>
+            <option value="active">Активен</option>
+            <option value="archive">Архив</option>
+          </Select>
+        </Field>
+        <Field label="Заметки"><Textarea style={{ minHeight: 120 }} value={form.notes} onChange={e => set('notes', e.target.value)} placeholder="Дополнительная информация…" /></Field>
+      </>}
+
+      {err && <Notice tone="red">{err}</Notice>}
+    </Modal>
+  )
+}
+
+// ─── Пункт списка категорий ───────────────────────────────────────────────────
+
+function CatItem({ label, count, active, onClick, onDelete }: { label: string; count: number; active: boolean; onClick: () => void; onDelete?: () => void }) {
+  return (
+    <div onClick={onClick}
+      onMouseEnter={e => { if (!active) e.currentTarget.style.background = C.hover }}
+      onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'transparent' }}
+      style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 10px', borderRadius: C.radiusSm, cursor: 'pointer', background: active ? C.accentBg : 'transparent', marginBottom: 2 }}>
+      <span style={{ flex: 1, minWidth: 0, fontSize: 14, color: active ? C.accent : C.text, fontWeight: active ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+      <Badge tone={active ? 'blue' : 'neutral'}>{count}</Badge>
+      {onDelete && (
+        <button type="button" title="Удалить категорию" aria-label="Удалить категорию"
+          onClick={e => { e.stopPropagation(); onDelete() }}
+          style={{ border: 0, background: 'none', color: C.faint, fontSize: 16, cursor: 'pointer', lineHeight: 1, padding: '0 2px' }}>×</button>
+      )}
     </div>
   )
 }
 
-// ─── Main Page ────────────────────────────────────────────────────────────────
+// ─── Страница ─────────────────────────────────────────────────────────────────
 
 export default function CounterpartiesPage() {
   const [categories, setCategories] = useState<Category[]>([])
   const [counterparties, setCounterparties] = useState<Counterparty[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
   const [selectedCat, setSelectedCat] = useState<string | null>(null) // null = все
   const [search, setSearch] = useState('')
   const [showModal, setShowModal] = useState(false)
@@ -204,10 +198,12 @@ export default function CounterpartiesPage() {
 
   async function fetchAll() {
     setLoading(true)
-    const [{ data: cats }, { data: cps }] = await Promise.all([
+    setError('')
+    const [{ data: cats, error: e1 }, { data: cps, error: e2 }] = await Promise.all([
       supabase.from('counterparty_categories').select('*').order('name'),
       supabase.from('counterparties').select('*').order('name'),
     ])
+    if (e1 || e2) setError((e1 || e2)!.message)
     setCategories(cats || [])
     setCounterparties(cps || [])
     setLoading(false)
@@ -216,7 +212,7 @@ export default function CounterpartiesPage() {
   async function addCategory() {
     if (!newCatName.trim()) return
     const { error } = await supabase.from('counterparty_categories').insert({ name: newCatName.trim() })
-    if (error) { alert('Ошибка: ' + error.message); return }
+    if (error) { setError('Ошибка: ' + error.message); return }
     setNewCatName('')
     setAddingCat(false)
     fetchAll()
@@ -225,11 +221,11 @@ export default function CounterpartiesPage() {
   async function deleteCategory(cat: Category) {
     const count = counterparties.filter(c => c.category_id === cat.id).length
     const msg = count > 0
-      ? `Удалить категорию "${cat.name}"? ${count} контрагент(ов) перейдут в "Без категории".`
-      : `Удалить категорию "${cat.name}"?`
+      ? `Удалить категорию «${cat.name}»? ${count} контрагент(ов) перейдут в «Без категории».`
+      : `Удалить категорию «${cat.name}»?`
     if (!confirm(msg)) return
     const { error } = await supabase.from('counterparty_categories').delete().eq('id', cat.id)
-    if (error) { alert('Ошибка: ' + error.message); return }
+    if (error) { setError('Ошибка: ' + error.message); return }
     if (selectedCat === cat.id) setSelectedCat(null)
     fetchAll()
   }
@@ -246,142 +242,71 @@ export default function CounterpartiesPage() {
     return matchCat && matchSearch
   })
 
+  const open = (cp: Counterparty | null) => { setSelected(cp); setShowModal(true) }
+  const ellipsis: React.CSSProperties = { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
+
   return (
-    <div style={{ display: 'flex', gap: 0, minHeight: 0 }}>
-      {/* Левая панель — категории */}
-      <div style={{ width: 220, flexShrink: 0, borderRight: '1px solid #e8ebf3', paddingRight: 0, marginRight: 0 }}>
-        <div style={{ padding: '0 0 12px 0' }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: '#8596b4', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8, padding: '0 4px' }}>Категории</div>
-
-          {/* Все */}
-          <div
-            onClick={() => setSelectedCat(null)}
-            style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 10px', borderRadius: 8, cursor: 'pointer', background: selectedCat === null ? '#eff3ff' : 'transparent', color: selectedCat === null ? '#4f6ef7' : '#374151', fontWeight: selectedCat === null ? 600 : 400, fontSize: 14, marginBottom: 2 }}
-          >
-            <span>Все</span>
-            <span style={{ fontSize: 12, fontWeight: 500, color: selectedCat === null ? '#4f6ef7' : '#8596b4', background: selectedCat === null ? '#dbe4ff' : '#f0f2f8', borderRadius: 10, padding: '1px 7px' }}>{catCount(null)}</span>
+    <Page>
+      {error && <ErrorBox error={error} onRetry={fetchAll} />}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-start' }}>
+        {/* Категории */}
+        <div style={{ flex: '1 1 220px', maxWidth: 260, minWidth: 0 }}>
+        <Card pad={false}>
+          <div style={{ padding: 10 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.5px', margin: '2px 4px 8px' }}>Категории</div>
+            <CatItem label="Все" count={catCount(null)} active={selectedCat === null} onClick={() => setSelectedCat(null)} />
+            {categories.map(cat => (
+              <CatItem key={cat.id} label={cat.name} count={catCount(cat.id)} active={selectedCat === cat.id}
+                onClick={() => setSelectedCat(cat.id)} onDelete={() => deleteCategory(cat)} />
+            ))}
+            {addingCat ? (
+              <div style={{ display: 'grid', gap: 6, padding: '6px 2px 2px' }}>
+                <Input autoFocus placeholder="Название категории" value={newCatName}
+                  onChange={e => setNewCatName(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') addCategory(); if (e.key === 'Escape') { setAddingCat(false); setNewCatName('') } }} />
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <Button small kind="primary" onClick={addCategory} style={{ flex: 1 }}>Добавить</Button>
+                  <Button small onClick={() => { setAddingCat(false); setNewCatName('') }}>Отмена</Button>
+                </div>
+              </div>
+            ) : (
+              <Button small kind="ghost" onClick={() => setAddingCat(true)} style={{ marginTop: 4 }}>Добавить категорию</Button>
+            )}
           </div>
-
-          {/* Категории */}
-          {categories.map(cat => (
-            <div
-              key={cat.id}
-              onClick={() => setSelectedCat(cat.id)}
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 10px', borderRadius: 8, cursor: 'pointer', background: selectedCat === cat.id ? '#eff3ff' : 'transparent', marginBottom: 2 }}
-              onMouseEnter={e => { if (selectedCat !== cat.id) e.currentTarget.style.background = '#f8f9fc' }}
-              onMouseLeave={e => { if (selectedCat !== cat.id) e.currentTarget.style.background = 'transparent' }}
-            >
-              <span style={{ fontSize: 14, color: selectedCat === cat.id ? '#4f6ef7' : '#374151', fontWeight: selectedCat === cat.id ? 600 : 400, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cat.name}</span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
-                <span style={{ fontSize: 12, fontWeight: 500, color: selectedCat === cat.id ? '#4f6ef7' : '#8596b4', background: selectedCat === cat.id ? '#dbe4ff' : '#f0f2f8', borderRadius: 10, padding: '1px 7px' }}>{catCount(cat.id)}</span>
-                <button
-                  onClick={e => { e.stopPropagation(); deleteCategory(cat) }}
-                  style={{ border: 'none', background: 'none', color: '#d1d5db', fontSize: 14, cursor: 'pointer', lineHeight: 1, padding: '0 2px', display: 'flex', alignItems: 'center' }}
-                  title="Удалить категорию"
-                >×</button>
-              </div>
-            </div>
-          ))}
-
-          {/* Добавить категорию */}
-          {addingCat ? (
-            <div style={{ padding: '6px 4px' }}>
-              <input
-                autoFocus
-                style={{ width: '100%', border: '1px solid #4f6ef7', borderRadius: 6, padding: '6px 8px', fontSize: 13, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' }}
-                placeholder="Название..."
-                value={newCatName}
-                onChange={e => setNewCatName(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') addCategory(); if (e.key === 'Escape') { setAddingCat(false); setNewCatName('') } }}
-              />
-              <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
-                <button onClick={addCategory} style={{ flex: 1, padding: '4px', borderRadius: 6, border: 'none', background: '#4f6ef7', color: '#fff', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>Добавить</button>
-                <button onClick={() => { setAddingCat(false); setNewCatName('') }} style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid #e8ebf3', background: '#fff', color: '#6b7280', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>✕</button>
-              </div>
-            </div>
-          ) : (
-            <button onClick={() => setAddingCat(true)} style={{ width: '100%', marginTop: 4, padding: '6px 10px', border: '1px dashed #d1d5db', borderRadius: 8, background: 'none', color: '#8596b4', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}>
-              + Категория
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Правая часть */}
-      <div style={{ flex: 1, minWidth: 0, paddingLeft: 20 }}>
-        {/* Поиск + кнопка */}
-        <div style={{ display: 'flex', gap: 8, marginBottom: 14, alignItems: 'center' }}>
-          <input
-            style={{ flex: 1, border: '1px solid #e8ebf3', borderRadius: 8, padding: '8px 12px', fontSize: 14, fontFamily: 'inherit', outline: 'none' }}
-            placeholder="Поиск по названию, ИНН, контактному лицу..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-          />
-          <button onClick={() => { setSelected(null); setShowModal(true) }} style={{ padding: '8px 16px', border: 'none', borderRadius: 8, background: '#4f6ef7', color: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
-            + Добавить
-          </button>
+        </Card>
         </div>
 
-        {/* Категория заголовок */}
-        {selectedCat !== null && (
-          <div style={{ fontSize: 15, fontWeight: 600, color: '#1a2240', marginBottom: 12 }}>
-            {categories.find(c => c.id === selectedCat)?.name}
-            <span style={{ fontSize: 13, fontWeight: 400, color: '#8596b4', marginLeft: 8 }}>{filtered.length} контрагент(ов)</span>
+        {/* Список */}
+        <div style={{ flex: '999 1 480px', display: 'grid', gap: 12, minWidth: 0 }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <Input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Поиск по названию, ИНН, контактному лицу" style={{ flex: 1, minWidth: 200, width: 'auto' }} />
+            <Button kind="primary" onClick={() => open(null)}>Добавить контрагента</Button>
           </div>
-        )}
 
-        {/* Таблица */}
-        {loading ? <div style={{ color: '#8596b4', fontSize: 14 }}>Загрузка...</div> : (
-          <div style={{ background: '#fff', border: '1px solid #e8ebf3', borderRadius: 9, overflow: 'hidden' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
-              <thead>
-                <tr style={{ background: '#f8f9fc', borderBottom: '1px solid #e8ebf3' }}>
-                  {['Название / ФИО', 'Тип', 'ИНН', 'Телефон', 'Email', 'Контакт', 'Статус', ''].map(h => (
-                    <th key={h} style={{ padding: '9px 12px', textAlign: 'left', fontWeight: 500, color: '#8596b4', fontSize: 12, whiteSpace: 'nowrap' }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map(cp => {
-                  const st = STATUS_LABELS[cp.status] || STATUS_LABELS.active
-                  return (
-                    <tr key={cp.id} style={{ borderBottom: '1px solid #f0f2f8', cursor: 'pointer' }}
-                      onMouseEnter={e => (e.currentTarget.style.background = '#f8f9fc')}
-                      onMouseLeave={e => (e.currentTarget.style.background = '#fff')}
-                      onClick={() => { setSelected(cp); setShowModal(true) }}>
-                      <td style={{ padding: '9px 12px', maxWidth: 200 }}>
-                        <div style={{ fontWeight: 500, color: '#1a2240', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cp.name}</div>
-                        {cp.short_name && <div style={{ fontSize: 12, color: '#8596b4', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cp.short_name}</div>}
-                      </td>
-                      <td style={{ padding: '9px 12px', color: '#6b7280', whiteSpace: 'nowrap' }}>{TYPE_LABELS[cp.type] || cp.type}</td>
-                      <td style={{ padding: '9px 12px', color: '#6b7280', fontFamily: 'monospace', fontSize: 13 }}>{cp.inn || '—'}</td>
-                      <td style={{ padding: '9px 12px', color: '#6b7280', whiteSpace: 'nowrap' }}>{cp.phone || '—'}</td>
-                      <td style={{ padding: '9px 12px', color: '#4f6ef7', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {cp.email ? <a href={`mailto:${cp.email}`} onClick={e => e.stopPropagation()} style={{ color: '#4f6ef7', textDecoration: 'none' }}>{cp.email}</a> : '—'}
-                      </td>
-                      <td style={{ padding: '9px 12px', color: '#6b7280', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cp.contact_person || '—'}</td>
-                      <td style={{ padding: '9px 12px', whiteSpace: 'nowrap' }}>
-                        <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 10, background: st.bg, color: st.color }}>{st.label}</span>
-                      </td>
-                      <td style={{ padding: '9px 12px' }}>
-                        <button
-                          onClick={e => { e.stopPropagation(); setSelected(cp); setShowModal(true) }}
-                          style={{ border: '1px solid #e8ebf3', background: '#fff', borderRadius: 6, padding: '3px 10px', fontSize: 12, color: '#374151', cursor: 'pointer' }}>
-                          ✎
-                        </button>
-                      </td>
-                    </tr>
-                  )
-                })}
-                {filtered.length === 0 && (
-                  <tr><td colSpan={8} style={{ padding: 30, textAlign: 'center', color: '#8596b4', fontSize: 14 }}>
-                    {search ? 'Ничего не найдено' : 'Нет контрагентов в этой категории'}
-                  </td></tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        )}
+          <Card pad={false} title={selectedCat !== null ? <>{categories.find(c => c.id === selectedCat)?.name} <Muted small>{filtered.length} контрагент(ов)</Muted></> : undefined}>
+            {loading ? <Loading /> : (
+              <Table rows={filtered} rowKey={cp => cp.id} onRow={open}
+                empty={search ? 'Ничего не найдено' : 'Нет контрагентов в этой категории'}
+                cols={[
+                  { key: 'n', title: 'Название / ФИО', sort: cp => cp.name, render: cp => (
+                    <div style={{ maxWidth: 240 }}>
+                      <div style={{ fontWeight: 500, ...ellipsis }}>{cp.name}</div>
+                      {cp.short_name && <Sub><span style={{ display: 'block', ...ellipsis }}>{cp.short_name}</span></Sub>}
+                    </div>
+                  ) },
+                  { key: 't', title: 'Тип', sort: cp => TYPE_LABELS[cp.type] || cp.type, render: cp => <Muted>{TYPE_LABELS[cp.type] || cp.type}</Muted> },
+                  { key: 'i', title: 'ИНН', sort: cp => cp.inn || '', render: cp => <span style={{ fontFamily: 'monospace', color: C.muted }}>{cp.inn || '—'}</span> },
+                  { key: 'p', title: 'Телефон', render: cp => <span style={{ whiteSpace: 'nowrap', color: C.muted }}>{cp.phone || '—'}</span> },
+                  { key: 'e', title: 'Email', render: cp => cp.email
+                    ? <a href={`mailto:${cp.email}`} onClick={e => e.stopPropagation()} style={{ color: C.accent, textDecoration: 'none', display: 'block', maxWidth: 180, ...ellipsis }}>{cp.email}</a>
+                    : <Muted>—</Muted> },
+                  { key: 'c', title: 'Контакт', sort: cp => cp.contact_person || '', render: cp => <span style={{ display: 'block', maxWidth: 160, color: C.muted, ...ellipsis }}>{cp.contact_person || '—'}</span> },
+                  { key: 's', title: 'Статус', sort: cp => cp.status, render: cp => { const st = STATUS_LABELS[cp.status] || STATUS_LABELS.active; return <Badge tone={st.tone}>{st.label}</Badge> } },
+                  { key: 'a', title: '', align: 'right', render: cp => <Button small onClick={e => { e.stopPropagation(); open(cp) }}>Изменить</Button> },
+                ]} />
+            )}
+          </Card>
+        </div>
       </div>
 
       {showModal && (
@@ -392,6 +317,6 @@ export default function CounterpartiesPage() {
           onSaved={() => { setShowModal(false); fetchAll() }}
         />
       )}
-    </div>
+    </Page>
   )
 }

@@ -36,11 +36,11 @@ export default function TenantApp() {
     });
     return () => sub.subscription.unsubscribe();
   }, []);
-  // фон страницы под тёмную тему кабинета (иначе по краям виден белый фон документа)
+  // кабинет арендатора — тёмная тема общей палитры (токены в src/index.css)
   useEffect(() => {
-    const prev = document.body.style.background;
-    document.body.style.background = '#0a0a0a';
-    return () => { document.body.style.background = prev; };
+    const prev = document.documentElement.dataset.theme;
+    document.documentElement.dataset.theme = 'dark';
+    return () => { if (prev) document.documentElement.dataset.theme = prev; else delete document.documentElement.dataset.theme; };
   }, []);
   const isAuthenticated = !!session;
 
@@ -65,7 +65,7 @@ export default function TenantApp() {
   }
 
   if (session === undefined) {
-    return <div style={{ minHeight: '100dvh', background: '#0a0a0a', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#666', fontFamily: '"Geist", system-ui, sans-serif', fontSize: 14 }}>Загрузка…</div>;
+    return <div style={{ minHeight: '100dvh', background: 'var(--bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-3)', fontFamily: '"Geist", system-ui, sans-serif', fontSize: 14 }}>Загрузка…</div>;
   }
 
   if (!session || !isAuthenticated) {

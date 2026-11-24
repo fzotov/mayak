@@ -1,6 +1,10 @@
+// Входящие счета от поставщиков и подрядчиков: добавление с распознаванием файла, согласование письмом, отметка оплаты.
 import { apiFetch, openStoredFile } from '../lib/api'
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import {
+  Page, Card, Row, Button, Badge, Stat, Stats, Table, Field, Input, Select, Textarea, Segmented, Modal, Notice, Loading, ErrorBox, Muted, Sub, money, num, dateRu, C, type Tone,
+} from '../components/ui'
 
 interface IncomingInvoice {
   id: string
@@ -26,39 +30,19 @@ interface StaffMember {
   position: string | null
 }
 
-const STATUS_CONFIG: Record<string, { label: string; bg: string; color: string }> = {
-  NEW:              { label: 'Новый',           bg: '#eff3ff', color: '#4f6ef7' },
-  PENDING_APPROVAL: { label: 'На согласовании', bg: '#fffbeb', color: '#d97706' },
-  APPROVED:         { label: 'Согласован',      bg: '#f0fdf4', color: '#16a34a' },
-  PAID:             { label: 'Оплачен',         bg: '#dcfce7', color: '#15803d' },
+const STATUS_CONFIG: Record<string, { label: string; tone: Tone }> = {
+  NEW:              { label: 'Новый',           tone: 'blue' },
+  PENDING_APPROVAL: { label: 'На согласовании', tone: 'amber' },
+  APPROVED:         { label: 'Согласован',      tone: 'green' },
+  PAID:             { label: 'Оплачен',         tone: 'neutral' },
 }
 
-function fmt(n: number) {
-  return n.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' ₽'
-}
+type Filter = 'ALL' | 'NEW' | 'PENDING_APPROVAL' | 'APPROVED' | 'PAID'
 
 function fmtVat(vat: number | null) {
   if (vat == null) return 'без НДС'
-  return 'НДС ' + vat.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' ₽'
+  return 'НДС ' + num(vat, 2) + ' ₽'
 }
-
-function fmtDate(s: string | null) {
-  if (!s) return '—'
-  return new Date(s).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' })
-}
-
-const ACCENT = '#4f6ef7'
-const TEXT = '#1a2240'
-const GRAY = '#8596b4'
-const BORDER = '#e8ebf3'
-
-const inputStyle: React.CSSProperties = {
-  width: '100%', padding: '8px 12px', borderRadius: 8, border: `1px solid ${BORDER}`,
-  fontSize: 14, color: TEXT, fontFamily: 'inherit', outline: 'none', background: '#fff',
-  boxSizing: 'border-box',
-}
-
-const labelStyle: React.CSSProperties = { fontSize: 13, color: GRAY, fontWeight: 500, marginBottom: 4, display: 'block' }
 
 interface FormData {
   supplier: string
@@ -80,10 +64,12 @@ const emptyForm = (): FormData => ({
 export default function IncomingInvoicesPage() {
   const [invoices, setInvoices] = useState<IncomingInvoice[]>([])
   const [loading, setLoading] = useState(true)
-  const [filterStatus, setFilterStatus] = useState<string>('ALL')
+  const [error, setError] = useState('')
+  const [filterStatus, setFilterStatus] = useState<Filter>('ALL')
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState<FormData>(emptyForm())
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
   const [recognizing, setRecognizing] = useState(false)
   const [recognizeError, setRecognizeError] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -93,13 +79,16 @@ export default function IncomingInvoicesPage() {
   const [approvalEmail, setApprovalEmail] = useState('')
   const [sendingApproval, setSendingApproval] = useState(false)
   const [approvalSent, setApprovalSent] = useState(false)
+  const [approvalError, setApprovalError] = useState('')
 
   async function load() {
     setLoading(true)
-    const { data } = await supabase
+    setError('')
+    const { data, error } = await supabase
       .from('incoming_invoices')
       .select('*')
       .order('created_at', { ascending: false })
+    if (error) setError(error.message)
     setInvoices((data as IncomingInvoice[]) || [])
     setLoading(false)
   }
@@ -183,6 +172,7 @@ export default function IncomingInvoicesPage() {
   async function save() {
     if (!form.supplier || !form.amount) return
     setSaving(true)
+    setSaveError('')
     const amount = parseFloat(form.amount.replace(',', '.')) || 0
     const fileUrl = await uploadFile()
     const { data: inv, error } = await supabase
@@ -200,7 +190,13 @@ export default function IncomingInvoicesPage() {
       .select()
       .single()
 
-    if (!error && inv && form.due_date) {
+    if (error) {
+      setSaving(false)
+      setSaveError('Счёт не сохранён: ' + error.message)
+      return
+    }
+
+    if (inv && form.due_date) {
       await supabase.from('payment_calendar').insert({
         name: `Счёт: ${form.supplier}`,
         amount,
@@ -218,13 +214,15 @@ export default function IncomingInvoicesPage() {
   }
 
   async function updateStatus(id: string, status: string) {
-    await supabase.from('incoming_invoices').update({ status }).eq('id', id)
+    const { error } = await supabase.from('incoming_invoices').update({ status }).eq('id', id)
+    if (error) { setError('Статус не изменён: ' + error.message); return }
     setInvoices(prev => prev.map(i => i.id === id ? { ...i, status } : i))
   }
 
   async function sendApproval() {
     if (!approvalInvoice || !approvalEmail) return
     setSendingApproval(true)
+    setApprovalError('')
     const member = staff.find(s => s.email === approvalEmail)
     const r = await apiFetch('/api/request-invoice-approval', {
       method: 'POST',
@@ -244,7 +242,7 @@ export default function IncomingInvoicesPage() {
         : i
       ))
     } else {
-      alert('Ошибка: ' + d.error)
+      setApprovalError('Ошибка: ' + d.error)
     }
     setSendingApproval(false)
   }
@@ -254,270 +252,146 @@ export default function IncomingInvoicesPage() {
   const pending = invoices.filter(i => i.status === 'NEW').reduce((s, i) => s + (i.amount || 0), 0)
 
   return (
-    <div style={{ padding: 24, maxWidth: 1200 }}>
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-        <div>
-          <div style={{ fontSize: 22, fontWeight: 700, color: TEXT }}>Входящие счета</div>
-          <div style={{ fontSize: 13, color: GRAY, marginTop: 2 }}>Счета от поставщиков и подрядчиков</div>
-        </div>
-        <button
-          onClick={() => { setShowForm(true); setForm(emptyForm()) }}
-          style={{ padding: '9px 18px', borderRadius: 8, border: 'none', background: ACCENT, color: '#fff', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
-        >
-          + Добавить счёт
-        </button>
-      </div>
+    <Page actions={<Button kind="primary" onClick={() => { setShowForm(true); setForm(emptyForm()); setSaveError(''); setRecognizeError(null) }}>Добавить счёт</Button>}>
+      <Muted>Счета от поставщиков и подрядчиков</Muted>
 
-      {/* KPI */}
-      <div style={{ display: 'flex', gap: 12, marginBottom: 20 }}>
-        {[
-          { label: 'К оплате (новые)', value: fmt(pending), color: pending > 0 ? '#ef4444' : TEXT },
-          { label: 'Всего в списке', value: fmt(total), color: TEXT },
-          { label: 'Счетов', value: String(invoices.length), color: TEXT },
-        ].map(k => (
-          <div key={k.label} style={{ background: '#fff', border: `1px solid ${BORDER}`, borderRadius: 10, padding: '14px 18px', flex: 1 }}>
-            <div style={{ fontSize: 12, color: GRAY, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.4px', marginBottom: 6 }}>{k.label}</div>
-            <div style={{ fontSize: 20, fontWeight: 700, color: k.color }}>{k.value}</div>
-          </div>
-        ))}
-      </div>
+      <Stats>
+        <Stat label="К оплате (новые)" value={money(pending)} tone={pending > 0 ? 'red' : undefined} />
+        <Stat label="Всего в списке" value={money(total)} />
+        <Stat label="Счетов" value={invoices.length} />
+      </Stats>
 
-      {/* Filter tabs */}
-      <div style={{ display: 'flex', gap: 4, marginBottom: 16 }}>
-        {[['ALL', 'Все'], ['NEW', 'Новые'], ['PENDING_APPROVAL', 'На согласовании'], ['APPROVED', 'Согласованы'], ['PAID', 'Оплачены']].map(([k, l]) => (
-          <button
-            key={k}
-            onClick={() => setFilterStatus(k)}
-            style={{
-              padding: '6px 14px', borderRadius: 20, border: `1px solid ${filterStatus === k ? ACCENT : BORDER}`,
-              background: filterStatus === k ? ACCENT : '#fff', color: filterStatus === k ? '#fff' : GRAY,
-              fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit',
-            }}
-          >{l}</button>
-        ))}
-      </div>
+      <Segmented<Filter> value={filterStatus} onChange={setFilterStatus}
+        options={[['ALL', 'Все'], ['NEW', 'Новые'], ['PENDING_APPROVAL', 'На согласовании'], ['APPROVED', 'Согласованы'], ['PAID', 'Оплачены']]} />
 
-      {/* Table */}
-      <div style={{ background: '#fff', border: `1px solid ${BORDER}`, borderRadius: 10, overflow: 'hidden' }}>
-        {loading ? (
-          <div style={{ padding: 40, textAlign: 'center', color: GRAY }}>Загрузка...</div>
-        ) : filtered.length === 0 ? (
-          <div style={{ padding: 40, textAlign: 'center', color: GRAY }}>Нет счетов</div>
-        ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
-            <thead>
-              <tr style={{ background: '#f8f9fb' }}>
-                {['Поставщик', 'Сумма', 'Дата счёта', 'Срок оплаты', 'Назначение', 'Статус', 'Действия'].map(h => (
-                  <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 600, color: TEXT, borderBottom: `1px solid ${BORDER}`, whiteSpace: 'nowrap' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map(inv => {
-                const sc = STATUS_CONFIG[inv.status] ?? { label: inv.status, bg: '#f3f4f6', color: GRAY }
-                const isOverdue = inv.due_date && new Date(inv.due_date) < new Date() && inv.status !== 'PAID'
-                return (
-                  <tr key={inv.id} style={{ borderBottom: `1px solid #f3f4f6` }}>
-                    <td style={{ padding: '10px 14px', fontWeight: 600, color: TEXT }}>{inv.supplier}</td>
-                    <td style={{ padding: '10px 14px', whiteSpace: 'nowrap' }}>
-                      <div style={{ fontWeight: 700, color: inv.status === 'NEW' ? '#ef4444' : TEXT }}>{fmt(inv.amount)}</div>
-                      <div style={{ fontSize: 11, color: GRAY, marginTop: 1 }}>{fmtVat(inv.vat)}</div>
-                    </td>
-                    <td style={{ padding: '10px 14px', color: GRAY, whiteSpace: 'nowrap' }}>{fmtDate(inv.invoice_date)}</td>
-                    <td style={{ padding: '10px 14px', whiteSpace: 'nowrap', color: isOverdue ? '#ef4444' : GRAY, fontWeight: isOverdue ? 600 : 400 }}>{fmtDate(inv.due_date)}{isOverdue ? ' !' : ''}</td>
-                    <td style={{ padding: '10px 14px', color: '#374151', maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{inv.description || '—'}</td>
-                    <td style={{ padding: '10px 14px' }}>
-                      <span style={{ background: sc.bg, color: sc.color, padding: '3px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap' }}>{sc.label}</span>
-                      {inv.status === 'PENDING_APPROVAL' && inv.approval_requested_to && (
-                        <div style={{ fontSize: 11, color: GRAY, marginTop: 3 }}>→ {inv.approval_requested_to}</div>
-                      )}
-                      {inv.status === 'APPROVED' && inv.approved_by && (
-                        <div style={{ fontSize: 11, color: '#16a34a', marginTop: 3 }}>✓ {inv.approved_by}</div>
-                      )}
-                    </td>
-                    <td style={{ padding: '10px 14px', whiteSpace: 'nowrap' }}>
-                      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-                        {/* Отправить на согласование */}
-                        {(inv.status === 'NEW' || inv.status === 'PENDING_APPROVAL') && (
-                          <button onClick={() => { setApprovalInvoice(inv); setApprovalEmail(''); setApprovalSent(false) }}
-                            style={{ padding: '4px 9px', borderRadius: 6, border: `1px solid ${BORDER}`, background: '#fff', color: '#d97706', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
-                            Согласовать
-                          </button>
-                        )}
-                        {/* Согласовать вручную */}
-                        {inv.status === 'NEW' && (
-                          <button onClick={() => updateStatus(inv.id, 'APPROVED')}
-                            style={{ padding: '4px 9px', borderRadius: 6, border: `1px solid #bbf7d0`, background: '#f0fdf4', color: '#16a34a', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
-                            ✓ Вручную
-                          </button>
-                        )}
-                        {/* Отметить оплаченным */}
-                        {inv.status === 'APPROVED' && (
-                          <button onClick={() => updateStatus(inv.id, 'PAID')}
-                            style={{ padding: '4px 9px', borderRadius: 6, border: 'none', background: '#dcfce7', color: '#15803d', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
-                            ₽ Оплачен
-                          </button>
-                        )}
-                        {/* Снять оплату */}
-                        {inv.status === 'PAID' && (
-                          <button onClick={() => updateStatus(inv.id, 'APPROVED')}
-                            style={{ padding: '4px 9px', borderRadius: 6, border: `1px solid ${BORDER}`, background: '#fff', color: GRAY, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>
-                            ↩ Отменить
-                          </button>
-                        )}
-                        {inv.file_url && (
-                          <a href="#" onClick={e => { e.preventDefault(); openStoredFile(inv.file_url!) }}
-                            style={{ padding: '4px 9px', borderRadius: 6, border: `1px solid ${BORDER}`, background: '#fff', color: ACCENT, fontSize: 11, textDecoration: 'none', fontWeight: 500 }}>
-                            
-                          </a>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+      {error && <ErrorBox error={error} onRetry={load} />}
+
+      <Card pad={false}>
+        {loading ? <Loading /> : (
+          <Table rows={filtered} rowKey={i => i.id} empty="Нет счетов" cols={[
+            { key: 's', title: 'Поставщик', sort: i => i.supplier, render: i => <span style={{ fontWeight: 600 }}>{i.supplier}</span> },
+            { key: 'a', title: 'Сумма', align: 'right', sort: i => Number(i.amount || 0), render: i => <>
+              <div style={{ fontWeight: 600, color: i.status === 'NEW' ? C.red : C.text }}>{money(i.amount)}</div>
+              <Sub>{fmtVat(i.vat)}</Sub>
+            </> },
+            { key: 'd', title: 'Дата счёта', sort: i => i.invoice_date, render: i => <span style={{ color: C.muted, whiteSpace: 'nowrap' }}>{dateRu(i.invoice_date)}</span> },
+            { key: 'due', title: 'Срок оплаты', sort: i => i.due_date, render: i => {
+              const isOverdue = !!i.due_date && new Date(i.due_date) < new Date() && i.status !== 'PAID'
+              return <div style={{ whiteSpace: 'nowrap', color: isOverdue ? C.red : C.muted, fontWeight: isOverdue ? 600 : 400 }}>
+                {dateRu(i.due_date)}{isOverdue && <Sub><span style={{ color: C.red }}>просрочен</span></Sub>}
+              </div>
+            } },
+            { key: 'desc', title: 'Назначение', render: i => <div style={{ maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{i.description || '—'}</div> },
+            { key: 'st', title: 'Статус', sort: i => i.status, render: i => {
+              const sc = STATUS_CONFIG[i.status] ?? { label: i.status, tone: 'neutral' as Tone }
+              return <>
+                <Badge tone={sc.tone}>{sc.label}</Badge>
+                {i.status === 'PENDING_APPROVAL' && i.approval_requested_to && <Sub>кому: {i.approval_requested_to}</Sub>}
+                {i.status === 'APPROVED' && i.approved_by && <Sub><span style={{ color: C.green }}>согласовал: {i.approved_by}</span></Sub>}
+              </>
+            } },
+            { key: 'act', title: 'Действия', render: i => (
+              <Row gap={5}>
+                {(i.status === 'NEW' || i.status === 'PENDING_APPROVAL') && (
+                  <Button small onClick={() => { setApprovalInvoice(i); setApprovalEmail(''); setApprovalSent(false); setApprovalError('') }}>Согласовать</Button>
+                )}
+                {i.status === 'NEW' && (
+                  <Button small onClick={() => updateStatus(i.id, 'APPROVED')} style={{ color: C.green }}>Согласовать вручную</Button>
+                )}
+                {i.status === 'APPROVED' && (
+                  <Button small kind="primary" onClick={() => updateStatus(i.id, 'PAID')}>Оплачен</Button>
+                )}
+                {i.status === 'PAID' && (
+                  <Button small onClick={() => updateStatus(i.id, 'APPROVED')}>Снять оплату</Button>
+                )}
+                {i.file_url && (
+                  <Button small kind="ghost" onClick={() => openStoredFile(i.file_url!)}>Файл</Button>
+                )}
+              </Row>
+            ) },
+          ]} />
         )}
-      </div>
+      </Card>
 
       {/* Approval modal */}
       {approvalInvoice && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div style={{ background: '#fff', borderRadius: 14, padding: 28, width: 460, boxShadow: '0 20px 60px rgba(0,0,0,.2)' }}>
-            {approvalSent ? (
-              <div style={{ textAlign: 'center', padding: '16px 0' }}>
-                <div style={{ fontSize: 48, marginBottom: 16 }}></div>
-                <div style={{ fontSize: 18, fontWeight: 700, color: TEXT, marginBottom: 8 }}>Запрос отправлен</div>
-                <div style={{ fontSize: 14, color: GRAY, marginBottom: 24 }}>Письмо отправлено на {approvalEmail}</div>
-                <button onClick={() => setApprovalInvoice(null)} style={{ padding: '10px 24px', borderRadius: 8, border: 'none', background: ACCENT, color: '#fff', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Закрыть</button>
-              </div>
-            ) : (
-              <>
-                <div style={{ fontSize: 18, fontWeight: 700, color: TEXT, marginBottom: 4 }}>Отправить на согласование</div>
-                <div style={{ fontSize: 13, color: GRAY, marginBottom: 20 }}>{approvalInvoice.supplier} — {fmt(approvalInvoice.amount)}</div>
-
-                <label style={labelStyle}>Выбрать сотрудника</label>
-                <select
-                  value={approvalEmail}
-                  onChange={e => setApprovalEmail(e.target.value)}
-                  style={{ ...inputStyle, marginBottom: 12 }}
-                >
-                  <option value="">— выберите сотрудника —</option>
-                  {staff.filter(s => s.email).map(s => (
-                    <option key={s.id} value={s.email}>{s.full_name}{s.position ? ` (${s.position})` : ''}</option>
-                  ))}
-                </select>
-
-                <label style={labelStyle}>или введите email вручную</label>
-                <input
-                  style={{ ...inputStyle, marginBottom: 20 }}
-                  type="email"
-                  value={approvalEmail}
-                  onChange={e => setApprovalEmail(e.target.value)}
-                  placeholder="employee@company.ru"
-                />
-
-                <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-                  <button onClick={() => setApprovalInvoice(null)} style={{ padding: '9px 18px', borderRadius: 8, border: `1px solid ${BORDER}`, background: '#fff', color: GRAY, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>Отмена</button>
-                  <button
-                    onClick={sendApproval}
-                    disabled={sendingApproval || !approvalEmail}
-                    style={{ padding: '9px 20px', borderRadius: 8, border: 'none', background: ACCENT, color: '#fff', fontSize: 14, fontWeight: 600, cursor: sendingApproval || !approvalEmail ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: sendingApproval || !approvalEmail ? .6 : 1 }}
-                  >
-                    {sendingApproval ? 'Отправляю...' : 'Отправить'}
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
+        approvalSent ? (
+          <Modal title="Запрос отправлен" onClose={() => setApprovalInvoice(null)} width={460}
+            footer={<Button kind="primary" onClick={() => setApprovalInvoice(null)}>Закрыть</Button>}>
+            <Notice tone="green">Письмо отправлено на {approvalEmail}</Notice>
+          </Modal>
+        ) : (
+          <Modal title="Отправить на согласование" onClose={() => setApprovalInvoice(null)} width={460} footer={<>
+            <Button onClick={() => setApprovalInvoice(null)}>Отмена</Button>
+            <Button kind="primary" onClick={sendApproval} disabled={sendingApproval || !approvalEmail}>{sendingApproval ? 'Отправляю…' : 'Отправить'}</Button>
+          </>}>
+            <Muted>{approvalInvoice.supplier} — {money(approvalInvoice.amount)}</Muted>
+            <Field label="Выбрать сотрудника">
+              <Select value={approvalEmail} onChange={e => setApprovalEmail(e.target.value)}>
+                <option value="">— выберите сотрудника —</option>
+                {staff.filter(s => s.email).map(s => (
+                  <option key={s.id} value={s.email}>{s.full_name}{s.position ? ` (${s.position})` : ''}</option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="или введите email вручную">
+              <Input type="email" value={approvalEmail} onChange={e => setApprovalEmail(e.target.value)} placeholder="employee@company.ru" />
+            </Field>
+            {approvalError && <Notice tone="red">{approvalError}</Notice>}
+          </Modal>
+        )
       )}
 
       {/* Add form modal */}
       {showForm && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div style={{ background: '#fff', borderRadius: 14, padding: 28, width: 540, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,.2)' }}>
-            <div style={{ fontSize: 18, fontWeight: 700, color: TEXT, marginBottom: 20 }}>Новый входящий счёт</div>
-
-            {/* File upload */}
-            <div style={{ marginBottom: 18 }}>
-              <label style={labelStyle}>Файл счёта (PDF, фото)</label>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <input ref={fileRef} type="file" accept="image/*,application/pdf" onChange={handleFile} style={{ display: 'none' }} />
-                <button
-                  onClick={() => fileRef.current?.click()}
-                  style={{ padding: '8px 14px', borderRadius: 8, border: `1px solid ${BORDER}`, background: '#f8f9fb', color: TEXT, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}
-                >
-                  Выбрать файл
-                </button>
-                {form.fileName && <span style={{ fontSize: 13, color: GRAY }}>{form.fileName}</span>}
-                {form.fileBase64 && (
-                  <button
-                    onClick={recognize}
-                    disabled={recognizing}
-                    style={{ padding: '8px 14px', borderRadius: 8, border: 'none', background: ACCENT, color: '#fff', fontSize: 13, cursor: recognizing ? 'not-allowed' : 'pointer', fontFamily: 'inherit', fontWeight: 600 }}
-                  >
-                    {recognizing ? '✦ Распознаю...' : '✦ AI-распознать'}
-                  </button>
-                )}
-              </div>
-              {recognizeError && (
-                <div style={{ marginTop: 6, fontSize: 12, color: '#ef4444' }}>{recognizeError}</div>
+        <Modal title="Новый входящий счёт" onClose={() => setShowForm(false)} width={540} footer={<>
+          <Button onClick={() => setShowForm(false)}>Отмена</Button>
+          <Button kind="primary" onClick={save} disabled={saving || !form.supplier || !form.amount}>{saving ? 'Сохраняю…' : 'Сохранить'}</Button>
+        </>}>
+          <div style={{ display: 'grid', gap: 4 }}>
+            <span style={{ fontSize: 12, color: C.muted, fontWeight: 500 }}>Файл счёта (PDF, фото)</span>
+            <Row gap={8}>
+              <input ref={fileRef} type="file" accept="image/*,application/pdf" onChange={handleFile} style={{ display: 'none' }} />
+              <Button onClick={() => fileRef.current?.click()}>Выбрать файл</Button>
+              {form.fileName && <span style={{ fontSize: 13, fontWeight: 400, color: C.muted }}>{form.fileName}</span>}
+              {form.fileBase64 && (
+                <Button kind="primary" onClick={recognize} disabled={recognizing}>
+                  {recognizing ? 'Распознаю…' : 'Распознать (ИИ)'}
+                </Button>
               )}
-            </div>
-
-            <div style={{ marginBottom: 14 }}>
-              <label style={labelStyle}>Поставщик *</label>
-              <input style={inputStyle} value={form.supplier} onChange={e => setForm(f => ({ ...f, supplier: e.target.value }))} placeholder="ООО Ромашка" />
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
-              <div>
-                <label style={labelStyle}>Сумма (₽) *</label>
-                <input style={inputStyle} type="text" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} placeholder="50000.00" />
-              </div>
-              <div>
-                <label style={labelStyle}>НДС (₽)</label>
-                <input style={inputStyle} type="text" value={form.vat} onChange={e => setForm(f => ({ ...f, vat: e.target.value }))} placeholder="без НДС" />
-              </div>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
-              <div>
-                <label style={labelStyle}>Дата счёта</label>
-                <input style={inputStyle} type="date" value={form.invoice_date} onChange={e => setForm(f => ({ ...f, invoice_date: e.target.value }))} />
-              </div>
-              <div>
-                <label style={labelStyle}>Срок оплаты</label>
-                <input style={inputStyle} type="date" value={form.due_date} onChange={e => setForm(f => ({ ...f, due_date: e.target.value }))} />
-              </div>
-            </div>
-
-            <div style={{ marginBottom: 20 }}>
-              <label style={labelStyle}>Назначение платежа</label>
-              <textarea
-                style={{ ...inputStyle, resize: 'vertical', minHeight: 72 }}
-                value={form.description}
-                onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
-                placeholder="За что оплачиваем..."
-              />
-            </div>
-
-            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-              <button onClick={() => setShowForm(false)} style={{ padding: '9px 18px', borderRadius: 8, border: `1px solid ${BORDER}`, background: '#fff', color: GRAY, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>Отмена</button>
-              <button
-                onClick={save}
-                disabled={saving || !form.supplier || !form.amount}
-                style={{ padding: '9px 20px', borderRadius: 8, border: 'none', background: ACCENT, color: '#fff', fontSize: 14, fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: saving || !form.supplier || !form.amount ? .6 : 1 }}
-              >
-                {saving ? 'Сохраняю...' : 'Сохранить'}
-              </button>
-            </div>
+            </Row>
           </div>
-        </div>
+          {recognizeError && <Notice tone="red">{recognizeError}</Notice>}
+
+          <Field label="Поставщик *">
+            <Input value={form.supplier} onChange={e => setForm(f => ({ ...f, supplier: e.target.value }))} placeholder="ООО Ромашка" />
+          </Field>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
+            <Field label="Сумма (₽) *">
+              <Input type="text" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} placeholder="50000.00" />
+            </Field>
+            <Field label="НДС (₽)">
+              <Input type="text" value={form.vat} onChange={e => setForm(f => ({ ...f, vat: e.target.value }))} placeholder="без НДС" />
+            </Field>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
+            <Field label="Дата счёта">
+              <Input type="date" value={form.invoice_date} onChange={e => setForm(f => ({ ...f, invoice_date: e.target.value }))} />
+            </Field>
+            <Field label="Срок оплаты">
+              <Input type="date" value={form.due_date} onChange={e => setForm(f => ({ ...f, due_date: e.target.value }))} />
+            </Field>
+          </div>
+
+          <Field label="Назначение платежа">
+            <Textarea style={{ minHeight: 72 }} value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="За что оплачиваем..." />
+          </Field>
+
+          {saveError && <Notice tone="red">{saveError}</Notice>}
+        </Modal>
       )}
-    </div>
+    </Page>
   )
 }

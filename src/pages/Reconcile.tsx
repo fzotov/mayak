@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
+import { Page, Card, Row, Button, Badge, Stat, Stats, Table, Tabs, Loading, Empty, ErrorBox, Link, Muted, Sub, C, money, dateRu } from '../components/ui'
 
 interface BankTx {
   id: string
@@ -27,8 +28,6 @@ interface Tenant {
   inn: string | null
   monthlyRent: number | null
 }
-
-const FMT = (n: number) => Number(n).toLocaleString('ru-RU', { minimumFractionDigits: 2 })
 
 function normalize(s: string) {
   return s.toLowerCase().replace(/["«»""'',.\-]/g, '').replace(/\s+/g, ' ').trim()
@@ -59,6 +58,26 @@ function matchTenantScore(tx: BankTx, tenant: Tenant): number {
   return score
 }
 
+/** Одна пара «операция выписки — найденный кандидат» с кнопками. */
+function SuggestionRow({ tx, right, busy, onConfirm, onSkip }: { tx: BankTx; right: React.ReactNode; busy: boolean; onConfirm: () => void; onSkip: () => void }) {
+  const credit = tx.direction === 'credit'
+  return (
+    <div style={{ padding: '14px 16px', borderBottom: `1px solid ${C.line}`, display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+      <div style={{ flex: '1 1 220px', minWidth: 0 }}>
+        <Muted small>{dateRu(tx.date)} · Выписка</Muted>
+        <div style={{ fontSize: 15, fontWeight: 600, color: credit ? C.green : C.red, margin: '2px 0', fontVariantNumeric: 'tabular-nums' }}>{credit ? '+' : '−'}{money(tx.amount)}</div>
+        <div style={{ fontWeight: 500 }}>{tx.counterparty || '—'}</div>
+        {tx.description && <Sub>{tx.description.slice(0, 90)}</Sub>}
+      </div>
+      <div style={{ flex: '1 1 220px', minWidth: 0, borderLeft: `2px solid ${C.line}`, paddingLeft: 16 }}>{right}</div>
+      <div style={{ display: 'flex', gap: 6, flexDirection: 'column' }}>
+        <Button small kind="primary" onClick={onConfirm} disabled={busy}>Подтвердить</Button>
+        <Button small onClick={onSkip} disabled={busy}>Пропустить</Button>
+      </div>
+    </div>
+  )
+}
+
 export default function ReconcilePage() {
   const [txs, setTxs] = useState<BankTx[]>([])
   const [invoices, setInvoices] = useState<IncomingInvoice[]>([])
@@ -67,16 +86,19 @@ export default function ReconcilePage() {
   const [saving, setSaving] = useState<string | null>(null)
   const [tab, setTab] = useState<'debit' | 'credit'>('debit')
   const [error, setError] = useState('')
+  const [loadError, setLoadError] = useState('')
 
   useEffect(() => { load() }, [])
 
   async function load() {
-    setLoading(true)
-    const [{ data: txData }, { data: invData }, { data: tenantData }] = await Promise.all([
+    setLoading(true); setLoadError('')
+    const [{ data: txData, error: e1 }, { data: invData, error: e2 }, { data: tenantData, error: e3 }] = await Promise.all([
       supabase.from('bank_transactions').select('*').order('date', { ascending: false }),
       supabase.from('incoming_invoices').select('id,supplier,amount,status,description,due_date').in('status', ['APPROVED', 'NEW', 'PENDING_APPROVAL']),
       supabase.from('tenants').select('id,fullName:full_name,inn,monthlyRent:monthly_rent'),
     ])
+    const err = e1 || e2 || e3
+    if (err) setLoadError('Не удалось загрузить данные: ' + err.message)
     setTxs(txData || [])
     setInvoices(invData || [])
     setTenants((tenantData || []) as Tenant[])
@@ -112,7 +134,7 @@ export default function ReconcilePage() {
 
   // Операции банка меняются только функциями базы: зачисление идёт в расчёты арендатора, расход отмечается сверенным.
   async function run(txId: string, fn: () => PromiseLike<{ error: any }>) {
-    setSaving(txId)
+    setSaving(txId); setError('')
     const { error } = await fn()
     if (error) setError(error.message)
     await load()
@@ -139,183 +161,98 @@ export default function ReconcilePage() {
       : supabase.rpc('bank_ignore', { p_tx: txId, p_note: 'отмечено в сверке' }))
   }
 
-  if (loading) return <div style={{ padding: 40, color: '#8596b4', fontSize: 14, textAlign: 'center' }}>Загрузка...</div>
+  if (loading && txs.length === 0) return <Page><Loading /></Page>
 
   if (txs.length === 0) return (
-    <div style={{ padding: 60, textAlign: 'center', color: '#8596b4', fontSize: 14 }}>
-      Нет банковских транзакций. Сначала загрузите выписку в разделе <strong>Банк</strong>.
-    </div>
+    <Page>
+      {loadError && <ErrorBox error={loadError} onRetry={load} />}
+      <Card><Empty>Нет банковских операций. Сначала загрузите выписку в разделе <Link to="/bank">Поступления</Link>.</Empty></Card>
+    </Page>
   )
 
   const unmatchedDebit = debitTxs.filter(t => !t.matched_type).length
   const unmatchedCredit = creditTxs.filter(t => !t.matched_type).length
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      {error && <div style={{ background: '#fef2f2', color: '#dc2626', borderRadius: 8, padding: '10px 14px', fontSize: 13 }}>{error}</div>}
-      {/* KPI */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
-        {[
-          { label: 'Расходы (выписка)', value: FMT(debitTxs.reduce((s,t) => s+t.amount,0)) + ' ₽', color: '#ef4444' },
-          { label: 'Поступления (выписка)', value: FMT(creditTxs.reduce((s,t) => s+t.amount,0)) + ' ₽', color: '#16a34a' },
-          { label: 'Несопоставлено расходов', value: unmatchedDebit, color: unmatchedDebit > 0 ? '#d97706' : '#16a34a' },
-          { label: 'Несопоставлено поступлений', value: unmatchedCredit, color: unmatchedCredit > 0 ? '#d97706' : '#16a34a' },
-        ].map(k => (
-          <div key={k.label} style={{ background: '#fff', border: '1px solid #e8ebf3', borderRadius: 9, padding: '11px 14px' }}>
-            <div style={{ fontSize: 11, color: '#8596b4', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.4px', marginBottom: 4 }}>{k.label}</div>
-            <div style={{ fontSize: 20, fontWeight: 700, color: k.color }}>{k.value}</div>
-          </div>
-        ))}
-      </div>
+    <Page>
+      {loadError && <ErrorBox error={loadError} onRetry={load} />}
+      {error && <ErrorBox error={error} />}
+      <Stats>
+        <Stat label="Расходы (выписка)" value={money(debitTxs.reduce((s, t) => s + t.amount, 0))} tone="red" />
+        <Stat label="Поступления (выписка)" value={money(creditTxs.reduce((s, t) => s + t.amount, 0))} tone="green" />
+        <Stat label="Несопоставлено расходов" value={unmatchedDebit} tone={unmatchedDebit > 0 ? 'amber' : 'green'} />
+        <Stat label="Несопоставлено поступлений" value={unmatchedCredit} tone={unmatchedCredit > 0 ? 'amber' : 'green'} />
+      </Stats>
 
-      {/* Tabs */}
-      <div style={{ display: 'flex', gap: 6 }}>
-        {[
-          { id: 'debit', label: `↑ Сверка расходов${debitSuggestions.length > 0 ? ` (${debitSuggestions.length})` : ''}` },
-          { id: 'credit', label: `↓ Сверка поступлений${creditSuggestions.length > 0 ? ` (${creditSuggestions.length})` : ''}` },
-        ].map(t => (
-          <button key={t.id} onClick={() => setTab(t.id as any)} style={{
-            padding: '6px 14px', borderRadius: 7, border: '1px solid', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit',
-            borderColor: tab === t.id ? '#4f6ef7' : '#e8ebf3',
-            background: tab === t.id ? '#eff3ff' : '#fff',
-            color: tab === t.id ? '#4f6ef7' : '#6b7280', fontWeight: tab === t.id ? 600 : 400,
-          }}>{t.label}</button>
-        ))}
-      </div>
+      <Tabs<'debit' | 'credit'> value={tab} onChange={setTab} tabs={[
+        ['debit', `Сверка расходов${debitSuggestions.length > 0 ? ` (${debitSuggestions.length})` : ''}`],
+        ['credit', `Сверка поступлений${creditSuggestions.length > 0 ? ` (${creditSuggestions.length})` : ''}`],
+      ]} />
 
       {tab === 'debit' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <>
           {debitSuggestions.length > 0 && (
-            <div style={{ background: '#fff', border: '1px solid #e8ebf3', borderRadius: 9, overflow: 'hidden' }}>
-              <div style={{ padding: '12px 16px', borderBottom: '1px solid #e8ebf3', background: '#fffbeb', display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: 14, fontWeight: 600, color: '#92400e' }}>Найдено совпадений: {debitSuggestions.length}</span>
-                <span style={{ fontSize: 12, color: '#8596b4' }}>расходы → входящие счета</span>
-              </div>
+            <Card pad={false} title={<Row><span>Найдено совпадений: {debitSuggestions.length}</span><Badge tone="amber">расходы и входящие счета</Badge></Row>}>
               {debitSuggestions.map(({ tx, inv, score }) => (
-                <div key={tx.id} style={{ padding: '14px 16px', borderBottom: '1px solid #f3f4f6', display: 'flex', gap: 14, alignItems: 'flex-start' }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 11, color: '#8596b4', marginBottom: 3 }}>{new Date(tx.date).toLocaleDateString('ru-RU')} · Выписка</div>
-                    <div style={{ fontSize: 15, fontWeight: 700, color: '#ef4444', marginBottom: 2 }}>−{FMT(tx.amount)} ₽</div>
-                    <div style={{ fontSize: 13, color: '#1a2240', fontWeight: 500 }}>{tx.counterparty || '—'}</div>
-                    <div style={{ fontSize: 11, color: '#8596b4', marginTop: 2 }}>{(tx.description || '').slice(0, 90)}</div>
-                  </div>
-                  <div style={{ fontSize: 18, color: '#d1d5db', alignSelf: 'center' }}>↔</div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 11, color: '#8596b4', marginBottom: 3 }}>Входящий счёт · {score}% совпадение</div>
-                    <div style={{ fontSize: 15, fontWeight: 700, color: '#1a2240', marginBottom: 2 }}>{FMT(inv.amount)} ₽</div>
-                    <div style={{ fontSize: 13, color: '#1a2240', fontWeight: 500 }}>{inv.supplier}</div>
-                    <div style={{ fontSize: 11, color: '#8596b4', marginTop: 2 }}>{(inv.description || '').slice(0, 90)}</div>
-                  </div>
-                  <div style={{ display: 'flex', gap: 6, alignSelf: 'center', flexDirection: 'column' }}>
-                    <button onClick={() => confirmDebitMatch(tx, inv)} disabled={saving === tx.id}
-                      style={{ padding: '6px 14px', borderRadius: 7, border: 'none', background: '#22c55e', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
-                      ✓ Подтвердить
-                    </button>
-                    <button onClick={() => ignore(tx.id)} disabled={saving === tx.id}
-                      style={{ padding: '6px 14px', borderRadius: 7, border: '1px solid #e8ebf3', background: '#fff', color: '#8596b4', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>
-                      Пропустить
-                    </button>
-                  </div>
-                </div>
+                <SuggestionRow key={tx.id} tx={tx} busy={saving === tx.id}
+                  onConfirm={() => confirmDebitMatch(tx, inv)} onSkip={() => ignore(tx.id)}
+                  right={<>
+                    <Muted small>Входящий счёт · совпадение {score}%</Muted>
+                    <div style={{ fontSize: 15, fontWeight: 600, margin: '2px 0', fontVariantNumeric: 'tabular-nums' }}>{money(inv.amount)}</div>
+                    <div style={{ fontWeight: 500 }}>{inv.supplier}</div>
+                    {inv.description && <Sub>{inv.description.slice(0, 90)}</Sub>}
+                  </>} />
               ))}
-            </div>
+            </Card>
           )}
-
-          <div style={{ background: '#fff', border: '1px solid #e8ebf3', borderRadius: 9, overflow: 'hidden' }}>
-            <div style={{ padding: '12px 16px', borderBottom: '1px solid #e8ebf3', fontSize: 14, fontWeight: 600, color: '#1a2240' }}>
-              Все расходы ({debitTxs.length})
-            </div>
+          <Card pad={false} title={`Все расходы (${debitTxs.length})`}>
             <TxTable rows={debitTxs} onIgnore={ignore} saving={saving} />
-          </div>
-        </div>
+          </Card>
+        </>
       )}
 
       {tab === 'credit' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <>
           {creditSuggestions.length > 0 && (
-            <div style={{ background: '#fff', border: '1px solid #e8ebf3', borderRadius: 9, overflow: 'hidden' }}>
-              <div style={{ padding: '12px 16px', borderBottom: '1px solid #e8ebf3', background: '#f0fdf4', display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: 14, fontWeight: 600, color: '#15803d' }}>Найдено совпадений: {creditSuggestions.length}</span>
-                <span style={{ fontSize: 12, color: '#8596b4' }}>поступления → арендаторы</span>
-              </div>
+            <Card pad={false} title={<Row><span>Найдено совпадений: {creditSuggestions.length}</span><Badge tone="green">поступления и арендаторы</Badge></Row>}>
               {creditSuggestions.map(({ tx, tenant, score }) => (
-                <div key={tx.id} style={{ padding: '14px 16px', borderBottom: '1px solid #f3f4f6', display: 'flex', gap: 14, alignItems: 'flex-start' }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 11, color: '#8596b4', marginBottom: 3 }}>{new Date(tx.date).toLocaleDateString('ru-RU')} · Выписка</div>
-                    <div style={{ fontSize: 15, fontWeight: 700, color: '#16a34a', marginBottom: 2 }}>+{FMT(tx.amount)} ₽</div>
-                    <div style={{ fontSize: 13, color: '#1a2240', fontWeight: 500 }}>{tx.counterparty || '—'}</div>
-                    <div style={{ fontSize: 11, color: '#8596b4', marginTop: 2 }}>{(tx.description || '').slice(0, 90)}</div>
-                  </div>
-                  <div style={{ fontSize: 18, color: '#d1d5db', alignSelf: 'center' }}>↔</div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 11, color: '#8596b4', marginBottom: 3 }}>Арендатор · {score}% совпадение</div>
-                    <div style={{ fontSize: 14, fontWeight: 600, color: '#1a2240', marginBottom: 2 }}>{tenant.fullName}</div>
-                    {tenant.inn && <div style={{ fontSize: 12, color: '#8596b4' }}>ИНН {tenant.inn}</div>}
-                    {tenant.monthlyRent && <div style={{ fontSize: 12, color: '#8596b4' }}>Аренда: {FMT(tenant.monthlyRent)} ₽/мес</div>}
-                  </div>
-                  <div style={{ display: 'flex', gap: 6, alignSelf: 'center', flexDirection: 'column' }}>
-                    <button onClick={() => confirmCreditMatch(tx, tenant)} disabled={saving === tx.id}
-                      style={{ padding: '6px 14px', borderRadius: 7, border: 'none', background: '#22c55e', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
-                      ✓ Подтвердить
-                    </button>
-                    <button onClick={() => ignore(tx.id)} disabled={saving === tx.id}
-                      style={{ padding: '6px 14px', borderRadius: 7, border: '1px solid #e8ebf3', background: '#fff', color: '#8596b4', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>
-                      Пропустить
-                    </button>
-                  </div>
-                </div>
+                <SuggestionRow key={tx.id} tx={tx} busy={saving === tx.id}
+                  onConfirm={() => confirmCreditMatch(tx, tenant)} onSkip={() => ignore(tx.id)}
+                  right={<>
+                    <Muted small>Арендатор · совпадение {score}%</Muted>
+                    <div style={{ fontSize: 14, fontWeight: 600, margin: '2px 0' }}>{tenant.fullName}</div>
+                    {tenant.inn && <Sub>ИНН {tenant.inn}</Sub>}
+                    {tenant.monthlyRent ? <Sub>Аренда: {money(tenant.monthlyRent)} в месяц</Sub> : null}
+                  </>} />
               ))}
-            </div>
+            </Card>
           )}
-
-          <div style={{ background: '#fff', border: '1px solid #e8ebf3', borderRadius: 9, overflow: 'hidden' }}>
-            <div style={{ padding: '12px 16px', borderBottom: '1px solid #e8ebf3', fontSize: 14, fontWeight: 600, color: '#1a2240' }}>
-              Все поступления ({creditTxs.length})
-            </div>
+          <Card pad={false} title={`Все поступления (${creditTxs.length})`}>
             <TxTable rows={creditTxs} onIgnore={ignore} saving={saving} />
-          </div>
-        </div>
+          </Card>
+        </>
       )}
-    </div>
+    </Page>
   )
 }
 
 function TxTable({ rows, onIgnore, saving }: { rows: BankTx[]; onIgnore: (id: string) => void; saving: string | null }) {
+  const clip = (w: number): React.CSSProperties => ({ display: 'block', maxWidth: w, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' })
   return (
-    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-      <thead>
-        <tr style={{ background: '#f8f9fb' }}>
-          {['Дата', 'Контрагент', 'Назначение', 'Сумма', 'Статус', ''].map((h, i) => (
-            <th key={i} style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: '#8596b4', borderBottom: '1px solid #e8ebf3', fontSize: 12 }}>{h}</th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map(t => (
-          <tr key={t.id} style={{ borderBottom: '1px solid #f3f4f6', background: !t.matched_type ? '#fffdf5' : undefined }}>
-            <td style={{ padding: '8px 12px', color: '#8596b4', whiteSpace: 'nowrap', fontSize: 12 }}>{new Date(t.date).toLocaleDateString('ru-RU')}</td>
-            <td style={{ padding: '8px 12px', fontWeight: 500, color: '#1a2240', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.counterparty || '—'}</td>
-            <td style={{ padding: '8px 12px', color: '#374151', maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.description || '—'}</td>
-            <td style={{ padding: '8px 12px', fontWeight: 700, whiteSpace: 'nowrap', color: t.direction === 'credit' ? '#16a34a' : '#ef4444' }}>
-              {t.direction === 'credit' ? '+' : '−'}{FMT(t.amount)} ₽
-            </td>
-            <td style={{ padding: '8px 12px' }}>
-              {t.matched_type === 'invoice' ? <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 8, background: '#dcfce7', color: '#16a34a', fontWeight: 600 }}>✓ Счёт</span>
-              : t.matched_type === 'tenant' ? <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 8, background: '#dcfce7', color: '#16a34a', fontWeight: 600 }}>✓ Аренда</span>
-              : t.matched_type === 'ignored' ? <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 8, background: '#f3f4f6', color: '#9ca3af', fontWeight: 600 }}>Пропущено</span>
-              : <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 8, background: '#fffbeb', color: '#d97706', fontWeight: 600 }}>Не сопоставлено</span>}
-            </td>
-            <td style={{ padding: '8px 12px' }}>
-              {!t.matched_type && (
-                <button onClick={() => onIgnore(t.id)} disabled={saving === t.id}
-                  style={{ padding: '3px 8px', borderRadius: 5, border: '1px solid #e8ebf3', background: '#fff', color: '#8596b4', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>
-                  Пропустить
-                </button>
-              )}
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <Table rows={rows} rowKey={t => t.id} empty="Операций нет" cols={[
+      { key: 'd', title: 'Дата', sort: t => t.date, render: t => <span style={{ whiteSpace: 'nowrap' }}><Muted>{dateRu(t.date)}</Muted></span> },
+      { key: 'c', title: 'Контрагент', sort: t => t.counterparty, render: t => <span title={t.counterparty || ''} style={{ ...clip(180), fontWeight: 500 }}>{t.counterparty || '—'}</span> },
+      { key: 'p', title: 'Назначение', render: t => <span title={t.description || ''} style={clip(300)}>{t.description || '—'}</span> },
+      { key: 'a', title: 'Сумма', align: 'right', sort: t => t.amount, render: t => (
+        <span style={{ fontWeight: 600, color: t.direction === 'credit' ? C.green : C.red }}>{t.direction === 'credit' ? '+' : '−'}{money(t.amount)}</span>
+      ) },
+      { key: 's', title: 'Статус', sort: t => t.matched_type || '', render: t =>
+        t.matched_type === 'invoice' ? <Badge tone="green">Счёт</Badge>
+        : t.matched_type === 'tenant' ? <Badge tone="green">Аренда</Badge>
+        : t.matched_type === 'ignored' ? <Badge>Пропущено</Badge>
+        : <Badge tone="amber">Не сопоставлено</Badge> },
+      { key: 'x', title: '', align: 'right', render: t => !t.matched_type
+        ? <Button small onClick={() => onIgnore(t.id)} disabled={saving === t.id}>Пропустить</Button> : null },
+    ]} />
   )
 }

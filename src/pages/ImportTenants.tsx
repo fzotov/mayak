@@ -1,6 +1,7 @@
 import { apiFetch } from '../lib/api'
 import { useState, useRef } from 'react'
 import { supabase } from '../lib/supabase'
+import { Page, Card, Row, Button, Badge, Table, Input, Notice, Muted, C } from '../components/ui'
 
 interface TenantRow {
   full_name: string
@@ -29,12 +30,8 @@ export default function ImportTenantsPage({ onDone }: { onDone?: () => void }) {
   const [error, setError] = useState('')
   const [rows, setRows] = useState<TenantRow[]>([])
   const [savedCount, setSavedCount] = useState(0)
+  const [dragOver, setDragOver] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
-
-  const inp: React.CSSProperties = {
-    width: '100%', padding: '7px 10px', border: '1px solid #e8ebf3', borderRadius: 6,
-    fontSize: 13, fontFamily: 'inherit', outline: 'none', color: '#1a2240', boxSizing: 'border-box' as any,
-  }
 
   async function handleFile(file: File) {
     setUploading(true)
@@ -110,78 +107,77 @@ export default function ImportTenantsPage({ onDone }: { onDone?: () => void }) {
 
   // ─── Upload step ───────────────────────────────────────────────────────────
   if (step === 'upload') return (
-    <div style={{ maxWidth: 640, margin: '0 auto' }}>
-      <div style={{ fontSize: 18, fontWeight: 600, color: '#1a2240', marginBottom: 6 }}>Импорт арендаторов из 1С</div>
-      <div style={{ fontSize: 14, color: '#8596b4', marginBottom: 28 }}>
-        Выгрузите список контрагентов из 1С в Excel или CSV и загрузите файл — AI автоматически распознает данные.
-      </div>
+    <div style={{ maxWidth: 640, width: '100%', margin: '0 auto' }}>
+      <Page title="Импорт арендаторов из 1С">
+        <Muted>Выгрузите список контрагентов из 1С в Excel или CSV и загрузите файл — AI автоматически распознает данные.</Muted>
 
-      <div style={{ background: '#fff', border: '1px solid #e8ebf3', borderRadius: 12, padding: 32, marginBottom: 20 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 16 }}>Как выгрузить из 1С:</div>
-        {[
-          { n: '1', text: 'Откройте 1С → Справочники → Контрагенты' },
-          { n: '2', text: 'Нажмите кнопку «Ещё» → «Вывести список»' },
-          { n: '3', text: 'Выберите нужные колонки (ИНН, КПП, адрес, телефон и др.)' },
-          { n: '4', text: 'Сохраните в Excel (.xlsx) или CSV' },
-          { n: '5', text: 'Загрузите файл ниже' },
-        ].map(s => (
-          <div key={s.n} style={{ display: 'flex', gap: 12, marginBottom: 10, alignItems: 'flex-start' }}>
-            <div style={{ width: 24, height: 24, borderRadius: '50%', background: '#eff3ff', color: '#4f6ef7', fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{s.n}</div>
-            <div style={{ fontSize: 13, color: '#374151', paddingTop: 3 }}>{s.text}</div>
-          </div>
-        ))}
-      </div>
+        <Card title="Как выгрузить из 1С">
+          {[
+            { n: '1', text: 'Откройте 1С → Справочники → Контрагенты' },
+            { n: '2', text: 'Нажмите кнопку «Ещё» → «Вывести список»' },
+            { n: '3', text: 'Выберите нужные колонки (ИНН, КПП, адрес, телефон и др.)' },
+            { n: '4', text: 'Сохраните в Excel (.xlsx) или CSV' },
+            { n: '5', text: 'Загрузите файл ниже' },
+          ].map(s => (
+            <div key={s.n} style={{ display: 'flex', gap: 12, marginBottom: 10, alignItems: 'flex-start' }}>
+              <div style={{ width: 24, height: 24, borderRadius: '50%', background: C.accentBg, color: C.accent, fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{s.n}</div>
+              <div style={{ fontSize: 13, color: C.text, paddingTop: 3 }}>{s.text}</div>
+            </div>
+          ))}
+        </Card>
 
-      <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv,.pdf" style={{ display: 'none' }}
-        onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = '' }}
-      />
+        <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv,.pdf" style={{ display: 'none' }}
+          onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = '' }}
+        />
 
-      <div
-        onClick={() => !uploading && fileRef.current?.click()}
-        style={{
-          border: '2px dashed #c7d2fe', borderRadius: 12, padding: '40px 24px', textAlign: 'center',
-          cursor: uploading ? 'default' : 'pointer', background: '#fafbff', transition: 'border-color .15s',
-        }}
-      >
-        {uploading ? (
-          <>
-            <div style={{ fontSize: 32, marginBottom: 10 }}></div>
-            <div style={{ fontSize: 15, fontWeight: 600, color: '#4f6ef7' }}>AI читает файл...</div>
-            <div style={{ fontSize: 13, color: '#8596b4', marginTop: 4 }}>Это может занять 15–30 секунд</div>
-          </>
-        ) : (
-          <>
-            <div style={{ fontSize: 40, marginBottom: 10 }}></div>
-            <div style={{ fontSize: 15, fontWeight: 600, color: '#1a2240', marginBottom: 6 }}>Перетащите файл или нажмите для выбора</div>
-            <div style={{ fontSize: 13, color: '#8596b4' }}>Excel (.xlsx, .xls), CSV, PDF</div>
-          </>
-        )}
-      </div>
-
-      {error && (
-        <div style={{ marginTop: 16, background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', color: '#ef4444', fontSize: 12, whiteSpace: 'pre-wrap', fontFamily: 'monospace', maxHeight: 160, overflowY: 'auto' }}>
-          {error}
+        <div
+          role="button" tabIndex={0}
+          onClick={() => !uploading && fileRef.current?.click()}
+          onKeyDown={e => { if ((e.key === 'Enter' || e.key === ' ') && !uploading) { e.preventDefault(); fileRef.current?.click() } }}
+          onDragOver={e => { e.preventDefault(); if (!uploading) setDragOver(true) }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={e => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files?.[0]; if (f && !uploading) handleFile(f) }}
+          style={{
+            border: `2px dashed ${dragOver ? C.accent : C.lineStrong}`, borderRadius: 12, padding: '40px 24px', textAlign: 'center',
+            cursor: uploading ? 'default' : 'pointer', background: dragOver ? C.accentBg : C.card2, transition: 'border-color .15s',
+          }}
+        >
+          {uploading ? (
+            <>
+              <div style={{ fontSize: 15, fontWeight: 600, color: C.accent }}>AI читает файл…</div>
+              <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>Это может занять 15–30 секунд</div>
+            </>
+          ) : (
+            <>
+              <div style={{ fontSize: 15, fontWeight: 600, color: C.text, marginBottom: 6 }}>Перетащите файл или нажмите для выбора</div>
+              <div style={{ fontSize: 13, color: C.muted }}>Excel (.xlsx, .xls), CSV, PDF</div>
+            </>
+          )}
         </div>
-      )}
+
+        {error && (
+          <Notice tone="red">
+            <div style={{ whiteSpace: 'pre-wrap', fontFamily: 'monospace', fontSize: 12, maxHeight: 160, overflowY: 'auto' }}>{error}</div>
+          </Notice>
+        )}
+      </Page>
     </div>
   )
 
   // ─── Done step ─────────────────────────────────────────────────────────────
   if (step === 'done') return (
-    <div style={{ maxWidth: 480, margin: '60px auto', textAlign: 'center' }}>
-      <div style={{ fontSize: 52, marginBottom: 16 }}></div>
-      <div style={{ fontSize: 22, fontWeight: 700, color: '#1a2240', marginBottom: 8 }}>Импорт завершён</div>
-      <div style={{ fontSize: 15, color: '#8596b4', marginBottom: 32 }}>Загружено {savedCount} арендаторов</div>
-      <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
-        <button onClick={() => { setStep('upload'); setRows([]) }}
-          style={{ padding: '10px 22px', border: '1px solid #e8ebf3', borderRadius: 8, background: '#fff', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit', color: '#6b7280' }}>
-          Загрузить ещё
-        </button>
-        <button onClick={onDone}
-          style={{ padding: '10px 22px', border: 'none', borderRadius: 8, background: '#4f6ef7', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', color: '#fff' }}>
-          К арендаторам →
-        </button>
-      </div>
+    <div style={{ maxWidth: 480, width: '100%', margin: '40px auto' }}>
+      <Card>
+        <div style={{ textAlign: 'center', display: 'grid', gap: 8, padding: '16px 0' }}>
+          <div><Badge tone="green">Готово</Badge></div>
+          <div style={{ fontSize: 20, fontWeight: 600, color: C.text }}>Импорт завершён</div>
+          <div style={{ fontSize: 14, color: C.muted, marginBottom: 16 }}>Загружено {savedCount} арендаторов</div>
+          <Row gap={10} justify="center">
+            <Button onClick={() => { setStep('upload'); setRows([]) }}>Загрузить ещё</Button>
+            <Button kind="primary" onClick={onDone}>К арендаторам</Button>
+          </Row>
+        </div>
+      </Card>
     </div>
   )
 
@@ -189,94 +185,46 @@ export default function ImportTenantsPage({ onDone }: { onDone?: () => void }) {
   const selected = rows.filter(r => r._selected && !r._exists).length
   const alreadyExists = rows.filter(r => r._exists).length
   const allNewSelected = rows.filter(r => !r._exists).every(r => r._selected)
+  const indexed = rows.map((row, i) => ({ row, i }))
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <button onClick={() => setStep('upload')}
-          style={{ padding: '6px 12px', border: '1px solid #e8ebf3', borderRadius: 7, background: '#fff', cursor: 'pointer', fontSize: 13, fontFamily: 'inherit', color: '#6b7280' }}>
-          ← Назад
-        </button>
-        <div>
-          <div style={{ fontSize: 16, fontWeight: 600, color: '#1a2240' }}>Предпросмотр импорта</div>
-          <div style={{ fontSize: 13, color: '#8596b4' }}>
-            Найдено {rows.length} контрагентов · выбрано {selected} · уже в системе {alreadyExists}
-          </div>
-        </div>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-          <button onClick={toggleAll}
-            style={{ padding: '7px 14px', border: '1px solid #e8ebf3', borderRadius: 8, background: '#fff', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', color: '#374151' }}>
-            {allNewSelected ? 'Снять всё' : 'Выбрать всё'}
-          </button>
-          <button onClick={save} disabled={saving || selected === 0}
-            style={{ padding: '7px 20px', border: 'none', borderRadius: 8, background: '#4f6ef7', fontSize: 13, fontWeight: 600, cursor: selected === 0 ? 'default' : 'pointer', fontFamily: 'inherit', color: '#fff', opacity: selected === 0 ? 0.5 : 1 }}>
-            {saving ? 'Сохранение...' : `✓ Загрузить ${selected} арендаторов`}
-          </button>
-        </div>
-      </div>
+    <Page
+      title={<div>Предпросмотр импорта<div style={{ fontSize: 13, fontWeight: 400, color: C.muted, marginTop: 2 }}>Найдено {rows.length} контрагентов · выбрано {selected} · уже в системе {alreadyExists}</div></div>}
+      actions={<>
+        <Button onClick={() => setStep('upload')}>Назад</Button>
+        <Button onClick={toggleAll}>{allNewSelected ? 'Снять всё' : 'Выбрать всё'}</Button>
+        <Button kind="primary" onClick={save} disabled={saving || selected === 0}>
+          {saving ? 'Сохранение…' : `Загрузить ${selected} арендаторов`}
+        </Button>
+      </>}>
+      {error && <Notice tone="red">{error}</Notice>}
 
-      {error && (
-        <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', color: '#ef4444', fontSize: 13 }}>
-          {error}
-        </div>
-      )}
-
-      <div style={{ background: '#fff', border: '1px solid #e8ebf3', borderRadius: 9, overflow: 'hidden' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-          <thead>
-            <tr style={{ background: '#f8f9fb' }}>
-              <th style={{ padding: '9px 12px', width: 36, borderBottom: '1px solid #e8ebf3' }}>
-                <input type="checkbox" checked={allNewSelected} onChange={toggleAll} />
-              </th>
-              {['Наименование', 'Тип', 'ИНН', 'Телефон', 'Email', 'Аренда ₽/мес', 'Статус'].map(h => (
-                <th key={h} style={{ padding: '9px 10px', textAlign: 'left', fontWeight: 600, color: '#8596b4', borderBottom: '1px solid #e8ebf3', fontSize: 12, whiteSpace: 'nowrap' }}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row, i) => (
-              <tr key={i} style={{
-                borderBottom: '1px solid #f3f4f6',
-                background: row._exists ? '#f9fafb' : row._selected ? '#fafbff' : '#fff',
-                opacity: row._exists ? 0.6 : 1,
-              }}>
-                <td style={{ padding: '8px 12px', textAlign: 'center' }}>
-                  <input type="checkbox" checked={row._selected && !row._exists} disabled={row._exists}
-                    onChange={() => !row._exists && toggle(i)} />
-                </td>
-                <td style={{ padding: '8px 10px', minWidth: 180 }}>
-                  <input style={{ ...inp, fontWeight: 500 }} value={row.full_name}
-                    onChange={e => edit(i, 'full_name', e.target.value)} disabled={row._exists} />
-                </td>
-                <td style={{ padding: '8px 10px' }}>
-                  <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 6, background: '#eff3ff', color: '#4f6ef7', fontWeight: 600, whiteSpace: 'nowrap' }}>
-                    {TYPE_LABEL[row.type] || row.type}
-                  </span>
-                </td>
-                <td style={{ padding: '8px 10px', fontFamily: 'monospace', fontSize: 12, color: '#374151' }}>
-                  {row.inn || '—'}
-                </td>
-                <td style={{ padding: '8px 10px', color: '#374151', fontSize: 12 }}>{row.phone || '—'}</td>
-                <td style={{ padding: '8px 10px', color: '#374151', fontSize: 12 }}>{row.email || '—'}</td>
-                <td style={{ padding: '8px 10px' }}>
-                  <input style={{ ...inp, width: 110, textAlign: 'right' as any }}
-                    type="number" value={row.monthly_rent ?? ''}
-                    placeholder="—"
-                    onChange={e => edit(i, 'monthly_rent', e.target.value)}
-                    disabled={row._exists} />
-                </td>
-                <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>
-                  {row._exists ? (
-                    <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 6, background: '#f3f4f6', color: '#9ca3af', fontWeight: 600 }}>Уже есть</span>
-                  ) : (
-                    <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 6, background: '#dcfce7', color: '#16a34a', fontWeight: 600 }}>Новый</span>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
+      <Card pad={false}>
+        <Table rows={indexed} rowKey={x => String(x.i)} empty="В файле не найдено контрагентов" cols={[
+          { key: 'sel', width: 36, align: 'center', title: <input type="checkbox" checked={allNewSelected} onChange={toggleAll} />, render: ({ row, i }) => (
+            <input type="checkbox" checked={row._selected && !row._exists} disabled={row._exists}
+              onChange={() => !row._exists && toggle(i)} />
+          ) },
+          { key: 'n', title: 'Наименование', render: ({ row, i }) => (
+            <div style={{ minWidth: 180, opacity: row._exists ? 0.6 : 1 }}>
+              <Input style={{ fontWeight: 500, fontSize: 13 }} value={row.full_name}
+                onChange={e => edit(i, 'full_name', e.target.value)} disabled={row._exists} />
+            </div>
+          ) },
+          { key: 't', title: 'Тип', render: ({ row }) => <Badge tone="blue">{TYPE_LABEL[row.type] || row.type}</Badge> },
+          { key: 'inn', title: 'ИНН', render: ({ row }) => <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{row.inn || '—'}</span> },
+          { key: 'ph', title: 'Телефон', render: ({ row }) => <span style={{ fontSize: 12 }}>{row.phone || '—'}</span> },
+          { key: 'em', title: 'Email', render: ({ row }) => <span style={{ fontSize: 12 }}>{row.email || '—'}</span> },
+          { key: 'rent', title: 'Аренда ₽/мес', render: ({ row, i }) => (
+            <Input style={{ width: 110, textAlign: 'right', fontSize: 13, opacity: row._exists ? 0.6 : 1 }}
+              type="number" value={row.monthly_rent ?? ''}
+              placeholder="—"
+              onChange={e => edit(i, 'monthly_rent', e.target.value)}
+              disabled={row._exists} />
+          ) },
+          { key: 'st', title: 'Статус', render: ({ row }) => row._exists ? <Badge>Уже есть</Badge> : <Badge tone="green">Новый</Badge> },
+        ]} />
+      </Card>
+    </Page>
   )
 }

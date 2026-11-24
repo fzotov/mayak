@@ -52,10 +52,9 @@ export async function fetchSiteLeads(limit = 300): Promise<{ leads: SiteLead[]; 
 }
 
 export async function updateLeadStatus(id: string, status: string, fallback: boolean) {
-  if (!fallback) {
-    await supabase.from('site_leads').update({ status }).eq('id', id)
-    return
-  }
   const taskStatus = status === 'done' ? 'done' : status === 'in_work' ? 'in_progress' : 'todo'
-  await supabase.from('tasks').update({ status: taskStatus }).eq('id', id)
+  const { error } = fallback
+    ? await supabase.from('tasks').update({ status: taskStatus }).eq('id', id)
+    : await supabase.from('site_leads').update({ status }).eq('id', id)
+  if (error) throw new Error('Статус заявки не сохранён: ' + error.message)
 }

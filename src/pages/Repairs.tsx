@@ -1,5 +1,10 @@
+// Заявки на ремонт: список с фильтрами, аварийные, карточка заявки с обработкой и историей статусов.
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
+import {
+  Page, Card, Row, Button, Badge, Stat, Stats, Table, Field, Input, Select, Textarea, Segmented, Tabs, Modal, Notice,
+  Loading, ErrorBox, Empty, Sub, dateRu, dateTimeRu, C, type Tone,
+} from '../components/ui'
 
 interface Repair {
   id: string
@@ -31,42 +36,43 @@ interface RepairHistory {
 
 interface Unit { id: string; number: string }
 interface Staff { id: string; full_name: string }
-interface Tenant { id: string; full_name: string }
 
 const CATEGORIES = ['Электрика', 'Сантехника', 'Отопление', 'Интернет', 'Уборка', 'Другое']
-const PRIORITIES: Record<string, { label: string; color: string; bg: string }> = {
-  low:      { label: 'Низкий',    color: '#6b7280', bg: '#f3f4f6' },
-  medium:   { label: 'Средний',   color: '#d97706', bg: '#fef3c7' },
-  high:     { label: 'Высокий',   color: '#ea580c', bg: '#ffedd5' },
-  emergency:{ label: 'Аварийный', color: '#ef4444', bg: '#fee2e2' },
+const PRIORITIES: Record<string, { label: string; tone: Tone }> = {
+  low:       { label: 'Низкий',    tone: 'neutral' },
+  medium:    { label: 'Средний',   tone: 'amber' },
+  high:      { label: 'Высокий',   tone: 'violet' },
+  emergency: { label: 'Аварийный', tone: 'red' },
 }
-const STATUSES: Record<string, { label: string; color: string; bg: string }> = {
-  new:       { label: 'Новая',     color: '#6b7280', bg: '#f3f4f6' },
-  accepted:  { label: 'Принята',   color: '#4f6ef7', bg: '#eff3ff' },
-  in_progress:{ label: 'В работе', color: '#d97706', bg: '#fef3c7' },
-  completed: { label: 'Выполнена', color: '#16a34a', bg: '#dcfce7' },
-  rejected:  { label: 'Отклонена', color: '#ef4444', bg: '#fee2e2' },
+const STATUSES: Record<string, { label: string; tone: Tone }> = {
+  new:         { label: 'Новая',     tone: 'neutral' },
+  accepted:    { label: 'Принята',   tone: 'blue' },
+  in_progress: { label: 'В работе',  tone: 'amber' },
+  completed:   { label: 'Выполнена', tone: 'green' },
+  rejected:    { label: 'Отклонена', tone: 'red' },
 }
-
-const inp: React.CSSProperties = { width: '100%', border: '1px solid #e8ebf3', borderRadius: 7, padding: '8px 10px', fontSize: 14, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' }
-const lbl: React.CSSProperties = { fontSize: 12, color: '#8596b4', marginBottom: 4, display: 'block', fontWeight: 500 }
-const sec: React.CSSProperties = { fontSize: 11, fontWeight: 600, color: '#8596b4', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 10, borderBottom: '1px solid #f0f2f8', paddingBottom: 6 }
-
-// ─── Badge ───────────────────────────────────────────────────────────────────
+const TONE_COLOR: Record<Tone, string> = { neutral: C.lineStrong, green: C.green, red: C.red, amber: C.amber, blue: C.accent, violet: C.violet }
 
 function PriorityBadge({ p }: { p: string }) {
   const d = PRIORITIES[p] || PRIORITIES.medium
-  return <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 10, background: d.bg, color: d.color, fontWeight: 500 }}>{d.label}</span>
+  return <Badge tone={d.tone}>{d.label}</Badge>
 }
 
 function StatusBadge({ s }: { s: string }) {
   const d = STATUSES[s] || STATUSES.new
-  return <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 10, background: d.bg, color: d.color, fontWeight: 500 }}>{d.label}</span>
+  return <Badge tone={d.tone}>{d.label}</Badge>
 }
 
-// ─── Modal ───────────────────────────────────────────────────────────────────
+/** Подзаголовок раздела внутри окна. */
+function Section({ children }: { children: React.ReactNode }) {
+  return <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.5px', borderBottom: `1px solid ${C.line}`, paddingBottom: 6 }}>{children}</div>
+}
 
-function RepairModal({ repair, units, staff, onClose, onSaved }: {
+const two: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }
+
+// ─── Карточка заявки ─────────────────────────────────────────────────────────
+
+function RepairModal({ repair, units, staff, onClose, onSaved, initialPriority }: {
   repair: Repair | null
   units: Unit[]
   staff: Staff[]
@@ -78,7 +84,7 @@ function RepairModal({ repair, units, staff, onClose, onSaved }: {
   const [form, setForm] = useState({
     unit_id: repair?.unit_id || '',
     category: repair?.category || 'Другое',
-    priority: repair?.priority || 'medium',
+    priority: repair?.priority || initialPriority || 'medium',
     description: repair?.description || '',
     status: repair?.status || 'new',
     assignee_id: repair?.assignee_id || '',
@@ -87,7 +93,9 @@ function RepairModal({ repair, units, staff, onClose, onSaved }: {
     cost: repair?.cost || 0,
     comment: repair?.comment || '',
   })
-  const [history, setHistory] = useState<RepairHistory[]>([])
+  const [history, setHistory] = useState<RepairHistory[] | null>(null)
+  const [historyError, setHistoryError] = useState('')
+  const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   const set = (k: string, v: string | number) => setForm(f => ({ ...f, [k]: v }))
 
@@ -96,13 +104,16 @@ function RepairModal({ repair, units, staff, onClose, onSaved }: {
   }, [tab])
 
   async function loadHistory() {
-    const { data } = await supabase.from('repair_history').select('*')
+    setHistoryError('')
+    const { data, error } = await supabase.from('repair_history').select('*')
       .eq('repair_id', repair!.id).order('created_at', { ascending: false })
+    if (error) setHistoryError(error.message)
     setHistory(data || [])
   }
 
   async function save() {
-    if (!form.description.trim()) return alert('Введите описание проблемы')
+    if (!form.description.trim()) { setTab('info'); setError('Введите описание проблемы'); return }
+    setError('')
     setSaving(true)
     const payload = {
       ...form,
@@ -113,17 +124,17 @@ function RepairModal({ repair, units, staff, onClose, onSaved }: {
       cost: Number(form.cost),
     }
     if (repair?.id) {
-      // Запись в историю если статус изменился
+      // Запись в историю, если статус изменился
       if (form.status !== repair.status) {
         await supabase.from('repair_history').insert({
-          repair_id: repair.id, status: form.status, comment: form.comment || null
+          repair_id: repair.id, status: form.status, comment: form.comment || null,
         })
       }
       const { error } = await supabase.from('repairs').update(payload).eq('id', repair.id)
-      if (error) { alert('Ошибка: ' + error.message); setSaving(false); return }
+      if (error) { setError('Ошибка: ' + error.message); setSaving(false); return }
     } else {
       const { error } = await supabase.from('repairs').insert(payload)
-      if (error) { alert('Ошибка: ' + error.message); setSaving(false); return }
+      if (error) { setError('Ошибка: ' + error.message); setSaving(false); return }
     }
     setSaving(false)
     onSaved()
@@ -132,166 +143,113 @@ function RepairModal({ repair, units, staff, onClose, onSaved }: {
   async function remove() {
     if (!repair?.id || !confirm('Удалить заявку?')) return
     const { error } = await supabase.from('repairs').delete().eq('id', repair.id)
-    if (error) { alert('Ошибка: ' + error.message); return }
+    if (error) { setError('Ошибка: ' + error.message); return }
     onSaved()
   }
 
-  const TABS = [
-    { key: 'info', label: 'Заявка' },
-    { key: 'process', label: 'Обработка' },
-    { key: 'history', label: 'История' },
-  ] as const
+  const title = repair ? `Заявка №${repair.number} от ${dateRu(repair.created_at)}` : 'Новая заявка'
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: '#00000066', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-      <div style={{ background: '#fff', borderRadius: 14, width: '100%', maxWidth: 600, maxHeight: '92vh', overflowY: 'auto', boxShadow: '0 20px 60px #0002' }}>
-        {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid #e8ebf3' }}>
-          <div>
-            <div style={{ fontSize: 16, fontWeight: 600, color: '#1a2240' }}>
-              {repair ? `Заявка №${repair.number}` : 'Новая заявка'}
-              {form.priority === 'emergency' && <span style={{ marginLeft: 8, fontSize: 13, color: '#ef4444' }}>Аварийная</span>}
-            </div>
-            {repair && <div style={{ fontSize: 12, color: '#8596b4', marginTop: 2 }}>{new Date(repair.created_at).toLocaleDateString('ru')}</div>}
-          </div>
-          <button onClick={onClose} style={{ border: 'none', background: 'none', fontSize: 20, color: '#8596b4', cursor: 'pointer' }}>✕</button>
+    <Modal title={title} onClose={onClose} width={600} footer={<>
+      {repair && tab !== 'history' && <Button kind="danger" onClick={remove} style={{ marginRight: 'auto' }}>Удалить</Button>}
+      <Button onClick={onClose}>Закрыть</Button>
+      {tab !== 'history' && <Button kind="primary" onClick={save} disabled={saving}>{saving ? 'Сохранение…' : 'Сохранить'}</Button>}
+    </>}>
+      {form.priority === 'emergency' && <div><Badge tone="red">Аварийная</Badge></div>}
+      <Tabs<'info' | 'process' | 'history'> value={tab} onChange={setTab} tabs={[['info', 'Заявка'], ['process', 'Обработка'], ['history', 'История']]} />
+      {error && <Notice tone="red">{error}</Notice>}
+
+      {tab === 'info' && <>
+        <div style={two}>
+          <Field label="Помещение">
+            <Select value={form.unit_id} onChange={e => set('unit_id', e.target.value)}>
+              <option value="">Не указано</option>
+              {units.map(u => <option key={u.id} value={u.id}>{u.number}</option>)}
+            </Select>
+          </Field>
+          <Field label="Категория">
+            <Select value={form.category} onChange={e => set('category', e.target.value)}>
+              {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+            </Select>
+          </Field>
         </div>
-
-        {/* Tabs */}
-        <div style={{ display: 'flex', borderBottom: '1px solid #e8ebf3' }}>
-          {TABS.map(t => (
-            <button key={t.key} onClick={() => setTab(t.key)} style={{ flex: 1, padding: '10px', border: 'none', background: 'none', fontSize: 13, fontWeight: tab === t.key ? 600 : 400, color: tab === t.key ? '#4f6ef7' : '#8596b4', borderBottom: `2px solid ${tab === t.key ? '#4f6ef7' : 'transparent'}`, cursor: 'pointer', fontFamily: 'inherit' }}>
-              {t.label}
-            </button>
-          ))}
+        <div style={{ display: 'grid', gap: 4 }}>
+          <div style={{ fontSize: 12, color: C.muted, fontWeight: 500 }}>Приоритет</div>
+          <div><Segmented<string> value={form.priority} onChange={k => set('priority', k)} options={Object.entries(PRIORITIES).map(([k, v]) => [k, v.label])} /></div>
         </div>
+        <Field label="Описание проблемы *">
+          <Textarea style={{ height: 100, resize: 'none' }} value={form.description} onChange={e => set('description', e.target.value)} placeholder="Подробно опишите проблему…" />
+        </Field>
+      </>}
 
-        <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
-          {/* Заявка */}
-          {tab === 'info' && <>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-              <div>
-                <label style={lbl}>Помещение</label>
-                <select style={inp} value={form.unit_id} onChange={e => set('unit_id', e.target.value)}>
-                  <option value="">— Не указано</option>
-                  {units.map(u => <option key={u.id} value={u.id}>{u.number}</option>)}
-                </select>
-              </div>
-              <div>
-                <label style={lbl}>Категория</label>
-                <select style={inp} value={form.category} onChange={e => set('category', e.target.value)}>
-                  {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </div>
-            </div>
-            <div>
-              <label style={lbl}>Приоритет</label>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                {Object.entries(PRIORITIES).map(([key, val]) => (
-                  <button key={key} onClick={() => set('priority', key)} style={{ padding: '5px 12px', borderRadius: 8, border: `2px solid ${form.priority === key ? val.color : '#e8ebf3'}`, background: form.priority === key ? val.bg : '#fff', color: form.priority === key ? val.color : '#6b7280', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', fontWeight: form.priority === key ? 600 : 400 }}>
-                    {key === 'emergency' && ''}{val.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div>
-              <label style={lbl}>Описание проблемы *</label>
-              <textarea style={{ ...inp, height: 100, resize: 'none' }} value={form.description} onChange={e => set('description', e.target.value)} placeholder="Подробно опишите проблему..." />
-            </div>
-          </>}
+      {tab === 'process' && <>
+        <Section>Назначение</Section>
+        <div style={two}>
+          <Field label="Статус">
+            <Select value={form.status} onChange={e => set('status', e.target.value)}>
+              {Object.entries(STATUSES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+            </Select>
+          </Field>
+          <Field label="Исполнитель">
+            <Select value={form.assignee_id} onChange={e => set('assignee_id', e.target.value)}>
+              <option value="">Не назначен</option>
+              {staff.map(s => <option key={s.id} value={s.id}>{s.full_name}</option>)}
+            </Select>
+          </Field>
+        </div>
+        <div style={two}>
+          <Field label="Плановый срок">
+            <Input type="date" value={form.due_date} onChange={e => set('due_date', e.target.value)} />
+          </Field>
+          <Field label="Дата выполнения (факт)">
+            <Input type="date" value={form.completed_date} onChange={e => set('completed_date', e.target.value)} />
+          </Field>
+        </div>
+        <Section>Результат</Section>
+        <Field label="Стоимость работ, ₽">
+          <Input type="number" min={0} value={form.cost || ''} placeholder="0" onChange={e => set('cost', Number(e.target.value))} />
+        </Field>
+        <Field label="Комментарий исполнителя">
+          <Textarea style={{ height: 80, resize: 'none' }} value={form.comment || ''} onChange={e => set('comment', e.target.value)} placeholder="Что было сделано…" />
+        </Field>
+      </>}
 
-          {/* Обработка */}
-          {tab === 'process' && <>
-            <div style={sec}>Назначение</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-              <div>
-                <label style={lbl}>Статус</label>
-                <select style={inp} value={form.status} onChange={e => set('status', e.target.value)}>
-                  {Object.entries(STATUSES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-                </select>
-              </div>
-              <div>
-                <label style={lbl}>Исполнитель</label>
-                <select style={inp} value={form.assignee_id} onChange={e => set('assignee_id', e.target.value)}>
-                  <option value="">— Не назначен</option>
-                  {staff.map(s => <option key={s.id} value={s.id}>{s.full_name}</option>)}
-                </select>
-              </div>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-              <div>
-                <label style={lbl}>Плановый срок</label>
-                <input style={inp} type="date" value={form.due_date} onChange={e => set('due_date', e.target.value)} />
-              </div>
-              <div>
-                <label style={lbl}>Дата выполнения (факт)</label>
-                <input style={inp} type="date" value={form.completed_date} onChange={e => set('completed_date', e.target.value)} />
-              </div>
-            </div>
-            <div style={sec}>Результат</div>
-            <div>
-              <label style={lbl}>Стоимость работ (₽)</label>
-              <input style={inp} type="number" min={0} value={form.cost || ''} placeholder="0" onChange={e => set('cost', Number(e.target.value))} />
-            </div>
-            <div>
-              <label style={lbl}>Комментарий исполнителя</label>
-              <textarea style={{ ...inp, height: 80, resize: 'none' }} value={form.comment || ''} onChange={e => set('comment', e.target.value)} placeholder="Что было сделано..." />
-            </div>
-          </>}
-
-          {/* История */}
-          {tab === 'history' && (
-            <div>
-              {history.length === 0 ? (
-                <div style={{ color: '#8596b4', fontSize: 14, textAlign: 'center', padding: 20 }}>Изменений статуса нет</div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {history.map(h => (
-                    <div key={h.id} style={{ display: 'flex', gap: 12, padding: '10px 12px', background: '#f8f9fc', borderRadius: 8, borderLeft: `3px solid ${STATUSES[h.status]?.color || '#e8ebf3'}` }}>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                          <StatusBadge s={h.status} />
-                          <span style={{ fontSize: 12, color: '#8596b4' }}>{new Date(h.created_at).toLocaleString('ru')}</span>
-                        </div>
-                        {h.comment && <div style={{ fontSize: 13, color: '#374151' }}>{h.comment}</div>}
-                      </div>
-                    </div>
-                  ))}
+      {tab === 'history' && (
+        !repair?.id ? <Empty>Изменений статуса нет</Empty>
+          : historyError ? <ErrorBox error={historyError} onRetry={loadHistory} />
+          : history === null ? <Loading />
+          : history.length === 0 ? <Empty>Изменений статуса нет</Empty>
+          : (
+            <div style={{ display: 'grid', gap: 8 }}>
+              {history.map(h => (
+                <div key={h.id} style={{ padding: '10px 12px', background: C.card2, borderRadius: C.radiusSm, borderLeft: `3px solid ${TONE_COLOR[(STATUSES[h.status] || STATUSES.new).tone]}` }}>
+                  <Row gap={8}>
+                    <StatusBadge s={h.status} />
+                    <span style={{ fontSize: 12, color: C.muted }}>{dateTimeRu(h.created_at)}</span>
+                  </Row>
+                  {h.comment && <div style={{ fontSize: 13, marginTop: 4 }}>{h.comment}</div>}
                 </div>
-              )}
+              ))}
             </div>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div style={{ display: 'flex', gap: 8, padding: '14px 20px', borderTop: '1px solid #e8ebf3' }}>
-          {tab !== 'history' && (
-            <button onClick={save} disabled={saving} style={{ flex: 1, padding: '9px', borderRadius: 8, border: 'none', background: '#4f6ef7', color: '#fff', fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', opacity: saving ? 0.6 : 1 }}>
-              {saving ? 'Сохранение...' : 'Сохранить'}
-            </button>
-          )}
-          {repair && tab !== 'history' && (
-            <button onClick={remove} style={{ padding: '9px 16px', borderRadius: 8, border: 'none', background: '#fee2e2', color: '#ef4444', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>Удалить</button>
-          )}
-          <button onClick={onClose} style={{ padding: '9px 16px', borderRadius: 8, border: '1px solid #e8ebf3', background: '#fff', color: '#6b7280', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>Закрыть</button>
-        </div>
-      </div>
-    </div>
+          )
+      )}
+    </Modal>
   )
 }
 
-// ─── Page ─────────────────────────────────────────────────────────────────────
+// ─── Страница ────────────────────────────────────────────────────────────────
 
 export default function RepairsPage() {
   const [repairs, setRepairs] = useState<Repair[]>([])
   const [units, setUnits] = useState<Unit[]>([])
   const [staff, setStaff] = useState<Staff[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
   const [selected, setSelected] = useState<Repair | null>(null)
   const [showModal, setShowModal] = useState(false)
   const [initPriority, setInitPriority] = useState('medium')
 
-  // Filters
+  // Фильтры
   const [pageTab, setPageTab] = useState<'all' | 'emergency'>('all')
   const [statusFilter, setStatusFilter] = useState('')
   const [priorityFilter, setPriorityFilter] = useState('')
@@ -302,15 +260,18 @@ export default function RepairsPage() {
 
   async function fetchAll() {
     setLoading(true)
-    const [{ data: rep }, { data: u }, { data: s }] = await Promise.all([
+    setError('')
+    const [rep, u, s] = await Promise.all([
       supabase.from('repairs').select('*, tenant:tenants(full_name), unit:units(number), assignee:staff(full_name)')
         .order('created_at', { ascending: false }),
       supabase.from('units').select('id, number').order('number'),
       supabase.from('staff').select('id, full_name').eq('status', 'active').order('full_name'),
     ])
-    setRepairs(rep || [])
-    setUnits(u || [])
-    setStaff(s || [])
+    const err = rep.error || u.error || s.error
+    if (err) setError(err.message)
+    setRepairs(rep.data || [])
+    setUnits(u.data || [])
+    setStaff(s.data || [])
     setLoading(false)
   }
 
@@ -320,7 +281,12 @@ export default function RepairsPage() {
     setShowModal(true)
   }
 
-  // KPI
+  function openRepair(r: Repair) {
+    setSelected(r)
+    setShowModal(true)
+  }
+
+  // Показатели
   const total = repairs.length
   const newCount = repairs.filter(r => r.status === 'new').length
   const inProgress = repairs.filter(r => r.status === 'in_progress').length
@@ -336,7 +302,7 @@ export default function RepairsPage() {
     return avg.toFixed(1)
   })()
 
-  // Filtered list
+  // Отфильтрованный список
   const base = pageTab === 'emergency' ? repairs.filter(r => r.priority === 'emergency') : repairs
   const filtered = base.filter(r => {
     if (statusFilter && r.status !== statusFilter) return false
@@ -345,112 +311,81 @@ export default function RepairsPage() {
     if (unitFilter && r.unit_id !== unitFilter) return false
     return true
   })
-
-  const kpi: React.CSSProperties = { background: '#fff', border: '1px solid #e8ebf3', borderRadius: 10, padding: '12px 16px' }
-  const filterSel: React.CSSProperties = { border: '1px solid #e8ebf3', borderRadius: 7, padding: '7px 10px', fontSize: 13, fontFamily: 'inherit', outline: 'none', background: '#fff' }
+  const anyFilter = statusFilter || priorityFilter || catFilter || unitFilter
+  const isOverdue = (r: Repair) => !!r.due_date && new Date(r.due_date) < new Date() && r.status !== 'completed'
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      {/* KPI */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
-        <div style={kpi}><div style={{ fontSize: 12, color: '#8596b4', marginBottom: 4 }}>Всего заявок</div><div style={{ fontSize: 22, fontWeight: 700, color: '#1a2240' }}>{total}</div></div>
-        <div style={kpi}><div style={{ fontSize: 12, color: '#8596b4', marginBottom: 4 }}>Новые</div><div style={{ fontSize: 22, fontWeight: 700, color: '#6b7280' }}>{newCount}</div></div>
-        <div style={kpi}><div style={{ fontSize: 12, color: '#8596b4', marginBottom: 4 }}>В работе</div><div style={{ fontSize: 22, fontWeight: 700, color: '#d97706' }}>{inProgress}</div></div>
-        <div style={kpi}><div style={{ fontSize: 12, color: '#8596b4', marginBottom: 4 }}>Выполнено</div><div style={{ fontSize: 22, fontWeight: 700, color: '#16a34a' }}>{completed}</div></div>
-        <div style={kpi}><div style={{ fontSize: 12, color: '#8596b4', marginBottom: 4 }}>Среднее время (дней)</div><div style={{ fontSize: 22, fontWeight: 700, color: '#4f6ef7' }}>{avgDays}</div></div>
-      </div>
+    <Page>
+      <Stats>
+        <Stat label="Всего заявок" value={total} />
+        <Stat label="Новые" value={newCount} />
+        <Stat label="В работе" value={inProgress} tone="amber" />
+        <Stat label="Выполнено" value={completed} tone="green" />
+        <Stat label="Среднее время, дней" value={avgDays} tone="blue" />
+      </Stats>
 
-      {/* Tabs + Buttons */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <div style={{ display: 'flex', gap: 2, background: '#f0f2f8', borderRadius: 8, padding: 3 }}>
-          <button onClick={() => setPageTab('all')} style={{ padding: '6px 14px', borderRadius: 6, border: 'none', background: pageTab === 'all' ? '#fff' : 'transparent', color: pageTab === 'all' ? '#1a2240' : '#8596b4', fontSize: 13, fontWeight: pageTab === 'all' ? 600 : 400, cursor: 'pointer', fontFamily: 'inherit', boxShadow: pageTab === 'all' ? '0 1px 4px #0001' : 'none' }}>
-            Все заявки
-          </button>
-          <button onClick={() => setPageTab('emergency')} style={{ padding: '6px 14px', borderRadius: 6, border: 'none', background: pageTab === 'emergency' ? '#fff' : 'transparent', color: pageTab === 'emergency' ? '#ef4444' : '#8596b4', fontSize: 13, fontWeight: pageTab === 'emergency' ? 600 : 400, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 6, boxShadow: pageTab === 'emergency' ? '0 1px 4px #0001' : 'none' }}>
-            Аварийные
-            {emergencyOpen > 0 && <span style={{ background: '#ef4444', color: '#fff', fontSize: 11, fontWeight: 700, borderRadius: 10, padding: '1px 6px', minWidth: 18, textAlign: 'center' }}>{emergencyOpen}</span>}
-          </button>
-        </div>
+      <Row gap={8}>
+        <Segmented<'all' | 'emergency'> value={pageTab} onChange={setPageTab} options={[
+          ['all', 'Все заявки'],
+          ['emergency', <span key="e" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>Аварийные{emergencyOpen > 0 && <Badge tone="red">{emergencyOpen}</Badge>}</span>],
+        ]} />
         <div style={{ flex: 1 }} />
-        <button onClick={() => openNew('emergency')} style={{ padding: '8px 14px', border: 'none', borderRadius: 8, background: '#fee2e2', color: '#ef4444', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
-          Аварийная
-        </button>
-        <button onClick={() => openNew()} style={{ padding: '8px 16px', border: 'none', borderRadius: 8, background: '#4f6ef7', color: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>
-          + Новая заявка
-        </button>
-      </div>
+        <Button kind="danger" onClick={() => openNew('emergency')}>Аварийная заявка</Button>
+        <Button kind="primary" onClick={() => openNew()}>Новая заявка</Button>
+      </Row>
 
-      {/* Filters */}
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        <select style={filterSel} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+      <Row gap={8}>
+        <Select style={{ width: 'auto' }} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
           <option value="">Все статусы</option>
           {Object.entries(STATUSES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-        </select>
-        <select style={filterSel} value={priorityFilter} onChange={e => setPriorityFilter(e.target.value)}>
+        </Select>
+        <Select style={{ width: 'auto' }} value={priorityFilter} onChange={e => setPriorityFilter(e.target.value)}>
           <option value="">Все приоритеты</option>
           {Object.entries(PRIORITIES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-        </select>
-        <select style={filterSel} value={catFilter} onChange={e => setCatFilter(e.target.value)}>
+        </Select>
+        <Select style={{ width: 'auto' }} value={catFilter} onChange={e => setCatFilter(e.target.value)}>
           <option value="">Все категории</option>
           {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-        </select>
-        <select style={filterSel} value={unitFilter} onChange={e => setUnitFilter(e.target.value)}>
+        </Select>
+        <Select style={{ width: 'auto' }} value={unitFilter} onChange={e => setUnitFilter(e.target.value)}>
           <option value="">Все помещения</option>
           {units.map(u => <option key={u.id} value={u.id}>{u.number}</option>)}
-        </select>
-        {(statusFilter || priorityFilter || catFilter || unitFilter) && (
-          <button onClick={() => { setStatusFilter(''); setPriorityFilter(''); setCatFilter(''); setUnitFilter('') }} style={{ padding: '7px 12px', borderRadius: 7, border: '1px solid #e8ebf3', background: '#fff', color: '#6b7280', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>✕ Сбросить</button>
+        </Select>
+        {anyFilter && (
+          <Button kind="ghost" onClick={() => { setStatusFilter(''); setPriorityFilter(''); setCatFilter(''); setUnitFilter('') }}>Сбросить</Button>
         )}
-      </div>
+      </Row>
 
-      {/* Table */}
-      {loading ? <div style={{ color: '#8596b4', fontSize: 14 }}>Загрузка...</div> : (
-        <div style={{ background: '#fff', border: '1px solid #e8ebf3', borderRadius: 9, overflow: 'hidden' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
-            <thead>
-              <tr style={{ background: '#f8f9fc', borderBottom: '1px solid #e8ebf3' }}>
-                {['№', 'Дата', 'Помещение', 'Категория', 'Описание', 'Приоритет', 'Статус', 'Исполнитель', 'Срок', ''].map(h => (
-                  <th key={h} style={{ padding: '9px 10px', textAlign: 'left', fontWeight: 500, color: '#8596b4', fontSize: 12, whiteSpace: 'nowrap' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map(r => {
-                const isEmergency = r.priority === 'emergency'
-                return (
-                  <tr key={r.id}
-                    onClick={() => { setSelected(r); setShowModal(true) }}
-                    style={{ borderBottom: '1px solid #f0f2f8', cursor: 'pointer', borderLeft: isEmergency ? '3px solid #ef4444' : '3px solid transparent' }}
-                    onMouseEnter={e => (e.currentTarget.style.background = '#f8f9fc')}
-                    onMouseLeave={e => (e.currentTarget.style.background = '#fff')}>
-                    <td style={{ padding: '8px 10px', fontWeight: 600, color: '#1a2240' }}>#{r.number}</td>
-                    <td style={{ padding: '8px 10px', color: '#8596b4', whiteSpace: 'nowrap' }}>{new Date(r.created_at).toLocaleDateString('ru')}</td>
-                    <td style={{ padding: '8px 10px', color: '#374151' }}>{(r.unit as any)?.number || '—'}</td>
-                    <td style={{ padding: '8px 10px', color: '#374151', whiteSpace: 'nowrap' }}>{r.category}</td>
-                    <td style={{ padding: '8px 10px', color: '#6b7280', maxWidth: 200 }}>
-                      <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.description.slice(0, 50)}{r.description.length > 50 ? '…' : ''}</div>
-                    </td>
-                    <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}><PriorityBadge p={r.priority} /></td>
-                    <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}><StatusBadge s={r.status} /></td>
-                    <td style={{ padding: '8px 10px', color: '#6b7280', whiteSpace: 'nowrap' }}>{(r.assignee as any)?.full_name || '—'}</td>
-                    <td style={{ padding: '8px 10px', color: r.due_date && new Date(r.due_date) < new Date() && r.status !== 'completed' ? '#ef4444' : '#6b7280', whiteSpace: 'nowrap' }}>
-                      {r.due_date ? new Date(r.due_date).toLocaleDateString('ru') : '—'}
-                    </td>
-                    <td style={{ padding: '8px 10px' }}>
-                      <button onClick={e => { e.stopPropagation(); setSelected(r); setShowModal(true) }} style={{ border: '1px solid #e8ebf3', background: '#fff', borderRadius: 6, padding: '3px 10px', fontSize: 12, color: '#374151', cursor: 'pointer' }}>✎</button>
-                    </td>
-                  </tr>
-                )
-              })}
-              {filtered.length === 0 && (
-                <tr><td colSpan={10} style={{ padding: 30, textAlign: 'center', color: '#8596b4', fontSize: 14 }}>
-                  {loading ? 'Загрузка...' : 'Заявок не найдено'}
-                </td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
+      {error && <ErrorBox error={error} onRetry={fetchAll} />}
+
+      <Card pad={false}>
+        {loading ? <Loading /> : (
+          <Table rows={filtered} rowKey={r => r.id} onRow={openRepair} empty="Заявок не найдено" cols={[
+            { key: 'n', title: '№', sort: r => r.number, render: r => (
+              <span style={{ fontWeight: 600, paddingLeft: 6, borderLeft: `3px solid ${r.priority === 'emergency' ? C.red : 'transparent'}` }}>{r.number}</span>
+            ) },
+            { key: 'd', title: 'Дата', sort: r => r.created_at, render: r => <span style={{ color: C.muted, whiteSpace: 'nowrap' }}>{dateRu(r.created_at)}</span> },
+            { key: 'u', title: 'Помещение', sort: r => r.unit?.number || null, render: r => r.unit?.number || '—' },
+            { key: 'c', title: 'Категория', sort: r => r.category, render: r => <span style={{ whiteSpace: 'nowrap' }}>{r.category}</span> },
+            { key: 'desc', title: 'Описание', render: r => (
+              <div style={{ maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: C.muted }}>
+                {r.description.slice(0, 50)}{r.description.length > 50 ? '…' : ''}
+              </div>
+            ) },
+            { key: 'p', title: 'Приоритет', sort: r => ['low', 'medium', 'high', 'emergency'].indexOf(r.priority), render: r => <PriorityBadge p={r.priority} /> },
+            { key: 's', title: 'Статус', sort: r => r.status, render: r => <StatusBadge s={r.status} /> },
+            { key: 'a', title: 'Исполнитель', sort: r => r.assignee?.full_name || null, render: r => <span style={{ whiteSpace: 'nowrap', color: C.muted }}>{r.assignee?.full_name || '—'}</span> },
+            { key: 'due', title: 'Срок', sort: r => r.due_date, render: r => (
+              <span style={{ whiteSpace: 'nowrap', color: isOverdue(r) ? C.red : C.muted }}>
+                {dateRu(r.due_date)}{isOverdue(r) && <Sub>просрочено</Sub>}
+              </span>
+            ) },
+            { key: 'x', title: '', render: r => (
+              <Button small onClick={e => { e.stopPropagation(); openRepair(r) }}>Открыть</Button>
+            ) },
+          ]} />
+        )}
+      </Card>
 
       {showModal && (
         <RepairModal
@@ -462,11 +397,11 @@ export default function RepairsPage() {
           initialPriority={initPriority}
         />
       )}
-    </div>
+    </Page>
   )
 }
 
-// ─── Экспорт хука для дашборда ───────────────────────────────────────────────
+// ─── Горячие заявки для «Сегодня» ────────────────────────────────────────────
 
 export async function fetchHotRepairs() {
   const { data } = await supabase.from('repairs')

@@ -1,6 +1,7 @@
 import { apiFetch } from '../lib/api'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
+import { Page, Card, Row, Button, Badge, Stat, Stats, Table, Search, Notice, Loading, Empty, Sub, Muted, C, type Tone } from '../components/ui'
 
 const FMT = (n: number) => Number(n).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const FMTD = (s: string) => s ? new Date(s).toLocaleDateString('ru-RU', { day: '2-digit', month: 'short', year: '2-digit' }) : '—'
@@ -26,15 +27,12 @@ interface LedgerEntry {
   date: string; charged: number; paid: number; source: string; note: string | null
 }
 
-const KIND_COLOR: Record<string, { background: string; color: string }> = {
-  charge:     { background: '#fee2e2', color: '#ef4444' },
-  payment:    { background: '#dcfce7', color: '#16a34a' },
-  mixed:      { background: '#eff3ff', color: '#4f6ef7' },
-  adjustment: { background: '#fef9c3', color: '#ca8a04' },
-}
+const KIND_TONE: Record<string, Tone> = { charge: 'red', payment: 'green', mixed: 'blue', adjustment: 'amber' }
 const KIND_LABEL: Record<string, string> = {
   charge: 'Начисление', payment: 'Оплата', mixed: 'Начисление', adjustment: 'Корректировка'
 }
+
+type Msg = { tone: 'green' | 'red'; text: string }
 
 export default function LedgerPage() {
   const [cps, setCps] = useState<Counterparty[]>([])
@@ -42,7 +40,7 @@ export default function LedgerPage() {
   const [loading, setLoading] = useState(true)
   const [importing1c, setImporting1c] = useState(false)
   const [importingBank, setImportingBank] = useState(false)
-  const [importMsg, setImportMsg] = useState('')
+  const [importMsg, setImportMsg] = useState<Msg | null>(null)
   const [selected, setSelected] = useState<Counterparty | null>(null)
   const [search, setSearch] = useState('')
   const [lastUpdate, setLastUpdate] = useState('')
@@ -58,8 +56,8 @@ export default function LedgerPage() {
         apiFetch('/api/debts-1c'),
         supabase.from('tenants').select('id,inn,id_1c'),
       ])
-      const r1c = await r1cRes.json()
-      if (!r1c.ok) { setImportMsg(r1c.error || '1С не отвечает'); setLoading(false); return }
+      const r1c = await r1cRes.json().catch(() => ({ ok: false, error: `1С не отвечает (ответ ${r1cRes.status})` }))
+      if (!r1c.ok) { setImportMsg({ tone: 'red', text: r1c.error || '1С не отвечает' }); setLoading(false); return }
 
       // Build tenant lookup: id_1c → tenantId, inn → tenantId
       const byId1c: Record<string, string> = {}
@@ -79,34 +77,37 @@ export default function LedgerPage() {
       setCps(enriched)
 
       // Load operations from DB for the period (history tab)
-      const { data: opRows } = await supabase
+      const { data: opRows, error: opErr } = await supabase
         .from('ledger_entries')
         .select('*')
         .order('date', { ascending: false })
         .limit(5000)
+      if (opErr) setImportMsg({ tone: 'red', text: 'Не удалось загрузить историю операций: ' + opErr.message })
       setOps(opRows || [])
+    } catch (e: any) {
+      setImportMsg({ tone: 'red', text: '1С не отвечает: ' + (e?.message || 'ошибка сети') })
     } finally {
       setLoading(false)
     }
   }
 
   async function import1C() {
-    setImporting1c(true); setImportMsg('')
+    setImporting1c(true); setImportMsg(null)
     try {
       // First sync tenants so id_1c is populated
       await apiFetch('/api/sync-tenants-1c', { method: 'POST' })
       const r = await apiFetch('/api/import-1c-ledger', { method: 'POST' })
       const json = await r.json()
       if (json.ok) {
-        setImportMsg(`✓ 1С: ${json.imported} операций импортировано (${json.matched} сопоставлено, ${json.unmatched} без арендатора)`)
+        setImportMsg({ tone: 'green', text: `1С: ${json.imported} операций импортировано (${json.matched} сопоставлено, ${json.unmatched} без арендатора)` })
         await load()
-      } else setImportMsg('Ошибка: ' + json.error)
-    } catch (e: any) { setImportMsg('Ошибка: ' + e.message) }
+      } else setImportMsg({ tone: 'red', text: 'Ошибка: ' + json.error })
+    } catch (e: any) { setImportMsg({ tone: 'red', text: 'Ошибка: ' + e.message }) }
     finally { setImporting1c(false) }
   }
 
   async function importBankFile(file: File) {
-    setImportingBank(true); setImportMsg('')
+    setImportingBank(true); setImportMsg(null)
     try {
       const text = await file.text()
       const r = await apiFetch('/api/import-bank-csv', {
@@ -116,14 +117,14 @@ export default function LedgerPage() {
       })
       const json = await r.json()
       if (json.ok) {
-        setImportMsg(`✓ Банк «${file.name}»: ${json.total} платежей, ${json.matched} сопоставлено с арендаторами`)
+        setImportMsg({ tone: 'green', text: `Банк «${file.name}»: ${json.total} платежей, ${json.matched} сопоставлено с арендаторами` })
         await load()
-      } else setImportMsg('Ошибка: ' + json.error)
-    } catch (e: any) { setImportMsg('Ошибка: ' + e.message) }
+      } else setImportMsg({ tone: 'red', text: 'Ошибка: ' + json.error })
+    } catch (e: any) { setImportMsg({ tone: 'red', text: 'Ошибка: ' + e.message }) }
     finally { setImportingBank(false) }
   }
 
-  if (loading) return <div style={{ padding: 40, textAlign: 'center', color: '#8596b4' }}>Загрузка из 1С...</div>
+  if (loading) return <Loading text="Загрузка из 1С…" />
 
   // ── Detail view ──────────────────────────────────────────────────────────────
   if (selected) {
@@ -132,117 +133,71 @@ export default function LedgerPage() {
       .sort((a, b) => b.date.localeCompare(a.date))
 
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <button onClick={() => setSelected(null)}
-            style={{ padding: '6px 12px', borderRadius: 7, border: '1px solid #e8ebf3', background: '#fff', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', color: '#6b7280' }}>
-            ← Назад
-          </button>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontWeight: 700, fontSize: 15, color: '#1a2240' }}>{selected.name}</div>
-            <div style={{ fontSize: 11, color: '#8596b4' }}>
-              ИНН: {selected.inn || '—'}{selected.kpp ? ' / КПП: ' + selected.kpp : ''}
-            </div>
-          </div>
-          {/* Balance from 1C — authoritative, not recomputed */}
-          <div style={{ textAlign: 'right' }}>
-            {selected.netto > 0 && (
-              <div style={{ fontSize: 22, fontWeight: 800, color: '#ef4444' }}>К оплате: {FMT(selected.netto)} ₽</div>
-            )}
-            {selected.netto < 0 && (
-              <div style={{ fontSize: 22, fontWeight: 800, color: '#16a34a' }}>Переплата: {FMT(-selected.netto)} ₽</div>
-            )}
-            {selected.netto === 0 && (
-              <div style={{ fontSize: 18, fontWeight: 700, color: '#8596b4' }}>✓ Нет задолженности</div>
-            )}
-            <div style={{ fontSize: 10, color: '#8596b4', marginTop: 2 }}>Данные 1С · {lastUpdate}</div>
-          </div>
-        </div>
+      <Page
+        title={<div>{selected.name}<Sub>ИНН: {selected.inn || '—'}{selected.kpp ? ' / КПП: ' + selected.kpp : ''}</Sub></div>}
+        actions={<Button onClick={() => setSelected(null)}>Назад к списку</Button>}>
+        {/* Balance from 1C — authoritative, not recomputed */}
+        <Stats>
+          {selected.netto > 0 && <Stat label="К оплате" value={FMT(selected.netto) + ' ₽'} tone="red" sub={'Данные 1С · ' + lastUpdate} />}
+          {selected.netto < 0 && <Stat label="Переплата" value={FMT(-selected.netto) + ' ₽'} tone="green" sub={'Данные 1С · ' + lastUpdate} />}
+          {selected.netto === 0 && <Stat label="Сальдо" value="Нет задолженности" sub={'Данные 1С · ' + lastUpdate} />}
+        </Stats>
 
         {/* Contracts with outstanding docs */}
         {selected.contracts.map(ct => (
-          <div key={ct.id} style={{ background: '#fff', border: '1px solid #e8ebf3', borderRadius: 9, overflow: 'hidden' }}>
-            <div style={{ padding: '10px 14px', background: '#f8f9fb', borderBottom: '1px solid #e8ebf3', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ fontWeight: 600, fontSize: 13, color: '#1a2240' }}>{ct.name}</div>
-              <div style={{ fontSize: 13, fontWeight: 700 }}>
-                {ct.debt > 0 && ct.advance > 0
-                  ? <span style={{ color: '#ca8a04' }}>Долг {FMT(ct.debt)} / Аванс {FMT(ct.advance)} ₽</span>
-                  : ct.debt > 0
-                    ? <span style={{ color: '#ef4444' }}>К оплате {FMT(ct.debt)} ₽</span>
-                    : ct.advance > 0
-                      ? <span style={{ color: '#16a34a' }}>Переплата {FMT(ct.advance)} ₽</span>
-                      : <span style={{ color: '#8596b4' }}>✓</span>
-                }
-              </div>
-            </div>
+          <Card key={ct.id} pad={false} title={ct.name} actions={
+            <span style={{ fontSize: 13, fontWeight: 600 }}>
+              {ct.debt > 0 && ct.advance > 0
+                ? <span style={{ color: C.amber }}>Долг {FMT(ct.debt)} / Аванс {FMT(ct.advance)} ₽</span>
+                : ct.debt > 0
+                  ? <span style={{ color: C.red }}>К оплате {FMT(ct.debt)} ₽</span>
+                  : ct.advance > 0
+                    ? <span style={{ color: C.green }}>Переплата {FMT(ct.advance)} ₽</span>
+                    : <Badge tone="green">Закрыт</Badge>
+              }
+            </span>
+          }>
             {ct.docs.length > 0 && (
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                <tbody>
-                  {ct.docs.map(d => (
-                    <tr key={d.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
-                      <td style={{ padding: '7px 14px', color: '#8596b4', whiteSpace: 'nowrap' }}>{FMTD(d.date)}</td>
-                      <td style={{ padding: '7px 14px', color: '#374151' }}>{d.type} №{d.number}</td>
-                      <td style={{ padding: '7px 14px', textAlign: 'right', fontWeight: 600, whiteSpace: 'nowrap' }}>
-                        {d.debt > 0 && <span style={{ color: '#ef4444' }}>{FMT(d.debt)} ₽ долг</span>}
-                        {d.advance > 0 && <span style={{ color: '#16a34a' }}>{FMT(d.advance)} ₽ аванс</span>}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <Table dense rows={ct.docs} rowKey={d => d.id} cols={[
+                { key: 'd', title: 'Дата', render: d => <Muted>{FMTD(d.date)}</Muted> },
+                { key: 'n', title: 'Документ', render: d => `${d.type} №${d.number}` },
+                { key: 's', title: 'Сумма', align: 'right', render: d => (
+                  <span style={{ fontWeight: 600 }}>
+                    {d.debt > 0 && <span style={{ color: C.red }}>{FMT(d.debt)} ₽ долг</span>}
+                    {d.advance > 0 && <span style={{ color: C.green }}>{FMT(d.advance)} ₽ аванс</span>}
+                  </span>
+                ) },
+              ]} />
             )}
-          </div>
+          </Card>
         ))}
 
         {/* Operations history (from DB — period only) */}
-        <div style={{ background: '#fff', border: '1px solid #e8ebf3', borderRadius: 9, overflow: 'hidden' }}>
-          <div style={{ padding: '10px 14px', background: '#f8f9fb', borderBottom: '1px solid #e8ebf3', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div style={{ fontWeight: 600, fontSize: 13, color: '#1a2240' }}>
-              История операций {cpOps.length > 0 ? `(${cpOps.length})` : ''}
-            </div>
-            {cpOps.length === 0 && (
-              <div style={{ fontSize: 12, color: '#8596b4' }}>Нажмите «Импорт из 1С» чтобы загрузить</div>
-            )}
-          </div>
-          {cpOps.length > 0 && (
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-              <thead>
-                <tr style={{ background: '#f8f9fb' }}>
-                  {['Дата', 'Тип', 'Документ', 'Начислено', 'Оплачено'].map(h => (
-                    <th key={h} style={{ padding: '7px 12px', textAlign: 'left', fontWeight: 600, color: '#8596b4', borderBottom: '1px solid #e8ebf3', fontSize: 11 }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {cpOps.map(e => (
-                  <tr key={e.id} style={{ borderBottom: '1px solid #f3f4f6', background: e.kind === 'payment' ? '#f0fdf4' : '#fff' }}>
-                    <td style={{ padding: '7px 12px', color: '#8596b4', whiteSpace: 'nowrap' }}>{FMTD(e.date)}</td>
-                    <td style={{ padding: '7px 12px' }}>
-                      <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 5, ...(KIND_COLOR[e.kind] || { background: '#f3f4f6', color: '#6b7280' }) }}>
-                        {KIND_LABEL[e.kind] || e.kind}
-                      </span>
-                    </td>
-                    <td style={{ padding: '7px 12px', color: '#374151' }}>
-                      {(e.doc_type || '').replace('Реализация (акты, накладные, УПД)', 'Реализация').replace('Поступление на расчетный счет', 'Поступление')}
-                      {e.doc_number && <span style={{ color: '#8596b4', marginLeft: 4 }}>№{e.doc_number}</span>}
-                      {e.contract_name && <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 1, maxWidth: 250, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {e.contract_name.replace('Договор аренды нежилого помещения ', '').replace('Договор аренды ', '')}
-                      </div>}
-                      {e.note && e.note !== 'Входящий остаток' && <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 1 }}>{e.note.slice(0, 80)}</div>}
-                    </td>
-                    <td style={{ padding: '7px 12px', color: '#ef4444', fontWeight: 600, textAlign: 'right', whiteSpace: 'nowrap' }}>
-                      {Number(e.charged) > 0 ? FMT(Number(e.charged)) + ' ₽' : ''}
-                    </td>
-                    <td style={{ padding: '7px 12px', color: '#16a34a', fontWeight: 600, textAlign: 'right', whiteSpace: 'nowrap' }}>
-                      {Number(e.paid) > 0 ? FMT(Number(e.paid)) + ' ₽' : ''}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        <Card pad={false} title={`История операций ${cpOps.length > 0 ? `(${cpOps.length})` : ''}`}>
+          {cpOps.length === 0 ? <Empty>Нажмите «Импорт из 1С», чтобы загрузить</Empty> : (
+            <Table dense rows={cpOps} rowKey={e => e.id} cols={[
+              { key: 'd', title: 'Дата', sort: e => e.date, render: e => <span style={{ color: C.muted, whiteSpace: 'nowrap' }}>{FMTD(e.date)}</span> },
+              { key: 't', title: 'Тип', sort: e => e.kind, render: e => <Badge tone={KIND_TONE[e.kind] || 'neutral'}>{KIND_LABEL[e.kind] || e.kind}</Badge> },
+              { key: 'doc', title: 'Документ', render: e => (
+                <div>
+                  {(e.doc_type || '').replace('Реализация (акты, накладные, УПД)', 'Реализация').replace('Поступление на расчетный счет', 'Поступление')}
+                  {e.doc_number && <span style={{ color: C.muted, marginLeft: 4 }}>№{e.doc_number}</span>}
+                  {e.contract_name && <div style={{ fontSize: 11, color: C.faint, marginTop: 1, maxWidth: 250, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {e.contract_name.replace('Договор аренды нежилого помещения ', '').replace('Договор аренды ', '')}
+                  </div>}
+                  {e.note && e.note !== 'Входящий остаток' && <div style={{ fontSize: 11, color: C.faint, marginTop: 1 }}>{e.note.slice(0, 80)}</div>}
+                </div>
+              ) },
+              { key: 'c', title: 'Начислено', align: 'right', sort: e => Number(e.charged), render: e => (
+                <span style={{ color: C.red, fontWeight: 600 }}>{Number(e.charged) > 0 ? FMT(Number(e.charged)) + ' ₽' : ''}</span>
+              ) },
+              { key: 'p', title: 'Оплачено', align: 'right', sort: e => Number(e.paid), render: e => (
+                <span style={{ color: C.green, fontWeight: 600 }}>{Number(e.paid) > 0 ? FMT(Number(e.paid)) + ' ₽' : ''}</span>
+              ) },
+            ]} />
           )}
-        </div>
-      </div>
+        </Card>
+      </Page>
     )
   }
 
@@ -257,103 +212,60 @@ export default function LedgerPage() {
     .sort((a, b) => b.netto - a.netto) // biggest debtors first
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+    <Page>
       {/* Import toolbar */}
-      <div style={{ background: '#fff', border: '1px solid #e8ebf3', borderRadius: 9, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 12, color: '#8596b4', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.4px' }}>Импорт</span>
-        <button onClick={import1C} disabled={importing1c}
-          style={{ padding: '7px 14px', borderRadius: 7, border: 'none', background: importing1c ? '#e8ebf3' : '#4f6ef7', color: importing1c ? '#8596b4' : '#fff', fontSize: 13, fontWeight: 600, cursor: importing1c ? 'default' : 'pointer', fontFamily: 'inherit' }}>
-          {importing1c ? '⟳ Загрузка...' : '↓ Импорт из 1С'}
-        </button>
-        <button onClick={() => fileRef.current?.click()} disabled={importingBank}
-          style={{ padding: '7px 14px', borderRadius: 7, border: '1px solid #e8ebf3', background: '#fff', color: importingBank ? '#8596b4' : '#1a2240', fontSize: 13, fontWeight: 600, cursor: importingBank ? 'default' : 'pointer', fontFamily: 'inherit' }}>
-          {importingBank ? '⟳ Обработка...' : '↑ Загрузить выписку (CSV)'}
-        </button>
+      <Row gap={10}>
+        <Button kind="primary" onClick={import1C} disabled={importing1c}>
+          {importing1c ? 'Загрузка…' : 'Импорт из 1С'}
+        </Button>
+        <Button onClick={() => fileRef.current?.click()} disabled={importingBank}>
+          {importingBank ? 'Обработка…' : 'Загрузить выписку (CSV)'}
+        </Button>
         <input ref={fileRef} type="file" accept=".csv,.txt" style={{ display: 'none' }}
           onChange={e => { const f = e.target.files?.[0]; if (f) importBankFile(f); e.target.value = '' }} />
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
-          {lastUpdate && <div style={{ fontSize: 11, color: '#8596b4' }}>1С: {lastUpdate}</div>}
-          <button onClick={load}
-            style={{ padding: '5px 10px', borderRadius: 7, border: '1px solid #e8ebf3', background: '#fff', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', color: '#4f6ef7' }}>
-            ↻
-          </button>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          {lastUpdate && <Muted small>1С: {lastUpdate}</Muted>}
+          <Button small onClick={load}>Обновить</Button>
         </div>
-      </div>
+      </Row>
 
-      {importMsg && (
-        <div style={{ padding: '10px 14px', borderRadius: 8, background: importMsg.startsWith('✓') ? '#f0fdf4' : '#fef2f2', color: importMsg.startsWith('✓') ? '#16a34a' : '#ef4444', fontSize: 13, border: '1px solid ' + (importMsg.startsWith('✓') ? '#bbf7d0' : '#fecaca') }}>
-          {importMsg}
-        </div>
-      )}
+      {importMsg && <Notice tone={importMsg.tone}>{importMsg.text}</Notice>}
 
       {/* KPI — balances from 1C counterparty level (authoritative) */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
-        {[
-          { label: 'Должников', value: debtors, sub: FMT(totalDebt) + ' ₽', color: debtors > 0 ? '#ef4444' : '#8596b4' },
-          { label: 'Общий долг', value: FMT(totalDebt) + ' ₽', color: '#ef4444', small: true },
-          { label: 'С переплатой', value: creditors, sub: FMT(totalAdv) + ' ₽', color: '#16a34a' },
-          { label: 'Контрагентов', value: cps.length, color: '#1a2240' },
-        ].map(k => (
-          <div key={k.label} style={{ background: '#fff', border: '1px solid #e8ebf3', borderRadius: 9, padding: '12px 16px' }}>
-            <div style={{ fontSize: 11, color: '#8596b4', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.4px', marginBottom: 4 }}>{k.label}</div>
-            <div style={{ fontSize: k.small ? 14 : 20, fontWeight: 800, color: k.color, lineHeight: 1.2 }}>{k.value}</div>
-            {k.sub && <div style={{ fontSize: 11, color: '#8596b4', marginTop: 2 }}>{k.sub}</div>}
-          </div>
-        ))}
-      </div>
+      <Stats>
+        <Stat label="Должников" value={debtors} sub={FMT(totalDebt) + ' ₽'} tone={debtors > 0 ? 'red' : undefined} />
+        <Stat label="Общий долг" value={FMT(totalDebt) + ' ₽'} tone="red" />
+        <Stat label="С переплатой" value={creditors} sub={FMT(totalAdv) + ' ₽'} tone="green" />
+        <Stat label="Контрагентов" value={cps.length} />
+      </Stats>
 
-      <input value={search} onChange={e => setSearch(e.target.value)}
-        placeholder="Поиск по названию или ИНН..."
-        style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid #e8ebf3', fontSize: 13, fontFamily: 'inherit', outline: 'none', width: 300 }}
-      />
+      <Search value={search} onChange={setSearch} placeholder="Поиск по названию или ИНН" width={300} />
 
-      <div style={{ background: '#fff', border: '1px solid #e8ebf3', borderRadius: 9, overflow: 'hidden' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-          <thead>
-            <tr style={{ background: '#f8f9fb' }}>
-              {['Контрагент', 'ИНН', 'К оплате', 'Переплата', 'Сальдо'].map(h => (
-                <th key={h} style={{ padding: '9px 14px', textAlign: h === 'К оплате' || h === 'Переплата' || h === 'Сальдо' ? 'right' : 'left', fontWeight: 600, color: '#8596b4', borderBottom: '1px solid #e8ebf3', fontSize: 12 }}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map(cp => (
-              <tr key={cp.id}
-                style={{ borderBottom: '1px solid #f3f4f6', cursor: 'pointer' }}
-                onClick={() => setSelected(cp)}
-                onMouseEnter={e => (e.currentTarget.style.background = '#f8f9fb')}
-                onMouseLeave={e => (e.currentTarget.style.background = '')}>
-                <td style={{ padding: '10px 14px', fontWeight: 600, color: '#1a2240', maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {cp.name}
-                </td>
-                <td style={{ padding: '10px 14px', color: '#8596b4', fontFamily: 'monospace', fontSize: 12 }}>{cp.inn || '—'}</td>
-                <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, color: cp.debt > 0 ? '#ef4444' : '#e5e7eb', whiteSpace: 'nowrap' }}>
-                  {cp.debt > 0 ? FMT(cp.debt) + ' ₽' : '—'}
-                </td>
-                <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, color: cp.advance > 0 ? '#16a34a' : '#e5e7eb', whiteSpace: 'nowrap' }}>
-                  {cp.advance > 0 ? FMT(cp.advance) + ' ₽' : '—'}
-                </td>
-                <td style={{ padding: '10px 14px', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                  <span style={{
-                    fontWeight: 700, fontSize: 13,
-                    color: cp.netto > 0.01 ? '#ef4444' : cp.netto < -0.01 ? '#16a34a' : '#8596b4'
-                  }}>
-                    {cp.netto > 0.01 ? '+' + FMT(cp.netto) + ' ₽'
-                     : cp.netto < -0.01 ? '−' + FMT(-cp.netto) + ' ₽'
-                     : '✓ 0'}
-                  </span>
-                  {' '}
-                  <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 6, fontWeight: 600,
-                    background: cp.netto > 0.01 ? '#fee2e2' : cp.netto < -0.01 ? '#dcfce7' : '#f3f4f6',
-                    color: cp.netto > 0.01 ? '#ef4444' : cp.netto < -0.01 ? '#16a34a' : '#9ca3af' }}>
-                    {cp.netto > 0.01 ? 'Долг' : cp.netto < -0.01 ? 'Аванс' : 'OK'}
-                  </span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
+      <Card pad={false}>
+        <Table rows={filtered} rowKey={cp => cp.id} onRow={cp => setSelected(cp)}
+          empty={cps.length === 0 ? 'Нет данных из 1С' : 'Ничего не найдено'} cols={[
+            { key: 'n', title: 'Контрагент', sort: cp => cp.name, render: cp => (
+              <div style={{ fontWeight: 600, maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cp.name}</div>
+            ) },
+            { key: 'i', title: 'ИНН', render: cp => <span style={{ color: C.muted, fontFamily: 'monospace', fontSize: 12 }}>{cp.inn || '—'}</span> },
+            { key: 'd', title: 'К оплате', align: 'right', sort: cp => cp.debt, render: cp => (
+              <span style={{ fontWeight: 600, color: cp.debt > 0 ? C.red : C.faint }}>{cp.debt > 0 ? FMT(cp.debt) + ' ₽' : '—'}</span>
+            ) },
+            { key: 'a', title: 'Переплата', align: 'right', sort: cp => cp.advance, render: cp => (
+              <span style={{ fontWeight: 600, color: cp.advance > 0 ? C.green : C.faint }}>{cp.advance > 0 ? FMT(cp.advance) + ' ₽' : '—'}</span>
+            ) },
+            { key: 's', title: 'Сальдо', align: 'right', sort: cp => cp.netto, render: cp => (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontWeight: 600, color: cp.netto > 0.01 ? C.red : cp.netto < -0.01 ? C.green : C.muted }}>
+                  {cp.netto > 0.01 ? '+' + FMT(cp.netto) + ' ₽' : cp.netto < -0.01 ? '−' + FMT(-cp.netto) + ' ₽' : '0'}
+                </span>
+                <Badge tone={cp.netto > 0.01 ? 'red' : cp.netto < -0.01 ? 'green' : 'neutral'}>
+                  {cp.netto > 0.01 ? 'Долг' : cp.netto < -0.01 ? 'Аванс' : 'Нет долга'}
+                </Badge>
+              </span>
+            ) },
+          ]} />
+      </Card>
+    </Page>
   )
 }

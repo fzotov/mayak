@@ -1,7 +1,8 @@
 import { apiFetch, openStoredFile } from '../lib/api'
 import { go } from '../lib/nav'
 import { PAY_STATUS } from '../lib/accounting'
-import { Badge } from '../components/ui'
+import { Page, Card, Row, Button, Badge, Field, Input, Select, Tabs, Table, Modal, Notice, Loading, Empty, ErrorBox, Muted, Sub, money, dateRu, C } from '../components/ui'
+import { Icon } from '../components/icons'
 import { TenantPortalAccess } from '../components/TenantPortalAccess'
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
@@ -22,8 +23,8 @@ const DOC_TYPES_COMPANY = [
   { key: 'passport', label: 'Паспорт руководителя (фото + прописка)', icon: '', required: true },
   { key: 'poa', label: 'Доверенность (если подписывает не директор)', icon: '', required: false },
   { key: 'license', label: 'Лицензии/разрешения (если лицензируется)', icon: '', required: false },
-  { key: 'brand_doc', label: 'Права на товарный знак / бренд', icon: '™', required: false },
-  { key: 'opd_consent', label: 'Согласие на обработку ПД', icon: '✍', required: true },
+  { key: 'brand_doc', label: 'Права на товарный знак / бренд', icon: '', required: false },
+  { key: 'opd_consent', label: 'Согласие на обработку ПД', icon: '', required: true },
 ]
 const DOC_TYPES_IP = [
   { key: 'passport', label: 'Паспорт ИП (фото + прописка)', icon: '', required: true },
@@ -31,20 +32,20 @@ const DOC_TYPES_IP = [
   { key: 'ogrn', label: 'Свидетельство ОГРНИП', icon: '', required: true },
   { key: 'poa', label: 'Доверенность (если подписывает не ИП)', icon: '', required: false },
   { key: 'license', label: 'Лицензии/разрешения (галерея)', icon: '', required: false },
-  { key: 'brand_doc', label: 'Права на товарный знак / бренд', icon: '™', required: false },
-  { key: 'opd_consent', label: 'Согласие на обработку ПД', icon: '✍', required: true },
+  { key: 'brand_doc', label: 'Права на товарный знак / бренд', icon: '', required: false },
+  { key: 'opd_consent', label: 'Согласие на обработку ПД', icon: '', required: true },
 ]
 const DOC_TYPES_INDIVIDUAL = [
   { key: 'passport', label: 'Паспорт (фото + прописка, или ВНЖ)', icon: '', required: true },
   { key: 'inn_doc', label: 'ИНН (при наличии)', icon: '', required: false },
-  { key: 'opd_consent', label: 'Согласие на обработку ПД', icon: '✍', required: true },
+  { key: 'opd_consent', label: 'Согласие на обработку ПД', icon: '', required: true },
 ]
 const DOC_TYPES_SELF_EMPLOYED = [
   { key: 'passport', label: 'Паспорт (фото + прописка, или ВНЖ)', icon: '', required: true },
   { key: 'self_employed_cert', label: 'Справка о постановке на учёт (Мой налог / ФНС)', icon: '', required: true },
   { key: 'utility_bill', label: 'Квитанция ЖКХ по месту регистрации (посл. мес.)', icon: '', required: true },
   { key: 'bank_details', label: 'Банковские реквизиты', icon: '', required: true },
-  { key: 'opd_consent', label: 'Согласие на обработку ПД', icon: '✍', required: true },
+  { key: 'opd_consent', label: 'Согласие на обработку ПД', icon: '', required: true },
 ]
 function getDocTypes(tenantType: string) {
   if (tenantType === 'IP') return DOC_TYPES_IP
@@ -71,22 +72,27 @@ const emptyForm = {
   rent: 0, onboardingStatus: 'not_started',
 }
 
-const s = {
-  card: { background: '#fff', border: '1px solid #e8ebf3', borderRadius: 9, padding: 16, marginBottom: 12 } as React.CSSProperties,
-  label: { fontSize: 13, color: '#8596b4', marginBottom: 3, fontWeight: 500 } as React.CSSProperties,
-  value: { fontSize: 14, color: '#1a2240', fontWeight: 500 } as React.CSSProperties,
-  grid2: { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px 20px' } as React.CSSProperties,
-  grid3: { display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '12px 20px' } as React.CSSProperties,
-  grid4: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px 20px' } as React.CSSProperties,
-  inp: { width: '100%', minWidth: 0, boxSizing: 'border-box', padding: '7px 10px', border: '1px solid #e8ebf3', borderRadius: 6, fontSize: 14, fontFamily: 'inherit', outline: 'none', color: '#1a2240' } as React.CSSProperties,
-  inpDisabled: { width: '100%', padding: '7px 10px', border: '1px solid #f0f2f8', borderRadius: 6, fontSize: 14, fontFamily: 'inherit', outline: 'none', color: '#1a2240', background: '#f8f9fc' } as React.CSSProperties,
-  sectionTitle: { fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 14, textTransform: 'uppercase', letterSpacing: '.5px' } as React.CSSProperties,
+function Value({ children }: { children: React.ReactNode }) {
+  return <div style={{ fontSize: 14, color: C.text, fontWeight: 500, minHeight: 20, wordBreak: 'break-word' }}>{children}</div>
+}
+
+function Toast({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{ position: 'fixed', top: 20, right: 24, zIndex: 1100, boxShadow: C.shadow, borderRadius: 8 }}>
+      <Notice tone="green">{children}</Notice>
+    </div>
+  )
 }
 
 function SuccessToast() {
+  return <Toast>Изменения сохранены</Toast>
+}
+
+function Progress({ value, total, width }: { value: number; total: number; width: number }) {
+  const pct = total > 0 ? (value / total) * 100 : 0
   return (
-    <div style={{ position: 'fixed', top: 20, right: 24, background: '#111827', color: '#fff', padding: '10px 18px', borderRadius: 8, fontSize: 14, fontWeight: 500, zIndex: 200, display: 'flex', alignItems: 'center', gap: 8 }}>
-      <span style={{ color: '#34d399' }}>✓</span> Изменения сохранены
+    <div style={{ width, height: 6, background: C.hover, borderRadius: 3, overflow: 'hidden' }}>
+      <div style={{ width: `${pct}%`, height: '100%', background: value === total ? C.green : C.accent, borderRadius: 3, transition: 'width .3s' }} />
     </div>
   )
 }
@@ -97,9 +103,9 @@ function printOPD(tenant: typeof emptyForm) {
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Согласие на обработку ПД</title>
   <style>body{font-family:'Times New Roman',serif;font-size:13pt;margin:2cm;line-height:1.6}
   h2{text-align:center;font-size:14pt}
-  .blank{border-bottom:1px solid #000;display:inline-block;min-width:200px;text-align:center}
+  .blank{border-bottom:1px solid black;display:inline-block;min-width:200px;text-align:center}
   .sign-row{display:flex;gap:40px;margin-top:30px}
-  .sign-block{flex:1;border-top:1px solid #000;padding-top:4px;font-size:11pt;text-align:center}
+  .sign-block{flex:1;border-top:1px solid black;padding-top:4px;font-size:11pt;text-align:center}
   @media print{body{margin:1.5cm}}</style></head><body>
   <h2>СОГЛАСИЕ<br>на обработку персональных данных</h2>
   <p>Я (далее — Субъект), <span class="blank"><b>${subject || '___________________________'}</b></span>,<br>
@@ -156,7 +162,7 @@ function printContract(type: string, tenant: typeof emptyForm, contractNumber: s
   <style>body{font-family:'Times New Roman',serif;font-size:14pt;margin:2cm;line-height:1.5}
   h2{text-align:center;font-size:16pt}h3{font-size:14pt}
   .center{text-align:center}.right{text-align:right}
-  table{width:100%;border-collapse:collapse}td,th{border:1px solid #000;padding:6px 10px}
+  table{width:100%;border-collapse:collapse}td,th{border:1px solid black;padding:6px 10px}
   .sign{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:40px}
   @media print{body{margin:1.5cm}}</style></head><body>
   <p class="right">г. Москва</p>
@@ -229,6 +235,10 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
   const [dbId, setDbId] = useState<string | null>(null)
   const [loadingTenant, setLoadingTenant] = useState(!!tenantId)
   const [rawData, setRawData] = useState<any>(null)
+  const [loadError, setLoadError] = useState('')
+  const [saveError, setSaveError] = useState('')
+  const [actionError, setActionError] = useState('')
+  const [meterError, setMeterError] = useState('')
 
   // Premises
   type PremiseRent = { id: string; monthly_rent: number | null; cleaning_fee: number | null; valid_from: string | null; valid_to: string | null; notes: string | null }
@@ -268,8 +278,8 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
     if (!tenantId) return
     setLoadingTenant(true)
     Promise.resolve(supabase.from('tenants').select('*').eq('id', tenantId).single())
-      .then(({ data }) => {
-        if (!data) return
+      .then(({ data, error }) => {
+        if (error || !data) { setLoadError(error ? 'Не удалось загрузить арендатора: ' + error.message : 'Арендатор не найден'); return }
         setRawData(data)
         const mapped = {
           fullName: data.full_name || '',
@@ -346,6 +356,7 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
     if (!dbId) return
     const update: any = {
       full_name: form.fullName,
+      type: form.type,
       inn: form.inn || null, kpp: form.kpp || null, ogrn: form.ogrn || null,
       email: form.email || null, phone: form.phone || null,
       legal_address: form.legalAddress || null,
@@ -367,13 +378,15 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
       contract_start_date: form.contractStartDate || null,
       contract_end_date: form.contractEndDate || null,
     }
-    await supabase.from('tenants').update(update).eq('id', dbId)
+    setSaveError('')
+    const { error } = await supabase.from('tenants').update(update).eq('id', dbId)
+    if (error) { setSaveError('Не удалось сохранить: ' + error.message); return }
     setSaved(form)
     setEditing(false)
     setShowSuccess(true)
     setTimeout(() => setShowSuccess(false), 3000)
   }
-  const handleCancel = () => { setForm(saved); setEditing(false) }
+  const handleCancel = () => { setForm(saved); setEditing(false); setSaveError('') }
 
   // Onboarding step checks — зависят от типа арендатора
   const docTypes = getDocTypes(saved.type)
@@ -440,20 +453,23 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
 
   async function updateOnboardingStatus(status: string) {
     if (!dbId) return
-    await supabase.from('tenants').update({ onboarding_status: status }).eq('id', dbId)
+    const { error } = await supabase.from('tenants').update({ onboarding_status: status }).eq('id', dbId)
+    if (error) { setActionError(error.message); return }
     setSaved(p => ({ ...p, onboardingStatus: status }))
     setForm(p => ({ ...p, onboardingStatus: status }))
   }
 
   async function saveContract() {
     if (!contractModal || !dbId) return
-    setSavingContract(true)
+    setSavingContract(true); setActionError('')
     const body = { tenant_id: dbId, contract_type: contractModal.type, contract_number: contractModal.number, signed_date: contractModal.date || null, valid_from: contractModal.startDate || null, valid_to: contractModal.endDate || null, notes: contractModal.notes || null }
     if (contractModal.id) {
-      await supabase.from('tenant_contracts').update(body).eq('id', contractModal.id)
+      const { error } = await supabase.from('tenant_contracts').update(body).eq('id', contractModal.id)
+      if (error) { setActionError(error.message); setSavingContract(false); return }
       setContracts(cs => cs.map(c => c.id === contractModal.id ? { ...c, ...body } : c))
     } else {
-      const { data } = await supabase.from('tenant_contracts').insert(body).select('*').single()
+      const { data, error } = await supabase.from('tenant_contracts').insert(body).select('*').single()
+      if (error) { setActionError(error.message); setSavingContract(false); return }
       if (data) setContracts(cs => [data, ...cs])
     }
     setContractModal(null)
@@ -462,7 +478,8 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
 
   async function deleteContract(id: string) {
     if (!confirm('Удалить документ?')) return
-    await supabase.from('tenant_contracts').delete().eq('id', id)
+    const { error } = await supabase.from('tenant_contracts').delete().eq('id', id)
+    if (error) { setActionError(error.message); return }
     setContracts(cs => cs.filter(c => c.id !== id))
   }
 
@@ -478,659 +495,577 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
       fileUrl = pub?.publicUrl || ''
     }
     const docBody = { tenant_id: dbId, doc_type: docType, file_name: file.name, file_url: fileUrl, notes: null }
-    const { data: doc } = await supabase.from('tenant_documents').insert(docBody).select('*').single()
+    setActionError('')
+    const { data: doc, error: docErr } = await supabase.from('tenant_documents').insert(docBody).select('*').single()
+    if (docErr) setActionError('Не удалось сохранить документ: ' + docErr.message)
     if (doc) setDocuments(ds => [doc, ...ds])
     setUploadingDoc(null)
   }
 
   async function deleteDoc(id: string) {
     if (!confirm('Удалить документ?')) return
-    await supabase.from('tenant_documents').delete().eq('id', id)
+    const { error } = await supabase.from('tenant_documents').delete().eq('id', id)
+    if (error) { setActionError(error.message); return }
     setDocuments(ds => ds.filter(d => d.id !== id))
   }
 
-  const tabStyle = (i: number): React.CSSProperties => ({
-    padding: '7px 14px', border: 'none', background: 'none', fontSize: 14,
-    color: tab === i ? '#4f6ef7' : '#6b7280', cursor: 'pointer',
-    borderBottom: tab === i ? '2px solid #4f6ef7' : '2px solid transparent',
-    marginBottom: -1, fontFamily: 'inherit', fontWeight: tab === i ? 500 : 400,
-  })
+  const g3: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px 20px' }
+  const g4: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px 20px' }
+  const g2: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }
 
-  const Field = ({ label, k, type = 'text', wide = false }: { label: string; k: keyof typeof form; type?: string; wide?: boolean }) => (
-    <div style={wide ? { gridColumn: '1 / -1' } : {}}>
-      <div style={s.label}>{label}</div>
+  // Поле реквизита: в режиме редактирования — ввод, иначе — значение.
+  // Обычная функция, а не компонент: иначе поле пересоздаётся на каждый ввод и теряет фокус.
+  const field = (label: string, k: keyof typeof form, type = 'text', wide = false) => (
+    <Field key={k} label={label} wide={wide}>
       {editing
-        ? <input style={s.inp} type={type} value={String(form[k])} onChange={f(k) as any} />
-        : <div style={s.value}>{String(saved[k]) || '—'}</div>}
-    </div>
+        ? <Input type={type} value={String(form[k])} onChange={f(k) as any} />
+        : <Value>{String(saved[k]) || '—'}</Value>}
+    </Field>
   )
 
-  if (loadingTenant) return <div style={{ padding: 40, color: '#8596b4', fontSize: 14 }}>Загрузка...</div>
+  if (loadingTenant) return <Loading />
+  if (loadError) return <Page><ErrorBox error={loadError} /><div><Button onClick={onBack}>Назад</Button></div></Page>
+
+  const allDone = stepsComplete === onboardingSteps.length
 
   return (
     <div style={{ maxWidth: 900 }}>
-      {invoiceCreated && <div style={{ position: 'fixed', top: 20, right: 24, background: '#111827', color: '#fff', padding: '10px 18px', borderRadius: 8, fontSize: 14, fontWeight: 500, zIndex: 200, display: 'flex', alignItems: 'center', gap: 8 }}><span style={{ color: '#34d399' }}>✓</span> Счёт создан</div>}
+      {invoiceCreated && <Toast>Счёт создан</Toast>}
       {showSuccess && <SuccessToast />}
 
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-        <button onClick={onBack} style={{ padding: '6px 12px', border: '1px solid #e8ebf3', borderRadius: 7, background: '#fff', cursor: 'pointer', fontSize: 14, fontFamily: 'inherit', color: '#6b7280' }}>← Назад</button>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div style={{ fontSize: 16, fontWeight: 600, color: '#1a2240' }}>{saved.fullName || 'Новый арендатор'}</div>
-            {/* Onboarding badge */}
-            <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, fontWeight: 500,
-              background: stepsComplete === onboardingSteps.length ? '#dcfce7' : stepsComplete > 0 ? '#fef3c7' : '#f3f4f6',
-              color: stepsComplete === onboardingSteps.length ? '#16a34a' : stepsComplete > 0 ? '#d97706' : '#6b7280' }}>
-              {stepsComplete === onboardingSteps.length ? '✓ Онбординг завершён' : `Онбординг ${stepsComplete}/${onboardingSteps.length}`}
-            </span>
-          </div>
-          <div style={{ fontSize: 14, color: '#8596b4' }}>{TYPE_LABELS[saved.type]} · ИНН {saved.inn || '—'}</div>
-        </div>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-          {editing ? (
-            <>
-              <button onClick={handleCancel} style={{ padding: '7px 14px', border: '1px solid #e8ebf3', borderRadius: 7, background: '#fff', cursor: 'pointer', fontSize: 14, fontFamily: 'inherit', color: '#6b7280' }}>Отмена</button>
-              <button onClick={handleSave} style={{ padding: '7px 14px', border: 'none', borderRadius: 7, background: '#4f6ef7', cursor: 'pointer', fontSize: 14, fontFamily: 'inherit', color: '#fff', fontWeight: 500 }}>Сохранить</button>
-            </>
-          ) : (
-            <>
-              <button onClick={() => setEditing(true)} style={{ padding: '7px 14px', border: '1px solid #e8ebf3', borderRadius: 7, background: '#fff', cursor: 'pointer', fontSize: 14, fontFamily: 'inherit', color: '#374151' }}>Редактировать</button>
-              <button onClick={() => { go('/settlements/' + tenantId )}} style={{ padding: '7px 14px', border: 'none', borderRadius: 7, background: '#4f6ef7', cursor: 'pointer', fontSize: 14, fontFamily: 'inherit', color: '#fff', fontWeight: 500 }}>Расчёты</button>
-            </>
-          )}
-        </div>
-      </div>
-
-      {editing && (
-        <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontSize: 14, color: '#92400e', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span></span> Режим редактирования — внесите изменения и нажмите Сохранить
-        </div>
-      )}
-
-      <div style={{ display: 'flex', borderBottom: '1px solid #e8ebf3', marginBottom: 16, gap: 2, flexWrap: 'wrap' }}>
-        {TABS.map((name, i) => (
-          <button key={i} style={tabStyle(i)} onClick={() => setTab(i)}>
-            {i === 0 && stepsComplete < onboardingSteps.length ? <span style={{ color: '#f59e0b', marginRight: 4 }}>●</span> : null}
-            {name}
-          </button>
-        ))}
-      </div>
-
-      {/* ─── TAB 0: ОНБОРДИНГ ─── */}
-      {tab === 0 && (
-        <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-            <div>
-              <div style={{ fontSize: 15, fontWeight: 600, color: '#1a2240' }}>Онбординг арендатора</div>
-              <div style={{ fontSize: 13, color: '#8596b4', marginTop: 2 }}>Выполните все шаги для завершения регистрации</div>
+      <Page
+        title={
+          <Row gap={12} wrap={false} align="center">
+            <Button onClick={onBack}>Назад</Button>
+            <div style={{ minWidth: 0 }}>
+              <Row gap={8}>
+                <span>{saved.fullName || 'Новый арендатор'}</span>
+                <Badge tone={allDone ? 'green' : stepsComplete > 0 ? 'amber' : 'neutral'}>
+                  {allDone ? 'Онбординг завершён' : `Онбординг ${stepsComplete}/${onboardingSteps.length}`}
+                </Badge>
+              </Row>
+              <div style={{ fontSize: 13, fontWeight: 400, color: C.muted, marginTop: 2 }}>{TYPE_LABELS[saved.type]} · ИНН {saved.inn || '—'}</div>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div style={{ fontSize: 13, color: '#6b7280' }}>{stepsComplete} из {onboardingSteps.length} шагов</div>
-              <div style={{ width: 120, height: 6, background: '#f0f2f8', borderRadius: 3, overflow: 'hidden' }}>
-                <div style={{ width: `${(stepsComplete / onboardingSteps.length) * 100}%`, height: '100%', background: stepsComplete === onboardingSteps.length ? '#22c55e' : '#4f6ef7', borderRadius: 3, transition: 'width .3s' }} />
-              </div>
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {onboardingSteps.map((step, i) => (
-              <div key={i} style={{ background: '#fff', border: `1px solid ${step.done ? '#bbf7d0' : '#e8ebf3'}`, borderRadius: 10, padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 14 }}>
-                <div style={{ width: 32, height: 32, borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 700,
-                  background: step.done ? '#dcfce7' : '#f3f4f6', color: step.done ? '#16a34a' : '#9ca3af' }}>
-                  {step.done ? '✓' : i + 1}
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: step.done ? '#16a34a' : '#1a2240' }}>{step.label}</div>
-                  <div style={{ fontSize: 13, color: '#8596b4', marginTop: 2 }}>{step.desc}</div>
-                </div>
-                <button onClick={() => setTab(step.tab)}
-                  style={{ padding: '6px 14px', border: `1px solid ${step.done ? '#bbf7d0' : '#e8ebf3'}`, borderRadius: 7, background: step.done ? '#f0fdf4' : '#fff', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', color: step.done ? '#16a34a' : '#4f6ef7', fontWeight: 500 }}>
-                  {step.done ? 'Изменить' : 'Заполнить →'}
-                </button>
-              </div>
-            ))}
-          </div>
-
-          {stepsComplete === onboardingSteps.length && saved.onboardingStatus !== 'completed' && (
-            <div style={{ marginTop: 16, padding: '16px 20px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div>
-                <div style={{ fontSize: 14, fontWeight: 600, color: '#16a34a' }}>Все шаги выполнены!</div>
-                <div style={{ fontSize: 13, color: '#6b7280', marginTop: 2 }}>Нажмите чтобы зафиксировать завершение онбординга</div>
-              </div>
-              <button onClick={() => updateOnboardingStatus('completed')}
-                style={{ padding: '8px 18px', border: 'none', borderRadius: 7, background: '#16a34a', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
-                Завершить онбординг
-              </button>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ─── TAB 1: ОБЩИЕ ─── */}
-      {tab === 1 && dbId && <TenantPortalAccess tenantId={dbId} defaultEmail={saved.email || saved.contactEmail || ''} />}
-      {tab === 1 && (
-        <>
-          <div style={s.card}>
-            <div style={s.sectionTitle}>Реквизиты организации</div>
-            <div style={{ ...s.grid3, marginBottom: 12 }}>
-              <Field label="Полное наименование" k="fullName" wide />
-              <div>
-                <div style={s.label}>Тип</div>
-                {editing
-                  ? <select style={s.inp} value={form.type} onChange={f('type') as any}>
-                      <option value="COMPANY">Юрлицо (ООО, АО)</option>
-                      <option value="IP">ИП</option>
-                      <option value="INDIVIDUAL">Физлицо</option>
-                      <option value="SELF_EMPLOYED">Самозанятый</option>
-                    </select>
-                  : <div style={s.value}>{TYPE_LABELS[saved.type]}</div>}
-              </div>
-              <Field label="ИНН" k="inn" />
-              <Field label="КПП" k="kpp" />
-              <Field label="ОГРН / ОГРНИП" k="ogrn" />
-              <Field label="Email" k="email" type="email" />
-              <Field label="Телефон" k="phone" type="tel" />
-            </div>
-            <div><div style={s.label}>Юридический адрес</div>
-              {editing
-                ? <input style={s.inp} value={form.legalAddress} onChange={f('legalAddress') as any} />
-                : <div style={s.value}>{saved.legalAddress || '—'}</div>}
-            </div>
-          </div>
-
-          {(form.type === 'COMPANY') && (
-            <div style={s.card}>
-              <div style={s.sectionTitle}>Руководитель</div>
-              <div style={s.grid3}>
-                <Field label="ФИО директора" k="directorName" />
-                <Field label="Должность" k="directorPosition" />
-                <Field label="Действует на основании" k="directorBasis" />
-              </div>
-              <div style={{ ...s.grid4, marginTop: 12 }}>
-                <Field label="Серия паспорта" k="passportSeries" />
-                <Field label="Номер паспорта" k="passportNumber" />
-                <Field label="Дата выдачи" k="passportIssuedDate" type="date" />
-                <Field label="Кем выдан" k="passportIssuedBy" />
-              </div>
-            </div>
-          )}
-
-          {(form.type === 'IP' || form.type === 'INDIVIDUAL' || form.type === 'SELF_EMPLOYED') && (
-            <div style={s.card}>
-              <div style={s.sectionTitle}>Паспортные данные</div>
-              <div style={s.grid4}>
-                <Field label="Серия паспорта" k="passportSeries" />
-                <Field label="Номер паспорта" k="passportNumber" />
-                <Field label="Дата выдачи" k="passportIssuedDate" type="date" />
-                <Field label="Кем выдан" k="passportIssuedBy" />
-              </div>
-            </div>
-          )}
-
-          <div style={s.card}>
-            <div style={s.sectionTitle}>Контактное лицо</div>
-            <div style={s.grid3}>
-              <Field label="ФИО контактного лица" k="contactName" />
-              <Field label="Телефон" k="contactPhone" type="tel" />
-              <Field label="Email" k="contactEmail" type="email" />
-            </div>
-          </div>
-
-          <div style={s.card}>
-            <div style={s.sectionTitle}>Банковские реквизиты</div>
-            <div style={s.grid3}>
-              <Field label="Банк" k="bank" />
-              <Field label="Расчётный счёт (р/с)" k="bankAccount" />
-              <Field label="Корр. счёт (к/с)" k="correspondentAccount" />
-              <Field label="БИК" k="bik" />
-            </div>
-          </div>
-
-          <div style={s.card}>
-            <div style={s.sectionTitle}>Договор аренды</div>
-            <div style={s.grid4}>
-              <Field label="Номер договора" k="contractNumber" />
-              <Field label="Дата начала" k="contractStartDate" type="date" />
-              <Field label="Дата окончания" k="contractEndDate" type="date" />
-              <div>
-                <div style={s.label}>Арендная плата</div>
-                {editing
-                  ? <input style={s.inp} type="number" value={form.rent} onChange={e => setForm(p => ({ ...p, rent: Number(e.target.value) }))} />
-                  : <div style={s.value}>{saved.rent.toLocaleString('ru')} ₽/мес</div>}
-              </div>
-            </div>
-          </div>
-        </>
-      )}
-
-      {/* ─── TAB 2: ПОМЕЩЕНИЯ ─── */}
-      {tab === 2 && (() => {
-        const today = new Date().toISOString().slice(0, 10)
-        const isActive = (r: any) => !r.valid_to || r.valid_to >= today
-        const fmtDate = (d: string | null) => d ? new Date(d).toLocaleDateString('ru-RU') : '∞'
-        const fmtMoney = (n: number | null) => n != null ? n.toLocaleString('ru') + ' ₽' : '—'
-
-        async function savePremise() {
-          if (!premiseModal || !dbId) return
-          setSavingPremise(true)
-          if (premiseModal.id) {
-            await supabase.from('tenant_premises').update({ unit_number: premiseModal.unit_number, area_actual: premiseModal.area_actual, area_bti: premiseModal.area_bti, floor: premiseModal.floor }).eq('id', premiseModal.id)
-            setPremisesList(list => list.map(p => p.id === premiseModal.id ? { ...p, ...premiseModal } as any : p))
-          } else {
-            const { data } = await supabase.from('tenant_premises').insert({ tenant_id: dbId, unit_number: premiseModal.unit_number || '', area_actual: premiseModal.area_actual || null, area_bti: premiseModal.area_bti || null, floor: premiseModal.floor || null }).select('*').single()
-            if (data) setPremisesList(list => [...list, { ...data, rents: [] }])
-          }
-          setPremiseModal(null); setSavingPremise(false)
+          </Row>
         }
-        async function deletePremise(id: string) {
-          await supabase.from('tenant_premises').delete().eq('id', id)
-          setPremisesList(list => list.filter(p => p.id !== id))
-        }
-        async function saveRent() {
-          if (!rentModal) return
-          setSavingPremise(true)
-          const { premiseId, rent } = rentModal
-          if (rent.id) {
-            await supabase.from('premise_rents').update({ monthly_rent: rent.monthly_rent, cleaning_fee: rent.cleaning_fee, valid_from: rent.valid_from || null, valid_to: rent.valid_to || null, notes: rent.notes || null }).eq('id', rent.id)
-            setPremisesList(list => list.map(p => p.id === premiseId ? { ...p, rents: p.rents.map(r => r.id === rent.id ? { ...r, ...rent } as any : r).sort((a, b) => (b.valid_from || '').localeCompare(a.valid_from || '')) } : p))
-          } else {
-            const { data } = await supabase.from('premise_rents').insert({ premise_id: premiseId, monthly_rent: rent.monthly_rent || null, cleaning_fee: rent.cleaning_fee || null, valid_from: rent.valid_from || null, valid_to: rent.valid_to || null, notes: rent.notes || null }).select('*').single()
-            if (data) setPremisesList(list => list.map(p => p.id === premiseId ? { ...p, rents: [data, ...p.rents].sort((a, b) => (b.valid_from || '').localeCompare(a.valid_from || '')) } : p))
-          }
-          setRentModal(null); setSavingPremise(false)
-        }
-        async function deleteRent(premiseId: string, rentId: string) {
-          await supabase.from('premise_rents').delete().eq('id', rentId)
-          setPremisesList(list => list.map(p => p.id === premiseId ? { ...p, rents: p.rents.filter(r => r.id !== rentId) } : p))
-        }
-
-        return (
+        actions={editing ? (
           <>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <div style={s.sectionTitle}>Арендуемые помещения</div>
-              <button onClick={() => setPremiseModal({ unit_number: '', area_actual: null, area_bti: null, floor: null })}
-                style={{ padding: '5px 14px', border: 'none', borderRadius: 6, background: '#4f6ef7', color: '#fff', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500 }}>
-                + Добавить помещение
-              </button>
+            <Button onClick={handleCancel}>Отмена</Button>
+            <Button kind="primary" onClick={handleSave}>Сохранить</Button>
+          </>
+        ) : (
+          <>
+            <Button onClick={() => setEditing(true)}>Редактировать</Button>
+            <Button kind="primary" onClick={() => { go('/settlements/' + tenantId) }}>Расчёты</Button>
+          </>
+        )}>
+
+        {editing && <Notice tone="amber">Режим редактирования — внесите изменения и нажмите «Сохранить»</Notice>}
+        {saveError && <Notice tone="red">{saveError}</Notice>}
+
+        <Tabs<string>
+          value={String(tab)}
+          onChange={k => setTab(Number(k))}
+          tabs={TABS.map((name, i) => [String(i), i === 0 && !allDone ? `${name} · ${stepsComplete}/${onboardingSteps.length}` : name] as [string, string])}
+        />
+
+        {/* ─── Онбординг ─── */}
+        {tab === 0 && (
+          <Card
+            title={<>Онбординг арендатора<Sub>Выполните все шаги для завершения регистрации</Sub></>}
+            actions={<Row gap={12}><Muted small>{stepsComplete} из {onboardingSteps.length} шагов</Muted><Progress value={stepsComplete} total={onboardingSteps.length} width={120} /></Row>}>
+            <div style={{ display: 'grid', gap: 10 }}>
+              {onboardingSteps.map((step, i) => (
+                <div key={i} style={{ border: `1px solid ${step.done ? C.green : C.line}`, borderRadius: C.radius, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+                  <div style={{ width: 32, height: 32, borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700,
+                    background: step.done ? C.greenBg : C.hover, color: step.done ? C.green : C.faint }}>
+                    {i + 1}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 180 }}>
+                    <Row gap={8}>
+                      <span style={{ fontSize: 14, fontWeight: 600 }}>{step.label}</span>
+                      {step.done && <Badge tone="green">готово</Badge>}
+                    </Row>
+                    <Sub>{step.desc}</Sub>
+                  </div>
+                  <Button small kind={step.done ? 'secondary' : 'ghost'} onClick={() => setTab(step.tab)}>
+                    {step.done ? 'Изменить' : 'Заполнить'}
+                  </Button>
+                </div>
+              ))}
             </div>
-            {!premisesLoaded ? <div style={{ color: '#8596b4', fontSize: 14, padding: '16px 0' }}>Загрузка...</div>
-              : premisesList.length === 0 ? <div style={{ color: '#8596b4', fontSize: 14, padding: '20px 0', textAlign: 'center' }}>Помещения не добавлены.</div>
-              : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  {premisesList.map(p => {
-                    const activeRent = p.rents.find(r => isActive(r))
-                    return (
-                      <div key={p.id} style={{ border: '1px solid #e8ebf3', borderRadius: 10, overflow: 'hidden' }}>
-                        <div style={{ background: '#f8f9fc', padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
-                          <div style={{ flex: 1 }}>
-                            <span style={{ fontSize: 14, fontWeight: 600, color: '#1a2240' }}>Офис № {p.unit_number}</span>
-                            {p.floor && <span style={{ fontSize: 12, color: '#8596b4', marginLeft: 10 }}>{p.floor} этаж</span>}
-                            {p.area_actual && <span style={{ fontSize: 12, color: '#6b7280', marginLeft: 10 }}>{p.area_actual} м²</span>}
+
+            {allDone && saved.onboardingStatus !== 'completed' && (
+              <div style={{ marginTop: 16 }}>
+                <Notice tone="green">
+                  <Row justify="space-between" gap={12}>
+                    <div>
+                      <div style={{ fontWeight: 600 }}>Все шаги выполнены</div>
+                      <div>Нажмите, чтобы зафиксировать завершение онбординга</div>
+                    </div>
+                    <Button kind="primary" onClick={() => updateOnboardingStatus('completed')}>Завершить онбординг</Button>
+                  </Row>
+                </Notice>
+              </div>
+            )}
+          </Card>
+        )}
+
+        {/* ─── Общие ─── */}
+        {tab === 1 && dbId && <TenantPortalAccess tenantId={dbId} defaultEmail={saved.email || saved.contactEmail || ''} />}
+        {tab === 1 && (
+          <>
+            <Card title="Реквизиты организации">
+              <div style={{ ...g3, marginBottom: 12 }}>
+                {field('Полное наименование', 'fullName', 'text', true)}
+                <Field label="Тип">
+                  {editing
+                    ? <Select value={form.type} onChange={f('type') as any}>
+                        <option value="COMPANY">Юрлицо (ООО, АО)</option>
+                        <option value="IP">ИП</option>
+                        <option value="INDIVIDUAL">Физлицо</option>
+                        <option value="SELF_EMPLOYED">Самозанятый</option>
+                      </Select>
+                    : <Value>{TYPE_LABELS[saved.type]}</Value>}
+                </Field>
+                {field('ИНН', 'inn')}
+                {field('КПП', 'kpp')}
+                {field('ОГРН / ОГРНИП', 'ogrn')}
+                {field('Email', 'email', 'email')}
+                {field('Телефон', 'phone', 'tel')}
+              </div>
+              {field('Юридический адрес', 'legalAddress')}
+            </Card>
+
+            {(form.type === 'COMPANY') && (
+              <Card title="Руководитель">
+                <div style={g3}>
+                  {field('ФИО директора', 'directorName')}
+                  {field('Должность', 'directorPosition')}
+                  {field('Действует на основании', 'directorBasis')}
+                </div>
+                <div style={{ ...g4, marginTop: 12 }}>
+                  {field('Серия паспорта', 'passportSeries')}
+                  {field('Номер паспорта', 'passportNumber')}
+                  {field('Дата выдачи', 'passportIssuedDate', 'date')}
+                  {field('Кем выдан', 'passportIssuedBy')}
+                </div>
+              </Card>
+            )}
+
+            {(form.type === 'IP' || form.type === 'INDIVIDUAL' || form.type === 'SELF_EMPLOYED') && (
+              <Card title="Паспортные данные">
+                <div style={g4}>
+                  {field('Серия паспорта', 'passportSeries')}
+                  {field('Номер паспорта', 'passportNumber')}
+                  {field('Дата выдачи', 'passportIssuedDate', 'date')}
+                  {field('Кем выдан', 'passportIssuedBy')}
+                </div>
+              </Card>
+            )}
+
+            <Card title="Контактное лицо">
+              <div style={g3}>
+                {field('ФИО контактного лица', 'contactName')}
+                {field('Телефон', 'contactPhone', 'tel')}
+                {field('Email', 'contactEmail', 'email')}
+              </div>
+            </Card>
+
+            <Card title="Банковские реквизиты">
+              <div style={g3}>
+                {field('Банк', 'bank')}
+                {field('Расчётный счёт (р/с)', 'bankAccount')}
+                {field('Корр. счёт (к/с)', 'correspondentAccount')}
+                {field('БИК', 'bik')}
+              </div>
+            </Card>
+
+            <Card title="Договор аренды">
+              <div style={g4}>
+                {field('Номер договора', 'contractNumber')}
+                {field('Дата начала', 'contractStartDate', 'date')}
+                {field('Дата окончания', 'contractEndDate', 'date')}
+                <Field label="Арендная плата">
+                  {editing
+                    ? <Input type="number" value={form.rent} onChange={e => setForm(p => ({ ...p, rent: Number(e.target.value) }))} />
+                    : <Value>{saved.rent.toLocaleString('ru')} ₽/мес</Value>}
+                </Field>
+              </div>
+            </Card>
+          </>
+        )}
+
+        {/* ─── Помещения ─── */}
+        {tab === 2 && (() => {
+          const today = new Date().toISOString().slice(0, 10)
+          const isActive = (r: any) => !r.valid_to || r.valid_to >= today
+          const fmtDate = (d: string | null) => d ? dateRu(d) : 'бессрочно'
+          const fmtMoney = (n: number | null) => n != null ? n.toLocaleString('ru') + ' ₽' : '—'
+
+          async function savePremise() {
+            if (!premiseModal || !dbId) return
+            setSavingPremise(true); setActionError('')
+            if (premiseModal.id) {
+              const { error } = await supabase.from('tenant_premises').update({ unit_number: premiseModal.unit_number, area_actual: premiseModal.area_actual, area_bti: premiseModal.area_bti, floor: premiseModal.floor }).eq('id', premiseModal.id)
+              if (error) { setActionError(error.message); setSavingPremise(false); return }
+              setPremisesList(list => list.map(p => p.id === premiseModal.id ? { ...p, ...premiseModal } as any : p))
+            } else {
+              const { data, error } = await supabase.from('tenant_premises').insert({ tenant_id: dbId, unit_number: premiseModal.unit_number || '', area_actual: premiseModal.area_actual || null, area_bti: premiseModal.area_bti || null, floor: premiseModal.floor || null }).select('*').single()
+              if (error) { setActionError(error.message); setSavingPremise(false); return }
+              if (data) setPremisesList(list => [...list, { ...data, rents: [] }])
+            }
+            setPremiseModal(null); setSavingPremise(false)
+          }
+          async function deletePremise(id: string) {
+            const { error } = await supabase.from('tenant_premises').delete().eq('id', id)
+            if (error) { setActionError(error.message); return }
+            setPremisesList(list => list.filter(p => p.id !== id))
+          }
+          async function saveRent() {
+            if (!rentModal) return
+            setSavingPremise(true); setActionError('')
+            const { premiseId, rent } = rentModal
+            if (rent.id) {
+              const { error } = await supabase.from('premise_rents').update({ monthly_rent: rent.monthly_rent, cleaning_fee: rent.cleaning_fee, valid_from: rent.valid_from || null, valid_to: rent.valid_to || null, notes: rent.notes || null }).eq('id', rent.id)
+              if (error) { setActionError(error.message); setSavingPremise(false); return }
+              setPremisesList(list => list.map(p => p.id === premiseId ? { ...p, rents: p.rents.map(r => r.id === rent.id ? { ...r, ...rent } as any : r).sort((a, b) => (b.valid_from || '').localeCompare(a.valid_from || '')) } : p))
+            } else {
+              const { data, error } = await supabase.from('premise_rents').insert({ premise_id: premiseId, monthly_rent: rent.monthly_rent || null, cleaning_fee: rent.cleaning_fee || null, valid_from: rent.valid_from || null, valid_to: rent.valid_to || null, notes: rent.notes || null }).select('*').single()
+              if (error) { setActionError(error.message); setSavingPremise(false); return }
+              if (data) setPremisesList(list => list.map(p => p.id === premiseId ? { ...p, rents: [data, ...p.rents].sort((a, b) => (b.valid_from || '').localeCompare(a.valid_from || '')) } : p))
+            }
+            setRentModal(null); setSavingPremise(false)
+          }
+          async function deleteRent(premiseId: string, rentId: string) {
+            const { error } = await supabase.from('premise_rents').delete().eq('id', rentId)
+            if (error) { setActionError(error.message); return }
+            setPremisesList(list => list.map(p => p.id === premiseId ? { ...p, rents: p.rents.filter(r => r.id !== rentId) } : p))
+          }
+
+          return (
+            <>
+              <Row justify="space-between">
+                <div style={{ fontSize: 14, fontWeight: 600 }}>Арендуемые помещения</div>
+                <Button kind="primary" small onClick={() => setPremiseModal({ unit_number: '', area_actual: null, area_bti: null, floor: null })}>Добавить помещение</Button>
+              </Row>
+              {actionError && !premiseModal && !rentModal && <Notice tone="red">{actionError}</Notice>}
+              {!premisesLoaded ? <Loading />
+                : premisesList.length === 0 ? <Card><Empty>Помещения не добавлены.</Empty></Card>
+                : (
+                  <div style={{ display: 'grid', gap: 12 }}>
+                    {premisesList.map(p => {
+                      const activeRent = p.rents.find(r => isActive(r))
+                      return (
+                        <Card key={p.id} pad={false}
+                          title={<Row gap={10}>
+                            <span>Офис № {p.unit_number}</span>
+                            {p.floor && <Muted small>{p.floor} этаж</Muted>}
+                            {p.area_actual && <Muted small>{p.area_actual} м²</Muted>}
+                          </Row>}
+                          actions={<Row gap={8}>
+                            {activeRent && <span style={{ fontSize: 13, color: C.green, fontWeight: 600 }}>{fmtMoney((activeRent.monthly_rent || 0) + (activeRent.cleaning_fee || 0))}/мес</span>}
+                            <Button small onClick={() => setPremiseModal({ ...p })}>Изменить</Button>
+                            <Button small kind="danger" onClick={() => deletePremise(p.id)}>Удалить</Button>
+                          </Row>}>
+                          <div style={{ padding: '10px 16px 0' }}>
+                            <Row justify="space-between">
+                              <Muted small>История ставок</Muted>
+                              <Button small kind="ghost" onClick={() => setRentModal({ premiseId: p.id, rent: { monthly_rent: null, cleaning_fee: null, valid_from: null, valid_to: null } })}>Изменить ставку</Button>
+                            </Row>
                           </div>
-                          {activeRent && <div style={{ fontSize: 13, color: '#059669', fontWeight: 600 }}>{fmtMoney((activeRent.monthly_rent || 0) + (activeRent.cleaning_fee || 0))}/мес</div>}
-                          <button onClick={() => setPremiseModal({ ...p })} style={{ padding: '4px 10px', border: '1px solid #e8ebf3', borderRadius: 5, background: '#fff', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', color: '#374151' }}>✎</button>
-                          <button onClick={() => deletePremise(p.id)} style={{ padding: '4px 8px', border: '1px solid #fee2e2', borderRadius: 5, background: '#fff', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', color: '#ef4444' }}>×</button>
-                        </div>
-                        <div style={{ padding: '10px 16px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                            <div style={{ fontSize: 12, fontWeight: 500, color: '#8596b4', textTransform: 'uppercase', letterSpacing: '.4px' }}>История ставок</div>
-                            <button onClick={() => setRentModal({ premiseId: p.id, rent: { monthly_rent: null, cleaning_fee: null, valid_from: null, valid_to: null } })}
-                              style={{ padding: '3px 10px', border: '1px solid #4f6ef7', borderRadius: 5, background: '#fff', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', color: '#4f6ef7' }}>
-                              + Изменить ставку
-                            </button>
-                          </div>
-                          {p.rents.length === 0 ? <div style={{ fontSize: 13, color: '#8596b4' }}>Ставки не указаны</div> : (
-                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                              <thead><tr style={{ borderBottom: '1px solid #f0f2f8' }}>
-                                {['С', 'По', 'Аренда ₽/мес', 'Уборка ₽/мес', 'Итого', 'Статус', ''].map(h => (
-                                  <th key={h} style={{ padding: '5px 8px', textAlign: 'left', fontWeight: 500, color: '#8596b4', fontSize: 12 }}>{h}</th>
-                                ))}
-                              </tr></thead>
-                              <tbody>
-                                {p.rents.map(r => (
-                                  <tr key={r.id} style={{ borderBottom: '1px solid #f8f9fc' }}>
-                                    <td style={{ padding: '6px 8px', color: '#374151' }}>{fmtDate(r.valid_from)}</td>
-                                    <td style={{ padding: '6px 8px', color: r.valid_to ? '#374151' : '#8596b4' }}>{fmtDate(r.valid_to)}</td>
-                                    <td style={{ padding: '6px 8px' }}>{fmtMoney(r.monthly_rent)}</td>
-                                    <td style={{ padding: '6px 8px', color: '#6b7280' }}>{fmtMoney(r.cleaning_fee)}</td>
-                                    <td style={{ padding: '6px 8px', fontWeight: 600, color: '#1a2240' }}>{fmtMoney((r.monthly_rent || 0) + (r.cleaning_fee || 0))}</td>
-                                    <td style={{ padding: '6px 8px' }}>
-                                      {isActive(r)
-                                        ? <span style={{ fontSize: 11, background: '#dcfce7', color: '#16a34a', padding: '2px 7px', borderRadius: 4, fontWeight: 600 }}>Текущая</span>
-                                        : <span style={{ fontSize: 11, background: '#f3f4f6', color: '#6b7280', padding: '2px 7px', borderRadius: 4 }}>Архив</span>}
-                                    </td>
-                                    <td style={{ padding: '6px 8px' }}>
-                                      <button onClick={() => setRentModal({ premiseId: p.id, rent: { ...r } })} style={{ padding: '2px 7px', border: '1px solid #e8ebf3', borderRadius: 4, background: '#fff', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', color: '#374151', marginRight: 4 }}>✎</button>
-                                      <button onClick={() => deleteRent(p.id, r.id)} style={{ padding: '2px 6px', border: '1px solid #fee2e2', borderRadius: 4, background: '#fff', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', color: '#ef4444' }}>×</button>
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
+                          {p.rents.length === 0 ? <div style={{ padding: '4px 16px 14px' }}><Muted small>Ставки не указаны</Muted></div> : (
+                            <Table<PremiseRent> dense rows={p.rents} rowKey={r => r.id} cols={[
+                              { key: 'from', title: 'С', render: r => fmtDate(r.valid_from), sort: r => r.valid_from },
+                              { key: 'to', title: 'По', render: r => r.valid_to ? fmtDate(r.valid_to) : <Muted>{fmtDate(r.valid_to)}</Muted>, sort: r => r.valid_to },
+                              { key: 'rent', title: 'Аренда ₽/мес', align: 'right', render: r => fmtMoney(r.monthly_rent), sort: r => r.monthly_rent },
+                              { key: 'clean', title: 'Уборка ₽/мес', align: 'right', render: r => <Muted>{fmtMoney(r.cleaning_fee)}</Muted>, sort: r => r.cleaning_fee },
+                              { key: 'sum', title: 'Итого', align: 'right', render: r => <b>{fmtMoney((r.monthly_rent || 0) + (r.cleaning_fee || 0))}</b>, sort: r => (r.monthly_rent || 0) + (r.cleaning_fee || 0) },
+                              { key: 'st', title: 'Статус', render: r => isActive(r) ? <Badge tone="green">Текущая</Badge> : <Badge>Архив</Badge> },
+                              { key: 'act', title: '', align: 'right', render: r => <Row gap={4} wrap={false} justify="flex-end">
+                                <Button small onClick={() => setRentModal({ premiseId: p.id, rent: { ...r } })}>Изменить</Button>
+                                <Button small kind="danger" onClick={() => deleteRent(p.id, r.id)}>Удалить</Button>
+                              </Row> },
+                            ]} />
                           )}
+                        </Card>
+                      )
+                    })}
+                  </div>
+                )}
+
+              {premiseModal !== null && (
+                <Modal title={premiseModal.id ? 'Редактировать помещение' : 'Добавить помещение'} onClose={() => setPremiseModal(null)} width={440}
+                  footer={<>
+                    <Button onClick={() => setPremiseModal(null)}>Отмена</Button>
+                    <Button kind="primary" onClick={savePremise} disabled={savingPremise}>{savingPremise ? 'Сохранение…' : 'Сохранить'}</Button>
+                  </>}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
+                    <Field label="Номер офиса" wide>
+                      <Input value={premiseModal.unit_number || ''} onChange={e => setPremiseModal(p => p ? { ...p, unit_number: e.target.value } : p)} placeholder="204" />
+                    </Field>
+                    <Field label="Площадь факт., м²">
+                      <Input type="number" value={premiseModal.area_actual ?? ''} onChange={e => setPremiseModal(p => p ? { ...p, area_actual: e.target.value ? parseFloat(e.target.value) : null } : p)} />
+                    </Field>
+                    <Field label="Площадь по БТИ, м²">
+                      <Input type="number" value={premiseModal.area_bti ?? ''} onChange={e => setPremiseModal(p => p ? { ...p, area_bti: e.target.value ? parseFloat(e.target.value) : null } : p)} />
+                    </Field>
+                    <Field label="Этаж">
+                      <Input type="number" value={premiseModal.floor ?? ''} onChange={e => setPremiseModal(p => p ? { ...p, floor: e.target.value ? parseInt(e.target.value) : null } : p)} />
+                    </Field>
+                  </div>
+                  {actionError && <Notice tone="red">{actionError}</Notice>}
+                </Modal>
+              )}
+
+              {rentModal !== null && (
+                <Modal title={rentModal.rent.id ? 'Редактировать ставку' : 'Изменить арендную ставку'} onClose={() => setRentModal(null)} width={440}
+                  footer={<>
+                    <Button onClick={() => setRentModal(null)}>Отмена</Button>
+                    <Button kind="primary" onClick={saveRent} disabled={savingPremise}>{savingPremise ? 'Сохранение…' : 'Сохранить'}</Button>
+                  </>}>
+                  <Muted>Оставьте «по» пустым для бессрочного действия</Muted>
+                  <div style={g2}>
+                    <Field label="Действует с">
+                      <Input type="date" value={rentModal.rent.valid_from || ''} onChange={e => setRentModal(m => m ? { ...m, rent: { ...m.rent, valid_from: e.target.value || null } } : m)} />
+                    </Field>
+                    <Field label="Действует по">
+                      <Input type="date" value={rentModal.rent.valid_to || ''} onChange={e => setRentModal(m => m ? { ...m, rent: { ...m.rent, valid_to: e.target.value || null } } : m)} />
+                    </Field>
+                    <Field label="Аренда ₽/мес">
+                      <Input type="number" value={rentModal.rent.monthly_rent ?? ''} onChange={e => setRentModal(m => m ? { ...m, rent: { ...m.rent, monthly_rent: e.target.value ? parseFloat(e.target.value) : null } } : m)} />
+                    </Field>
+                    <Field label="Уборка ₽/мес">
+                      <Input type="number" value={rentModal.rent.cleaning_fee ?? ''} onChange={e => setRentModal(m => m ? { ...m, rent: { ...m.rent, cleaning_fee: e.target.value ? parseFloat(e.target.value) : null } } : m)} />
+                    </Field>
+                    <Field label="Примечание" wide>
+                      <Input value={rentModal.rent.notes || ''} onChange={e => setRentModal(m => m ? { ...m, rent: { ...m.rent, notes: e.target.value || null } } : m)} placeholder="Индексация по доп. соглашению №..." />
+                    </Field>
+                  </div>
+                  {actionError && <Notice tone="red">{actionError}</Notice>}
+                </Modal>
+              )}
+            </>
+          )
+        })()}
+
+        {/* ─── Счётчики ─── */}
+        {tab === 3 && (
+          <Card title="Приборы учёта">
+            {meterError && <div style={{ marginBottom: 10 }}><Notice tone="red">{meterError}</Notice></div>}
+            {!metersLoaded ? (
+              <Loading />
+            ) : meters.length === 0 ? (
+              <Empty>Счётчики не найдены для помещений арендатора</Empty>
+            ) : (
+              <div style={{ display: 'grid', gap: 10 }}>
+                {meters.map((m: any) => {
+                  const readings = (m.meter_readings || []).sort((a: any, b: any) => (b.created_at || '').localeCompare(a.created_at || ''))
+                  const last = readings[0]
+                  const tariff = m.heat_tariff || m.tariff
+                  return (
+                    <div key={m.id} style={{ padding: 12, background: C.card2, border: `1px solid ${C.line}`, borderRadius: C.radiusSm }}>
+                      <Row justify="space-between" align="flex-start">
+                        <div>
+                          <div style={{ fontSize: 14, fontWeight: 500 }}>{METER_LABELS[m.type] || m.type}{m.number ? ` · № ${m.number}` : ''}</div>
+                          <Sub>Заводской № {m.serial || '—'}{tariff ? ` · тариф ${tariff} ₽/${METER_UNITS[m.type] || 'ед.'}` : ''}{m.location ? ` · ${m.location}` : ''}</Sub>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          {last ? (
+                            <>
+                              <div style={{ fontSize: 14, fontWeight: 600 }}>{last.curr_value} {METER_UNITS[m.type] || 'ед.'}</div>
+                              <Sub>за {last.period || dateRu(last.created_at)}</Sub>
+                            </>
+                          ) : <Muted small>Нет показаний</Muted>}
+                        </div>
+                      </Row>
+                      <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                        <Input
+                          placeholder="Новое показание"
+                          style={{ flex: 1, width: 'auto', minWidth: 0 }}
+                          type="number"
+                          value={meterReadings[m.id] || ''}
+                          onChange={e => setMeterReadings(r => ({ ...r, [m.id]: e.target.value }))}
+                        />
+                        <Button
+                          kind="primary"
+                          disabled={!meterReadings[m.id] || savingMeter === m.id}
+                          onClick={async () => {
+                            const curr = parseFloat(meterReadings[m.id])
+                            if (isNaN(curr)) return
+                            setSavingMeter(m.id); setMeterError('')
+                            const period = new Date().toISOString().slice(0, 7)
+                            const prev = last?.curr_value ?? 0
+                            const consumption = Math.max(0, curr - prev)
+                            const amount = tariff ? consumption * tariff : 0
+                            const { error } = await supabase.from('meter_readings').insert({ meter_id: m.id, period, prev_value: prev, curr_value: curr, consumption, amount, reading: curr, previous_reading: prev, reading_date: new Date().toISOString().slice(0, 10) })
+                            if (error) { setMeterError(error.message); setSavingMeter(null); return }
+                            setMeterReadings(r => ({ ...r, [m.id]: '' }))
+                            // Refresh meters
+                            const { data: fresh } = await supabase.from('meter_readings').select('period,curr_value,created_at').eq('meter_id', m.id).order('created_at', { ascending: false }).limit(1)
+                            setMeters(prev => prev.map(x => x.id === m.id ? { ...x, meter_readings: [...(fresh || []), ...(x.meter_readings || [])] } : x))
+                            setSavingMeter(null)
+                          }}>
+                          {savingMeter === m.id ? 'Сохранение…' : 'Сохранить'}
+                        </Button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </Card>
+        )}
+
+        {/* ─── Счета ─── */}
+        {tab === 4 && (
+          <Card title="История счетов" pad={false}>
+            {!invoicesLoaded ? <Loading /> : (
+              <Table<any> rows={tenantInvoices} rowKey={inv => inv.id} onRow={inv => go('/invoices/' + inv.id)} empty="Счетов не найдено" cols={[
+                { key: 'n', title: 'Номер', render: inv => <b>№ {inv.number}</b>, sort: inv => inv.number },
+                { key: 'p', title: 'Период', render: inv => <Muted>{inv.period || '—'}</Muted>, sort: inv => inv.period },
+                { key: 't', title: 'Итого', align: 'right', render: inv => <b>{money(inv.total)}</b>, sort: inv => Number(inv.total || 0) },
+                { key: 'o', title: 'Остаток', align: 'right', render: inv => <span style={{ color: Number(inv.open_amount) > 0 ? C.red : C.muted }}>{money(inv.open_amount)}</span>, sort: inv => Number(inv.open_amount || 0) },
+                { key: 's', title: 'Статус', render: inv => { const st = PAY_STATUS[inv.pay_status]; return <Badge tone={st?.tone}>{st?.label || inv.pay_status}</Badge> } },
+              ]} />
+            )}
+          </Card>
+        )}
+
+        {/* ─── Документы ─── */}
+        {tab === 5 && (() => {
+          const currentDocTypes = getDocTypes(saved.type)
+          const requiredCount = currentDocTypes.filter(d => d.required).length
+          const uploadedReqCount = currentDocTypes.filter(d => d.required && uploadedDocKeys.has(d.key)).length
+          return (
+            <>
+              <Row justify="space-between">
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 600 }}>Перечень документов — {TYPE_LABELS[saved.type]}</div>
+                  <Sub>Обязательных: {uploadedReqCount}/{requiredCount} загружено</Sub>
+                </div>
+                <Progress value={uploadedReqCount} total={requiredCount} width={100} />
+              </Row>
+              {actionError && <Notice tone="red">{actionError}</Notice>}
+              {!docsLoaded ? <Loading /> : (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12 }}>
+                  {currentDocTypes.map(dt => {
+                    const existing = documents.filter((d: any) => d.doc_type === dt.key)
+                    const isDone = existing.length > 0
+                    return (
+                      <div key={dt.key} style={{ background: C.card, border: `1px solid ${isDone ? C.green : dt.required ? C.amberLine : C.line}`, borderRadius: C.radius, padding: 14, display: 'grid', gap: 10, alignContent: 'start' }}>
+                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 14, fontWeight: 600 }}>{dt.label}</div>
+                            <div style={{ fontSize: 12, color: isDone ? C.green : C.muted, marginTop: 2 }}>
+                              {isDone ? `${existing.length} файл(ов) загружено` : 'Не загружено'}
+                            </div>
+                          </div>
+                          {isDone ? <Badge tone="green">есть</Badge> : dt.required ? <Badge tone="amber">обязательно</Badge> : null}
+                        </div>
+                        {existing.map((doc: any) => (
+                          <div key={doc.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, padding: '4px 8px', background: C.card2, borderRadius: C.radiusSm, fontSize: 13 }}>
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{doc.file_name}</span>
+                            <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
+                              {doc.file_url && <Button small kind="ghost" onClick={() => openStoredFile(doc.file_url)}>Открыть</Button>}
+                              <Button small kind="ghost" style={{ color: C.red }} onClick={() => deleteDoc(doc.id)}>Удалить</Button>
+                            </div>
+                          </div>
+                        ))}
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          {dt.key === 'opd_consent' && (
+                            <Button small style={{ flex: 1 }} onClick={() => printOPD(saved)}>Распечатать бланк</Button>
+                          )}
+                          <label style={{ flex: 1, display: 'block', padding: '4px 0', border: `1px dashed ${isDone ? C.green : C.lineStrong}`, borderRadius: C.radiusSm, color: uploadingDoc === dt.key ? C.faint : C.accent, fontSize: 12, fontWeight: 500, cursor: 'pointer', textAlign: 'center', boxSizing: 'border-box' }}>
+                            {uploadingDoc === dt.key ? 'Загрузка…' : isDone ? 'Загрузить ещё' : 'Загрузить'}
+                            <input type="file" style={{ display: 'none' }} disabled={uploadingDoc === dt.key}
+                              onChange={e => { if (e.target.files?.[0]) handleDocUpload(dt.key, e.target.files[0]); e.target.value = '' }} />
+                          </label>
                         </div>
                       </div>
                     )
                   })}
                 </div>
               )}
+            </>
+          )
+        })()}
 
-            {premiseModal !== null && (
-              <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }} onClick={e => { if (e.target === e.currentTarget) setPremiseModal(null) }}>
-                <div style={{ background: '#fff', borderRadius: 12, padding: 28, width: 440, boxShadow: '0 8px 32px rgba(0,0,0,0.15)' }}>
-                  <div style={{ fontSize: 15, fontWeight: 600, color: '#1a2240', marginBottom: 20 }}>{premiseModal.id ? 'Редактировать помещение' : 'Добавить помещение'}</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
-                    <div style={{ gridColumn: '1 / -1' }}><div style={s.label}>Номер офиса</div>
-                      <input style={s.inp} value={premiseModal.unit_number || ''} onChange={e => setPremiseModal(p => p ? { ...p, unit_number: e.target.value } : p)} placeholder="204" />
-                    </div>
-                    <div><div style={s.label}>Площадь факт., м²</div>
-                      <input style={s.inp} type="number" value={premiseModal.area_actual ?? ''} onChange={e => setPremiseModal(p => p ? { ...p, area_actual: e.target.value ? parseFloat(e.target.value) : null } : p)} />
-                    </div>
-                    <div><div style={s.label}>Площадь по БТИ, м²</div>
-                      <input style={s.inp} type="number" value={premiseModal.area_bti ?? ''} onChange={e => setPremiseModal(p => p ? { ...p, area_bti: e.target.value ? parseFloat(e.target.value) : null } : p)} />
-                    </div>
-                    <div><div style={s.label}>Этаж</div>
-                      <input style={s.inp} type="number" value={premiseModal.floor ?? ''} onChange={e => setPremiseModal(p => p ? { ...p, floor: e.target.value ? parseInt(e.target.value) : null } : p)} />
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button onClick={() => setPremiseModal(null)} style={{ flex: 1, padding: '9px', border: '1px solid #e8ebf3', borderRadius: 7, background: '#fff', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', color: '#6b7280' }}>Отмена</button>
-                    <button onClick={savePremise} disabled={savingPremise} style={{ flex: 1, padding: '9px', border: 'none', borderRadius: 7, background: '#4f6ef7', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', color: '#fff', opacity: savingPremise ? 0.7 : 1 }}>
-                      {savingPremise ? 'Сохранение...' : 'Сохранить'}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
+        {/* ─── Договоры ─── */}
+        {tab === 6 && (
+          <>
+            <Row gap={8}>
+              {CONTRACT_TYPES.map(ct => (
+                <Button key={ct.key}
+                  onClick={() => setContractModal({ type: ct.key, number: saved.contractNumber || '', date: saved.contractStartDate || '', startDate: saved.contractStartDate || '', endDate: saved.contractEndDate || '', notes: '' })}>
+                  Добавить: {ct.label}
+                </Button>
+              ))}
+            </Row>
+            {actionError && !contractModal && <Notice tone="red">{actionError}</Notice>}
 
-            {rentModal !== null && (
-              <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }} onClick={e => { if (e.target === e.currentTarget) setRentModal(null) }}>
-                <div style={{ background: '#fff', borderRadius: 12, padding: 28, width: 440, boxShadow: '0 8px 32px rgba(0,0,0,0.15)' }}>
-                  <div style={{ fontSize: 15, fontWeight: 600, color: '#1a2240', marginBottom: 4 }}>{rentModal.rent.id ? 'Редактировать ставку' : 'Изменить арендную ставку'}</div>
-                  <div style={{ fontSize: 13, color: '#8596b4', marginBottom: 20 }}>Оставьте «по» пустым для бессрочного действия</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
-                    <div><div style={s.label}>Действует с</div>
-                      <input style={s.inp} type="date" value={rentModal.rent.valid_from || ''} onChange={e => setRentModal(m => m ? { ...m, rent: { ...m.rent, valid_from: e.target.value || null } } : m)} />
-                    </div>
-                    <div><div style={s.label}>Действует по</div>
-                      <input style={s.inp} type="date" value={rentModal.rent.valid_to || ''} onChange={e => setRentModal(m => m ? { ...m, rent: { ...m.rent, valid_to: e.target.value || null } } : m)} />
-                    </div>
-                    <div><div style={s.label}>Аренда ₽/мес</div>
-                      <input style={s.inp} type="number" value={rentModal.rent.monthly_rent ?? ''} onChange={e => setRentModal(m => m ? { ...m, rent: { ...m.rent, monthly_rent: e.target.value ? parseFloat(e.target.value) : null } } : m)} />
-                    </div>
-                    <div><div style={s.label}>Уборка ₽/мес</div>
-                      <input style={s.inp} type="number" value={rentModal.rent.cleaning_fee ?? ''} onChange={e => setRentModal(m => m ? { ...m, rent: { ...m.rent, cleaning_fee: e.target.value ? parseFloat(e.target.value) : null } } : m)} />
-                    </div>
-                    <div style={{ gridColumn: '1 / -1' }}><div style={s.label}>Примечание</div>
-                      <input style={s.inp} value={rentModal.rent.notes || ''} onChange={e => setRentModal(m => m ? { ...m, rent: { ...m.rent, notes: e.target.value || null } } : m)} placeholder="Индексация по доп. соглашению №..." />
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button onClick={() => setRentModal(null)} style={{ flex: 1, padding: '9px', border: '1px solid #e8ebf3', borderRadius: 7, background: '#fff', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', color: '#6b7280' }}>Отмена</button>
-                    <button onClick={saveRent} disabled={savingPremise} style={{ flex: 1, padding: '9px', border: 'none', borderRadius: 7, background: '#4f6ef7', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', color: '#fff', opacity: savingPremise ? 0.7 : 1 }}>
-                      {savingPremise ? 'Сохранение...' : 'Сохранить'}
-                    </button>
-                  </div>
+            {!contractsLoaded ? <Loading />
+              : contracts.length === 0 ? (
+                <Card><Empty>Договоры не созданы. Нажмите кнопку выше, чтобы создать первый документ.</Empty></Card>
+              ) : (
+                <div style={{ display: 'grid', gap: 10 }}>
+                  {contracts.map(c => {
+                    const typeLabel = CONTRACT_TYPES.find(ct => ct.key === c.contract_type)?.label || c.contract_type
+                    return (
+                      <div key={c.id} style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: C.radius, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+                        <div style={{ width: 36, height: 36, borderRadius: 8, background: C.accentBg, color: C.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          <Icon name="contracts" size={18} />
+                        </div>
+                        <div style={{ flex: 1, minWidth: 180 }}>
+                          <div style={{ fontSize: 14, fontWeight: 600 }}>{typeLabel}{c.contract_number ? ` № ${c.contract_number}` : ''}</div>
+                          <Sub>
+                            {c.signed_date ? dateRu(c.signed_date) : '—'}
+                            {c.valid_from && ` · с ${dateRu(c.valid_from)}`}
+                            {c.valid_to && ` по ${dateRu(c.valid_to)}`}
+                            {c.notes && ` · ${c.notes}`}
+                          </Sub>
+                        </div>
+                        <Row gap={6} wrap={false}>
+                          <Button small onClick={() => printContract(c.contract_type, saved, c.contract_number || '', c.valid_from || '', c.valid_to || '', premisesList)}>Печать</Button>
+                          <Button small onClick={() => setContractModal({ ...c, type: c.contract_type, startDate: c.valid_from, endDate: c.valid_to })}>Изменить</Button>
+                          <Button small kind="danger" onClick={() => deleteContract(c.id)}>Удалить</Button>
+                        </Row>
+                      </div>
+                    )
+                  })}
                 </div>
-              </div>
+              )}
+
+            {contractModal && (
+              <Modal title={CONTRACT_TYPES.find(ct => ct.key === contractModal.type)?.label || 'Документ'} onClose={() => setContractModal(null)} width={480}
+                footer={<>
+                  <Button onClick={() => setContractModal(null)}>Отмена</Button>
+                  <Button onClick={() => { saveContract(); setTimeout(() => printContract(contractModal.type, saved, contractModal.number || '', contractModal.startDate || '', contractModal.endDate || '', premisesList), 500) }}>Сохранить и распечатать</Button>
+                  <Button kind="primary" onClick={saveContract} disabled={savingContract}>{savingContract ? 'Сохранение…' : 'Сохранить'}</Button>
+                </>}>
+                <div style={g2}>
+                  <Field label="Номер">
+                    <Input value={contractModal.number || ''} onChange={e => setContractModal((m: any) => ({ ...m, number: e.target.value }))} placeholder="2025-001" />
+                  </Field>
+                  <Field label="Дата подписания">
+                    <Input type="date" value={contractModal.date || ''} onChange={e => setContractModal((m: any) => ({ ...m, date: e.target.value }))} />
+                  </Field>
+                  <Field label="Действует с">
+                    <Input type="date" value={contractModal.startDate || ''} onChange={e => setContractModal((m: any) => ({ ...m, startDate: e.target.value }))} />
+                  </Field>
+                  <Field label="Действует по">
+                    <Input type="date" value={contractModal.endDate || ''} onChange={e => setContractModal((m: any) => ({ ...m, endDate: e.target.value }))} />
+                  </Field>
+                  <Field label="Примечание" wide>
+                    <Input value={contractModal.notes || ''} onChange={e => setContractModal((m: any) => ({ ...m, notes: e.target.value }))} />
+                  </Field>
+                </div>
+                {actionError && <Notice tone="red">{actionError}</Notice>}
+              </Modal>
             )}
           </>
-        )
-      })()}
-
-      {/* ─── TAB 3: СЧЁТЧИКИ ─── */}
-      {tab === 3 && (
-        <div style={s.card}>
-          <div style={s.sectionTitle}>Приборы учёта</div>
-          {!metersLoaded ? (
-            <div style={{ color: '#8596b4', fontSize: 13 }}>Загрузка...</div>
-          ) : meters.length === 0 ? (
-            <div style={{ color: '#8596b4', fontSize: 13, padding: '12px 0' }}>Счётчики не найдены для помещений арендатора</div>
-          ) : meters.map((m: any) => {
-            const readings = (m.meter_readings || []).sort((a: any, b: any) => (b.created_at || '').localeCompare(a.created_at || ''))
-            const last = readings[0]
-            const tariff = m.heat_tariff || m.tariff
-            return (
-              <div key={m.id} style={{ padding: 12, background: '#f8f9fc', borderRadius: 8, marginBottom: 10 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                  <div>
-                    <div style={{ fontSize: 14, fontWeight: 500, color: '#1a2240' }}>{METER_LABELS[m.type] || m.type}{m.number ? ` · #${m.number}` : ''}</div>
-                    <div style={{ fontSize: 13, color: '#8596b4', marginTop: 2 }}>№ {m.serial || '—'}{tariff ? ` · тариф ${tariff} ₽/${METER_UNITS[m.type] || 'ед.'}` : ''}{m.location ? ` · ${m.location}` : ''}</div>
-                  </div>
-                  <div style={{ textAlign: 'right' }}>
-                    {last ? (
-                      <>
-                        <div style={{ fontSize: 14, fontWeight: 600, color: '#1a2240' }}>{last.curr_value} {METER_UNITS[m.type] || 'ед.'}</div>
-                        <div style={{ fontSize: 13, color: '#8596b4' }}>за {last.period || new Date(last.created_at).toLocaleDateString('ru')}</div>
-                      </>
-                    ) : <div style={{ fontSize: 13, color: '#8596b4' }}>Нет показаний</div>}
-                  </div>
-                </div>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <input
-                    placeholder="Новое показание"
-                    style={{ ...s.inp, flex: 1 }}
-                    type="number"
-                    value={meterReadings[m.id] || ''}
-                    onChange={e => setMeterReadings(r => ({ ...r, [m.id]: e.target.value }))}
-                  />
-                  <button
-                    disabled={!meterReadings[m.id] || savingMeter === m.id}
-                    onClick={async () => {
-                      const curr = parseFloat(meterReadings[m.id])
-                      if (isNaN(curr)) return
-                      setSavingMeter(m.id)
-                      const period = new Date().toISOString().slice(0, 7)
-                      const prev = last?.curr_value ?? 0
-                      const consumption = Math.max(0, curr - prev)
-                      const amount = tariff ? consumption * tariff : 0
-                      await supabase.from('meter_readings').insert({ meter_id: m.id, period, prev_value: prev, curr_value: curr, consumption, amount, reading: curr, previous_reading: prev, reading_date: new Date().toISOString().slice(0, 10) })
-                      setMeterReadings(r => ({ ...r, [m.id]: '' }))
-                      // Refresh meters
-                      const { data: fresh } = await supabase.from('meter_readings').select('period,curr_value,created_at').eq('meter_id', m.id).order('created_at', { ascending: false }).limit(1)
-                      setMeters(prev => prev.map(x => x.id === m.id ? { ...x, meter_readings: [...(fresh || []), ...(x.meter_readings || [])] } : x))
-                      setSavingMeter(null)
-                    }}
-                    style={{ padding: '7px 14px', border: 'none', borderRadius: 6, background: savingMeter === m.id ? '#a5b4fc' : '#4f6ef7', color: '#fff', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500 }}>
-                    {savingMeter === m.id ? '...' : 'Сохранить'}
-                  </button>
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      )}
-
-      {/* ─── TAB 4: СЧЕТА ─── */}
-      {tab === 4 && (
-        <div style={s.card}>
-          <div style={s.sectionTitle}>История счетов</div>
-          {!invoicesLoaded ? (
-            <div style={{ color: '#8596b4', fontSize: 13 }}>Загрузка...</div>
-          ) : tenantInvoices.length === 0 ? (
-            <div style={{ color: '#8596b4', fontSize: 13, padding: '12px 0' }}>Счетов не найдено</div>
-          ) : (
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
-              <thead><tr style={{ background: '#f8f9fc', borderBottom: '1px solid #e8ebf3' }}>
-                {['Номер', 'Период', 'Итого', 'Остаток', 'Статус'].map(h => (
-                  <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 500, color: '#8596b4', fontSize: 13 }}>{h}</th>
-                ))}
-              </tr></thead>
-              <tbody>
-                {tenantInvoices.map((inv: any) => {
-                  const st = PAY_STATUS[inv.pay_status]
-                  return (
-                    <tr key={inv.id} onClick={() => { go('/invoices/' + inv.id )}} style={{ borderBottom: '1px solid #f0f2f8', cursor: 'pointer' }}>
-                      <td style={{ padding: '9px 12px', fontWeight: 500, color: '#1a2240' }}>№{inv.number}</td>
-                      <td style={{ padding: '9px 12px', color: '#6b7280' }}>{inv.period || '—'}</td>
-                      <td style={{ padding: '9px 12px', fontWeight: 600, color: '#1a2240' }}>{Number(inv.total || 0).toLocaleString('ru')} ₽</td>
-                      <td style={{ padding: '9px 12px', color: Number(inv.open_amount) > 0 ? '#ef4444' : '#6b7280' }}>{Number(inv.open_amount || 0).toLocaleString('ru')} ₽</td>
-                      <td style={{ padding: '9px 12px' }}><Badge tone={st?.tone}>{st?.label || inv.pay_status}</Badge></td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          )}
-        </div>
-      )}
-
-      {/* ─── TAB 5: ДОКУМЕНТЫ ─── */}
-      {tab === 5 && (() => {
-        const currentDocTypes = getDocTypes(saved.type)
-        const requiredCount = currentDocTypes.filter(d => d.required).length
-        const uploadedReqCount = currentDocTypes.filter(d => d.required && uploadedDocKeys.has(d.key)).length
-        return (
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-              <div>
-                <div style={{ fontSize: 14, color: '#1a2240', fontWeight: 500 }}>
-                  Перечень документов — {TYPE_LABELS[saved.type]}
-                </div>
-                <div style={{ fontSize: 13, color: '#8596b4', marginTop: 2 }}>
-                  Обязательных: {uploadedReqCount}/{requiredCount} загружено
-                </div>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <div style={{ width: 100, height: 5, background: '#f0f2f8', borderRadius: 3, overflow: 'hidden' }}>
-                  <div style={{ width: `${requiredCount > 0 ? (uploadedReqCount / requiredCount) * 100 : 0}%`, height: '100%', background: uploadedReqCount === requiredCount ? '#22c55e' : '#4f6ef7', borderRadius: 3 }} />
-                </div>
-              </div>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              {currentDocTypes.map(dt => {
-                const existing = documents.filter((d: any) => d.doc_type === dt.key)
-                const isDone = existing.length > 0
-                return (
-                  <div key={dt.key} style={{ background: '#fff', border: `1px solid ${isDone ? '#bbf7d0' : dt.required ? '#fde68a' : '#e8ebf3'}`, borderRadius: 10, padding: 14 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-                      <span style={{ fontSize: 20 }}>{dt.icon}</span>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: 14, fontWeight: 600, color: '#1a2240' }}>
-                          {dt.label}
-                          {dt.required && !isDone && <span style={{ marginLeft: 6, fontSize: 11, color: '#d97706', fontWeight: 400 }}>обязательно</span>}
-                        </div>
-                        <div style={{ fontSize: 12, color: isDone ? '#16a34a' : '#8596b4' }}>
-                          {isDone ? `${existing.length} файл(ов) загружено` : 'Не загружено'}
-                        </div>
-                      </div>
-                      {isDone && <span style={{ color: '#16a34a', fontSize: 18 }}>✓</span>}
-                    </div>
-                    {existing.map((doc: any) => (
-                      <div key={doc.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 8px', background: '#f8f9fc', borderRadius: 6, marginBottom: 6, fontSize: 13 }}>
-                        <span style={{ color: '#374151', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 160 }}>{doc.file_name}</span>
-                        <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                          {doc.file_url && <a href="#" onClick={e => { e.preventDefault(); openStoredFile(doc.file_url) }} style={{ color: '#4f6ef7', fontSize: 12, textDecoration: 'none' }}>↓</a>}
-                          <button onClick={() => deleteDoc(doc.id)} style={{ border: 'none', background: 'none', color: '#ef4444', fontSize: 12, cursor: 'pointer', padding: '0 4px' }}>×</button>
-                        </div>
-                      </div>
-                    ))}
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      {dt.key === 'opd_consent' && (
-                        <button onClick={() => printOPD(saved)}
-                          style={{ flex: 1, padding: '6px 0', border: '1px solid #e8ebf3', borderRadius: 7, background: '#f8f9fc', color: '#374151', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>
-                          Распечатать бланк
-                        </button>
-                      )}
-                      <label style={{ flex: 1, display: 'block', padding: '6px 0', border: `1px dashed ${isDone ? '#bbf7d0' : '#e8ebf3'}`, borderRadius: 7, background: 'transparent', color: uploadingDoc === dt.key ? '#8596b4' : '#4f6ef7', fontSize: 13, cursor: 'pointer', textAlign: 'center', boxSizing: 'border-box' as const }}>
-                        {uploadingDoc === dt.key ? 'Загрузка...' : isDone ? '+ Ещё' : '+ Загрузить'}
-                        <input type="file" style={{ display: 'none' }} disabled={uploadingDoc === dt.key}
-                          onChange={e => { if (e.target.files?.[0]) handleDocUpload(dt.key, e.target.files[0]); e.target.value = '' }} />
-                      </label>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        )
-      })()}
-
-      {/* ─── TAB 6: ДОГОВОРЫ ─── */}
-      {tab === 6 && (
-        <div>
-          <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
-            {CONTRACT_TYPES.map(ct => (
-              <button key={ct.key}
-                onClick={() => setContractModal({ type: ct.key, number: saved.contractNumber || '', date: saved.contractStartDate || '', startDate: saved.contractStartDate || '', endDate: saved.contractEndDate || '', notes: '' })}
-                style={{ padding: '7px 14px', border: '1px solid #e8ebf3', borderRadius: 7, background: '#fff', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', color: '#4f6ef7', fontWeight: 500 }}>
-                + {ct.label}
-              </button>
-            ))}
-          </div>
-
-          {!contractsLoaded ? <div style={{ color: '#8596b4', fontSize: 14 }}>Загрузка...</div>
-            : contracts.length === 0 ? (
-              <div style={{ padding: '40px 0', textAlign: 'center', color: '#8596b4', fontSize: 14 }}>
-                Договоры не созданы. Нажмите кнопку выше чтобы создать первый документ.
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {contracts.map(c => {
-                  const typeLabel = CONTRACT_TYPES.find(ct => ct.key === c.contract_type)?.label || c.contract_type
-                  return (
-                    <div key={c.id} style={{ background: '#fff', border: '1px solid #e8ebf3', borderRadius: 10, padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 14 }}>
-                      <div style={{ width: 36, height: 36, borderRadius: 8, background: '#eff3ff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}></div>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: 14, fontWeight: 600, color: '#1a2240' }}>{typeLabel}{c.contract_number ? ` № ${c.contract_number}` : ''}</div>
-                        <div style={{ fontSize: 13, color: '#8596b4', marginTop: 2 }}>
-                          {c.signed_date ? new Date(c.signed_date).toLocaleDateString('ru-RU') : '—'}
-                          {c.valid_from && ` · с ${new Date(c.valid_from).toLocaleDateString('ru-RU')}`}
-                          {c.valid_to && ` по ${new Date(c.valid_to).toLocaleDateString('ru-RU')}`}
-                          {c.notes && ` · ${c.notes}`}
-                        </div>
-                      </div>
-                      <button onClick={() => printContract(c.contract_type, saved, c.contract_number || '', c.valid_from || '', c.valid_to || '', premisesList)}
-                        style={{ padding: '6px 12px', border: '1px solid #e8ebf3', borderRadius: 6, background: '#fff', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', color: '#374151' }}>Печать</button>
-                      <button onClick={() => setContractModal({ ...c, type: c.contract_type, startDate: c.valid_from, endDate: c.valid_to })}
-                        style={{ padding: '6px 10px', border: '1px solid #e8ebf3', borderRadius: 6, background: '#fff', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', color: '#374151' }}>✎</button>
-                      <button onClick={() => deleteContract(c.id)}
-                        style={{ padding: '6px 10px', border: '1px solid #fee2e2', borderRadius: 6, background: '#fff', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', color: '#ef4444' }}>×</button>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-
-          {contractModal && (
-            <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }} onClick={e => { if (e.target === e.currentTarget) setContractModal(null) }}>
-              <div style={{ background: '#fff', borderRadius: 12, padding: 28, width: 480, boxShadow: '0 8px 32px rgba(0,0,0,0.15)' }}>
-                <div style={{ fontSize: 15, fontWeight: 600, color: '#1a2240', marginBottom: 20 }}>
-                  {CONTRACT_TYPES.find(ct => ct.key === contractModal.type)?.label}
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  <div style={s.grid2}>
-                    <div><div style={s.label}>Номер</div>
-                      <input style={s.inp} value={contractModal.number || ''} onChange={e => setContractModal((m: any) => ({ ...m, number: e.target.value }))} placeholder="2025-001" />
-                    </div>
-                    <div><div style={s.label}>Дата подписания</div>
-                      <input style={s.inp} type="date" value={contractModal.date || ''} onChange={e => setContractModal((m: any) => ({ ...m, date: e.target.value }))} />
-                    </div>
-                    <div><div style={s.label}>Действует с</div>
-                      <input style={s.inp} type="date" value={contractModal.startDate || ''} onChange={e => setContractModal((m: any) => ({ ...m, startDate: e.target.value }))} />
-                    </div>
-                    <div><div style={s.label}>Действует по</div>
-                      <input style={s.inp} type="date" value={contractModal.endDate || ''} onChange={e => setContractModal((m: any) => ({ ...m, endDate: e.target.value }))} />
-                    </div>
-                  </div>
-                  <div><div style={s.label}>Примечание</div>
-                    <input style={s.inp} value={contractModal.notes || ''} onChange={e => setContractModal((m: any) => ({ ...m, notes: e.target.value }))} />
-                  </div>
-                </div>
-                <div style={{ display: 'flex', gap: 8, marginTop: 20 }}>
-                  <button onClick={() => setContractModal(null)} style={{ flex: 1, padding: '9px', border: '1px solid #e8ebf3', borderRadius: 7, background: '#fff', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', color: '#6b7280' }}>Отмена</button>
-                  <button onClick={() => { saveContract(); setTimeout(() => printContract(contractModal.type, saved, contractModal.number || '', contractModal.startDate || '', contractModal.endDate || '', premisesList), 500) }}
-                    style={{ padding: '9px 16px', border: 'none', borderRadius: 7, background: '#6b7280', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', color: '#fff' }}>Сохранить и распечатать</button>
-                  <button onClick={saveContract} disabled={savingContract} style={{ flex: 1, padding: '9px', border: 'none', borderRadius: 7, background: '#4f6ef7', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', color: '#fff', opacity: savingContract ? 0.7 : 1 }}>
-                    {savingContract ? 'Сохранение...' : 'Сохранить'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
+        )}
+      </Page>
     </div>
   )
 }
