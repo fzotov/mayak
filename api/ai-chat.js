@@ -29,13 +29,14 @@ export default async function handler(req, res) {
     const in30 = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10)
     const monthStart = new Date().toISOString().slice(0, 7) + '-01'
 
-    const [tenants, overdueInvs, expContracts, openTasks, recentInvs, units, kbArticles] = await Promise.all([
+    const [tenants, overdueInvs, expContracts, openTasks, recentInvs, units, balances, kbArticles] = await Promise.all([
       sb('tenants?select=full_name,type,inn,monthly_rent,contract_end_date,email,phone&order=full_name'),
       sb('invoices?select=number,total_amount,period,tenants(full_name),units(number)&status=eq.OVERDUE&order=created_at&limit=10'),
       sb(`contracts?select=number,end_date,tenants(full_name)&end_date=gte.${today}&end_date=lte.${in30}&order=end_date`),
       sb('tasks?select=title,status,priority,source&status=in.(open,in_progress)&order=created_at.desc&limit=10'),
       sb(`invoices?select=number,total_amount,status,period,tenants(full_name)&period=gte.${monthStart}&order=created_at.desc&limit=15`),
-      sb('units?select=number,status&order=number'),
+      sb('units?select=number,floor,area,status,rent_rate&order=number'),
+      sb('tenant_balances?select=debt,advance,as_of,tenants(full_name)&order=debt.desc&limit=30'),
       sb('kb_articles?select=title,content,category&order=created_at.desc&limit=300'),
     ])
 
@@ -49,6 +50,11 @@ export default async function handler(req, res) {
     const totalUnits = (Array.isArray(units) ? units : []).length
     const overdueTotal = (Array.isArray(overdueInvs) ? overdueInvs : []).reduce((s, i) => s + (i.total_amount || 0), 0)
     const monthRevenue = (Array.isArray(recentInvs) ? recentInvs : []).filter(i => ['SENT','PAID'].includes(i.status)).reduce((s, i) => s + (i.total_amount || 0), 0)
+
+    const freeUnits = (Array.isArray(units) ? units : []).filter(u => u.status === 'free')
+    const freeLines = freeUnits.map(u => `• №${u.number}, ${u.floor ?? '?'} этаж, ${u.area ?? '?'} м²${u.rent_rate ? `, ставка ${fmt(u.rent_rate)} ₽/м²` : ''}`).join('\n')
+    const debtLines = (Array.isArray(balances) ? balances : []).filter(b => Number(b.debt) - Number(b.advance) > 0)
+      .map(b => `• ${b.tenants?.full_name || '—'}: долг ${fmt(Number(b.debt) - Number(b.advance))} ₽ (по 1С на ${String(b.as_of || '').slice(0, 10)})`).join('\n')
 
     const tenantLines = (Array.isArray(tenants) ? tenants : []).map(t =>
       `• ${t.full_name} (${t.type}) — аренда ${fmt(t.monthly_rent)} ₽/мес, договор до ${t.contract_end_date || '—'}`
@@ -77,6 +83,12 @@ export default async function handler(req, res) {
 ### Заполняемость
 Занято ${occupiedUnits} из ${totalUnits} офисов (${totalUnits ? Math.round(occupiedUnits/totalUnits*100) : 0}%)
 
+### Свободные помещения (${freeUnits.length})
+${freeLines || 'Свободных помещений нет'}
+
+### Задолженность арендаторов по данным 1С
+${debtLines || 'Сальдо из 1С ещё не загружено'}
+
 ### Финансы за текущий месяц
 Выручка: ${fmt(monthRevenue)} ₽
 Просрочено счетов: ${(Array.isArray(overdueInvs) ? overdueInvs : []).length} шт. на сумму ${fmt(overdueTotal)} ₽
@@ -100,7 +112,8 @@ ${kbLines ? `## ИЗ БАЗЫ ЗНАНИЙ\n${kbLines}` : ''}
 - При расчёте пеней: стандартная ставка 0.1% в день если не указано иное
 - При составлении писем — используй деловой стиль
 - Если данных нет — честно говори об этом
-- Цифры форматируй с пробелами: 20 500 ₽`
+- Цифры форматируй с пробелами: 20 500 ₽
+- Пиши простым текстом: без эмодзи, без markdown-заголовков и таблиц; списки — строками с «•»; выделять можно только **жирным**`
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',

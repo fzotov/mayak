@@ -3,6 +3,14 @@ import { useState, useRef, useEffect } from 'react'
 
 interface Message { role: 'user' | 'assistant'; content: string }
 
+/** Ответ ассистента: переносы строк и **жирный**, без HTML-вставок. */
+function renderText(text: string) {
+  return text.split(/(\*\*[^*]+\*\*)/g).map((part, i) =>
+    part.startsWith('**') && part.endsWith('**') && part.length > 4
+      ? <strong key={i}>{part.slice(2, -2)}</strong>
+      : <span key={i}>{part}</span>)
+}
+
 export function AIAssistantPage() {
   const [messages, setMessages] = useState<Message[]>([
     { role: 'assistant', content: 'Здравствуйте! Я AI-ассистент системы Маяк. Могу помочь с арендаторами, счетами и управлением недвижимостью.' }
@@ -53,8 +61,9 @@ export function AIAssistantPage() {
               color: m.role === 'user' ? '#fff' : '#1a2240',
               border: m.role === 'assistant' ? '1px solid #e8ebf3' : 'none',
               alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start',
+              whiteSpace: 'pre-wrap',
             }}>
-              {m.content}
+              {renderText(m.content)}
             </div>
           ))}
           {loading && (
