@@ -26,7 +26,7 @@
 | Supabase anon key | `.env.local` → `VITE_SUPABASE_ANON_KEY` | публичный, идёт в сборку |
 | Supabase service key | `.env.local` → `SUPABASE_SERVICE_KEY` | полный доступ к БД, только сервер и локальные скрипты |
 | Vercel CLI token | `.env.local` → `VERCEL_TOKEN` | проверен 14.11.2026, аккаунт `fedorzotov-2216`, команда `vizbl` |
-| Resend, OpenAI, Anthropic | только в Vercel → Project → Environment Variables | локально их нет |
+| Resend, Anthropic | только в Vercel → Project → Environment Variables | локально их нет |
 | GitHub | `github.com/fzotov/mayak`, логин `fzotov` | старый токен из URL remote недействителен с 05.11.2026; пушить через `gh auth setup-git` или osxkeychain, токен в чат не просить |
 
 Vercel: проект админки `admin` (id `prj_Wnyag661KrToLImCh9gBjK6g1NsL`, org `team_7Za2BUH96hM0vHYBMNfo2db8`), прод-адрес `https://mayak-xi.vercel.app`. Сайт — отдельный проект `mayak-site` (`mayak-site-vizbl.vercel.app`), корень `apps/site`.
@@ -56,7 +56,7 @@ npx vercel alias admin-XXXX-vizbl.vercel.app mayak-xi.vercel.app
 ## 4. Текущее состояние
 
 - 23.11.2026 на прод выложен этап 1 ТЗ v2 (безопасность): сборка `admin-f9qkh5qek`, адрес `mayak-xi.vercel.app` переключён и проверен. Миграции `20260920_site.sql`, `20261122_schema_fixes.sql`, `20261123_security.sql`, `20261124_roles.sql` применены.
-- В Vercel заданы `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_KEY`, `ONEC_TOKEN`, `APP_URL`, `ANTHROPIC_API_KEY`. `RESEND_API_KEY` добавлен 23.11.2026; домен `mayak-d.ru` подтверждён в Resend (команда vizbl, регион eu-west-1), письмо сброса пароля с прода доставлено. `ANTHROPIC_API_KEY` заменён 23.11.2026 (прежний был недействителен и все ИИ-функции молча не работали); ключ `mayak-admin` выпущен в организации Claude Console «Vizbl Systems», расходы идут с её баланса. Нет `OPENAI_API_KEY` — не работают база знаний с поиском и чат GPT.
+- В Vercel заданы `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_KEY`, `ONEC_TOKEN`, `APP_URL`, `ANTHROPIC_API_KEY`. `RESEND_API_KEY` добавлен 23.11.2026; домен `mayak-d.ru` подтверждён в Resend (команда vizbl, регион eu-west-1), письмо сброса пароля с прода доставлено. `ANTHROPIC_API_KEY` заменён 23.11.2026 (прежний был недействителен и все ИИ-функции молча не работали); ключ `mayak-admin` выпущен в организации Claude Console «Vizbl Systems», расходы идут с её баланса. OpenAI не используется: 23.11.2026 вариант GPT убран из ассистента (он не получал данных Маяка), база знаний — таблица `kb_articles`, её читает ассистент Claude.
 - Выгрузка 1С `o.mayak-d.ru/export/debts.xml` 23.11.2026 отвечала 504; взаиморасчёты и сальдо арендаторов не обновлены (в `ledger_entries` данные по 31.08.2026, `tenant_balances` пуст).
 - В Supabase остаётся включённой свободная регистрация (Auth → Sign In / Providers → Allow new users to sign up). Зарегистрировавшийся без приглашения не получает ни одной строки, но настройку стоит выключить.
 - Локальные коммиты не запушены в GitHub, если ниже не сказано иное.

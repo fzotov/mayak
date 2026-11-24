@@ -2,10 +2,8 @@ import { apiFetch } from '../lib/api'
 import { useState, useRef, useEffect } from 'react'
 
 interface Message { role: 'user' | 'assistant'; content: string }
-type Model = 'claude' | 'gpt'
 
 export function AIAssistantPage() {
-  const [model, setModel] = useState<Model>('claude')
   const [messages, setMessages] = useState<Message[]>([
     { role: 'assistant', content: 'Здравствуйте! Я AI-ассистент системы Маяк. Могу помочь с арендаторами, счетами и управлением недвижимостью.' }
   ])
@@ -23,14 +21,13 @@ export function AIAssistantPage() {
     setInput('')
     setLoading(true)
     try {
-      const endpoint = model === 'claude' ? '/api/ai-chat' : '/api/ai-chat-gpt'
-      const res = await apiFetch(endpoint, {
+      const res = await apiFetch('/api/ai-chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messages: newMessages.map(m => ({ role: m.role, content: m.content })) })
       })
       const data = await res.json()
-      setMessages(prev => [...prev, { role: 'assistant', content: data.content || data.error }])
+      setMessages(prev => [...prev, { role: 'assistant', content: data.content || data.error || 'Не удалось получить ответ' }])
     } catch {
       setMessages(prev => [...prev, { role: 'assistant', content: 'Ошибка. Попробуйте снова.' }])
     }
@@ -47,23 +44,6 @@ export function AIAssistantPage() {
 
   return (
     <div style={{ maxWidth: 800 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <div style={{ display: 'flex', background: '#f0f2f8', borderRadius: 8, padding: 3, gap: 2 }}>
-          <button onClick={() => setModel('claude')}
-            style={{ padding: '5px 14px', borderRadius: 6, border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 14, fontWeight: 500,
-              background: model === 'claude' ? '#fff' : 'transparent',
-              color: model === 'claude' ? '#1a2240' : '#8596b4' }}>
-            Claude
-          </button>
-          <button onClick={() => setModel('gpt')}
-            style={{ padding: '5px 14px', borderRadius: 6, border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 14, fontWeight: 500,
-              background: model === 'gpt' ? '#fff' : 'transparent',
-              color: model === 'gpt' ? '#1a2240' : '#8596b4' }}>
-            ChatGPT
-          </button>
-        </div>
-      </div>
-
       <div style={{ background: '#fff', border: '1px solid #e8ebf3', borderRadius: 12, display: 'flex', flexDirection: 'column', height: 500 }}>
         <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
           {messages.map((m, i) => (
@@ -79,7 +59,7 @@ export function AIAssistantPage() {
           ))}
           {loading && (
             <div style={{ padding: '10px 14px', borderRadius: 10, fontSize: 14, background: '#f8f9fc', border: '1px solid #e8ebf3', alignSelf: 'flex-start', color: '#9ca3af' }}>
-              {model === 'claude' ? 'Claude думает...' : 'ChatGPT думает...'}
+              Думаю…
             </div>
           )}
           <div ref={bottomRef} />

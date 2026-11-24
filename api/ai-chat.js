@@ -32,11 +32,11 @@ export default async function handler(req, res) {
     const [tenants, overdueInvs, expContracts, openTasks, recentInvs, units, kbArticles] = await Promise.all([
       sb('tenants?select=full_name,type,inn,monthly_rent,contract_end_date,email,phone&order=full_name'),
       sb('invoices?select=number,total_amount,period,tenants(full_name),units(number)&status=eq.OVERDUE&order=created_at&limit=10'),
-      sb(`contracts?select=contract_number,end_date,tenants(full_name)&end_date=gte.${today}&end_date=lte.${in30}&order=end_date`),
+      sb(`contracts?select=number,end_date,tenants(full_name)&end_date=gte.${today}&end_date=lte.${in30}&order=end_date`),
       sb('tasks?select=title,status,priority,source&status=in.(open,in_progress)&order=created_at.desc&limit=10'),
       sb(`invoices?select=number,total_amount,status,period,tenants(full_name)&period=gte.${monthStart}&order=created_at.desc&limit=15`),
       sb('units?select=number,status&order=number'),
-      sb('kb_articles?select=title,content,category&order=created_at.desc&limit=20'),
+      sb('kb_articles?select=title,content,category&order=created_at.desc&limit=300'),
     ])
 
     // Фильтрация KB по ключевым словам из запроса
@@ -59,7 +59,7 @@ export default async function handler(req, res) {
     ).join('\n')
 
     const expiringLines = (Array.isArray(expContracts) ? expContracts : []).map(c =>
-      `• ${c.tenants?.full_name || '—'} — истекает ${c.end_date} (№${c.contract_number || '—'})`
+      `• ${c.tenants?.full_name || '—'} — истекает ${c.end_date} (№${c.number || '—'})`
     ).join('\n')
 
     const tasksLines = (Array.isArray(openTasks) ? openTasks : []).map(t =>
