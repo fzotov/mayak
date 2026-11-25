@@ -3,7 +3,7 @@ import { apiFetch, openStoredFile } from '../lib/api'
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import {
-  Page, Card, Row, Button, Badge, Stat, Stats, Table, Field, Input, Select, Textarea, Segmented, Modal, Notice, Loading, ErrorBox, Muted, Sub, money, num, dateRu, C, type Tone,
+  Page, Card, Row, Button, Badge, Stat, Stats, Table, Field, Input, Select, Textarea, Segmented, Modal, Notice, Loading, ErrorBox, Empty, Muted, Sub, money, num, dateRu, dateTimeRu, useNarrow, C, type Tone,
 } from '../components/ui'
 
 interface IncomingInvoice {
@@ -35,9 +35,20 @@ const STATUS_CONFIG: Record<string, { label: string; tone: Tone }> = {
   PENDING_APPROVAL: { label: 'На согласовании', tone: 'amber' },
   APPROVED:         { label: 'Согласован',      tone: 'green' },
   PAID:             { label: 'Оплачен',         tone: 'neutral' },
+  REJECTED:         { label: 'Отклонён',        tone: 'red' },
 }
 
-type Filter = 'ALL' | 'NEW' | 'PENDING_APPROVAL' | 'APPROVED' | 'PAID'
+type Filter = 'ALL' | 'TODO' | 'NEW' | 'PENDING_APPROVAL' | 'APPROVED' | 'PAID' | 'REJECTED'
+const TO_APPROVE = ['NEW', 'PENDING_APPROVAL']
+
+/** Имя вошедшего сотрудника — пишется в «кто согласовал». */
+async function myName(): Promise<string> {
+  const { data } = await supabase.auth.getUser()
+  const u = data.user
+  if (!u) return ''
+  const { data: p } = await supabase.from('profiles').select('full_name').eq('user_id', u.id).maybeSingle()
+  return p?.full_name || u.email || ''
+}
 
 function fmtVat(vat: number | null) {
   if (vat == null) return 'без НДС'
@@ -65,7 +76,9 @@ export default function IncomingInvoicesPage() {
   const [invoices, setInvoices] = useState<IncomingInvoice[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [filterStatus, setFilterStatus] = useState<Filter>('ALL')
+  const narrow = useNarrow()
+  const [filterStatus, setFilterStatus] = useState<Filter>(() => (window.innerWidth < 768 ? 'TODO' : 'ALL'))
+  const [deciding, setDeciding] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState<FormData>(emptyForm())
   const [saving, setSaving] = useState(false)
@@ -219,6 +232,18 @@ export default function IncomingInvoicesPage() {
     setInvoices(prev => prev.map(i => i.id === id ? { ...i, status } : i))
   }
 
+  /** Решение по счёту прямо из админки: согласовать или отклонить. */
+  async function decide(inv: IncomingInvoice, approve: boolean) {
+    setDeciding(inv.id); setError('')
+    const patch = approve
+      ? { status: 'APPROVED', approved_by: await myName(), approved_at: new Date().toISOString() }
+      : { status: 'REJECTED' }
+    const { error } = await supabase.from('incoming_invoices').update(patch).eq('id', inv.id)
+    setDeciding(null)
+    if (error) { setError((approve ? 'Счёт не согласован: ' : 'Счёт не отклонён: ') + error.message); return }
+    setInvoices(prev => prev.map(i => i.id === inv.id ? { ...i, ...patch } : i))
+  }
+
   async function sendApproval() {
     if (!approvalInvoice || !approvalEmail) return
     setSendingApproval(true)
@@ -247,7 +272,7 @@ export default function IncomingInvoicesPage() {
     setSendingApproval(false)
   }
 
-  const filtered = filterStatus === 'ALL' ? invoices : invoices.filter(i => i.status === filterStatus)
+  const filtered = filterStatus === 'ALL' ? invoices : filterStatus === 'TODO' ? invoices.filter(i => TO_APPROVE.includes(i.status)) : invoices.filter(i => i.status === filterStatus)
   const total = filtered.reduce((s, i) => s + (i.amount || 0), 0)
   const pending = invoices.filter(i => i.status === 'NEW').reduce((s, i) => s + (i.amount || 0), 0)
 
@@ -262,11 +287,46 @@ export default function IncomingInvoicesPage() {
       </Stats>
 
       <Segmented<Filter> value={filterStatus} onChange={setFilterStatus}
-        options={[['ALL', 'Все'], ['NEW', 'Новые'], ['PENDING_APPROVAL', 'На согласовании'], ['APPROVED', 'Согласованы'], ['PAID', 'Оплачены']]} />
+        options={narrow
+          ? [['TODO', `Согласовать · ${invoices.filter(i => TO_APPROVE.includes(i.status)).length}`], ['APPROVED', 'К оплате'], ['ALL', 'Все']]
+          : [['ALL', 'Все'], ['NEW', 'Новые'], ['PENDING_APPROVAL', 'На согласовании'], ['APPROVED', 'Согласованы'], ['PAID', 'Оплачены'], ['REJECTED', 'Отклонены']]} />
 
       {error && <ErrorBox error={error} onRetry={load} />}
 
-      <Card pad={false}>
+      {narrow ? (loading ? <Loading /> : filtered.length === 0 ? <Card><Empty>Нет счетов</Empty></Card> : (
+        <div style={{ display: 'grid', gap: 10 }}>
+          {filtered.map(i => {
+            const sc = STATUS_CONFIG[i.status] ?? { label: i.status, tone: 'neutral' as Tone }
+            const overdue = !!i.due_date && new Date(i.due_date) < new Date() && i.status !== 'PAID' && i.status !== 'REJECTED'
+            const big: React.CSSProperties = { minHeight: 44, flex: '1 1 40%' }
+            return (
+              <Card key={i.id}>
+                <div style={{ display: 'grid', gap: 8 }}>
+                  <Row justify="space-between" wrap={false} align="flex-start">
+                    <div style={{ fontWeight: 600, fontSize: 15, minWidth: 0, wordBreak: 'break-word' }}>{i.supplier}</div>
+                    <Badge tone={sc.tone}>{sc.label}</Badge>
+                  </Row>
+                  <div style={{ fontSize: 22, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{money(i.amount)}<span style={{ fontSize: 12, fontWeight: 400, color: C.muted }}> · {fmtVat(i.vat)}</span></div>
+                  {i.description && <div style={{ fontSize: 13, color: C.muted, wordBreak: 'break-word' }}>{i.description}</div>}
+                  <div style={{ fontSize: 13, color: overdue ? C.red : C.muted, fontWeight: overdue ? 600 : 400 }}>
+                    Оплатить до {dateRu(i.due_date)}{overdue && ' · просрочен'}{i.invoice_date && <span style={{ color: C.faint, fontWeight: 400 }}> · счёт от {dateRu(i.invoice_date)}</span>}
+                  </div>
+                  {i.status === 'PENDING_APPROVAL' && i.approval_requested_to && <Sub>запрос отправлен: {i.approval_requested_to}</Sub>}
+                  {i.status === 'APPROVED' && i.approved_by && <Sub><span style={{ color: C.green }}>согласовал: {i.approved_by}{i.approved_at ? ', ' + dateTimeRu(i.approved_at) : ''}</span></Sub>}
+                  <Row gap={8}>
+                    {i.file_url && <Button style={big} onClick={() => openStoredFile(i.file_url!)}>Открыть счёт</Button>}
+                    {TO_APPROVE.includes(i.status) && <>
+                      <Button kind="primary" style={big} disabled={deciding === i.id} onClick={() => decide(i, true)}>{deciding === i.id ? 'Сохраняю…' : 'Согласовать'}</Button>
+                      <Button kind="danger" style={big} disabled={deciding === i.id} onClick={() => decide(i, false)}>Отклонить</Button>
+                    </>}
+                    {i.status === 'APPROVED' && <Button style={big} onClick={() => updateStatus(i.id, 'PAID')}>Отметить оплату</Button>}
+                  </Row>
+                </div>
+              </Card>
+            )
+          })}
+        </div>
+      )) : <Card pad={false}>
         {loading ? <Loading /> : (
           <Table rows={filtered} rowKey={i => i.id} empty="Нет счетов" cols={[
             { key: 's', title: 'Поставщик', sort: i => i.supplier, render: i => <span style={{ fontWeight: 600 }}>{i.supplier}</span> },
@@ -296,7 +356,13 @@ export default function IncomingInvoicesPage() {
                   <Button small onClick={() => { setApprovalInvoice(i); setApprovalEmail(''); setApprovalSent(false); setApprovalError('') }}>Согласовать</Button>
                 )}
                 {i.status === 'NEW' && (
-                  <Button small onClick={() => updateStatus(i.id, 'APPROVED')} style={{ color: C.green }}>Согласовать вручную</Button>
+                  <Button small disabled={deciding === i.id} onClick={() => decide(i, true)} style={{ color: C.green }}>Согласовать вручную</Button>
+                )}
+                {TO_APPROVE.includes(i.status) && (
+                  <Button small kind="danger" disabled={deciding === i.id} onClick={() => decide(i, false)}>Отклонить</Button>
+                )}
+                {i.status === 'REJECTED' && (
+                  <Button small onClick={() => updateStatus(i.id, 'NEW')}>Вернуть в новые</Button>
                 )}
                 {i.status === 'APPROVED' && (
                   <Button small kind="primary" onClick={() => updateStatus(i.id, 'PAID')}>Оплачен</Button>
@@ -311,7 +377,7 @@ export default function IncomingInvoicesPage() {
             ) },
           ]} />
         )}
-      </Card>
+      </Card>}
 
       {/* Approval modal */}
       {approvalInvoice && (

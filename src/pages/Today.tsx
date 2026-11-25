@@ -58,7 +58,7 @@ export default function TodayPage() {
       {emergency.length > 0 && <Alert tone="red" onClick={() => go('/repairs')}>Аварийные заявки: {emergency.length}. {emergency.map(r => r.description).filter(Boolean).slice(0, 2).join('; ')}</Alert>}
       {newLeads.length > 0 && <Alert tone="blue" onClick={() => go('/site')}>Новые заявки с сайта: {newLeads.length} — ждут ответа.</Alert>}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(150px, 100%), 1fr))', gap: 12 }}>
         <Stat label="Поступило за 7 дней" value={money(inWeek)} sub={`${receipts.length} платежей`} tone="green" onClick={() => go('/bank')} />
         <Stat label="Долг арендаторов" value={money(debt)} sub={`просрочено ${money(overdue)}`} tone={overdue > 0 ? 'red' : undefined} onClick={() => go('/debtors')} />
         <Stat label="Заполняемость" value={occupancy.total ? `${Math.round(occupancy.busy / occupancy.total * 100)}%` : '—'} sub={`${occupancy.busy} из ${occupancy.total} помещений`} onClick={() => go('/floorplan')} />
@@ -66,7 +66,7 @@ export default function TodayPage() {
         <Stat label="Истекают договоры" value={expiring.length} sub="в ближайшие 30 дней" tone={expiring.length ? 'amber' : undefined} onClick={() => go('/contracts')} />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: 12 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(380px, 100%), 1fr))', gap: 12 }}>
         <Card pad={false} title="Поступления за неделю" actions={<Button small kind="ghost" onClick={() => go('/bank')}>Банк</Button>}>
           <Table rows={receipts} rowKey={r => r.id} onRow={r => go('/settlements/' + r.tenant_id)} empty="За неделю поступлений нет" dense cols={[
             { key: 'd', title: 'Дата', render: r => dateRu(r.date) },

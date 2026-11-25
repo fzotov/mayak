@@ -1,12 +1,12 @@
 // Админка «Маяка»: вход сотрудника, оболочка (меню по задачам, поиск, тема) и адреса страниц.
 // У каждого экрана свой адрес (/tenants/<id>, /invoices/<id>): работают «Назад», обновление и ссылки.
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode, type CSSProperties } from 'react'
 import { createBrowserRouter, RouterProvider, Outlet, NavLink, useLocation, useNavigate, useParams, Navigate } from 'react-router'
 import { supabase } from './lib/supabase'
 import { setNavigator, legacyHashPath, go } from './lib/nav'
 import { AuthPage } from './pages/Auth'
 import { Icon } from './components/icons'
-import { C } from './components/ui'
+import { C, useNarrow } from './components/ui'
 import GlobalSearch from './components/GlobalSearch'
 import { SettingsModal } from './pages/Settings'
 import TodayPage from './pages/Today'
@@ -25,6 +25,7 @@ import StaffPage from './pages/Staff'
 import InventoryPage from './pages/Inventory'
 import LettersPage from './pages/Letters'
 import MetersPage from './pages/Meters'
+import MeterRoundPage from './pages/MeterRound'
 import UnitsPage from './pages/Units'
 import TasksPage, { MyTasksPage } from './pages/Tasks'
 import ContractsPage from './pages/Contracts'
@@ -53,6 +54,7 @@ const NAV: { label: string; items: NavItem[]; more?: boolean }[] = [
     { to: '/floorplan', label: 'План этажей', icon: 'floorplan' },
     { to: '/units', label: 'Помещения', icon: 'units' },
     { to: '/meters', label: 'Счётчики', icon: 'meters' },
+    { to: '/meters/round', label: 'Обход счётчиков', icon: 'meters' },
   ] },
   { label: 'Деньги', items: [
     { to: '/invoices', label: 'Начисления и счета', icon: 'invoices' },
@@ -95,6 +97,45 @@ function sectionOf(path: string): { title: string; nav: string } {
 }
 const ROLE_LABEL: Record<string, string> = { owner: 'Владелец', manager: 'Управляющий' }
 
+// ── Нижняя панель на телефоне: сценарии «на ходу» ───────────────────────────
+const TABBAR: { to: string; label: string; icon: string }[] = [
+  { to: '/', label: 'Сегодня', icon: 'dashboard' },
+  { to: '/repairs', label: 'Заявки', icon: 'repairs' },
+  { to: '/meters/round', label: 'Обход', icon: 'meters' },
+  { to: '/debtors', label: 'Должники', icon: 'debtors' },
+]
+const TABBAR_H = 58
+const SAFE_TOP = 'env(safe-area-inset-top, 0px)'
+const SAFE_BOTTOM = 'env(safe-area-inset-bottom, 0px)'
+const SAFE_LEFT = 'env(safe-area-inset-left, 0px)'
+const SAFE_RIGHT = 'env(safe-area-inset-right, 0px)'
+
+function TabBar({ nav, menuOpen, onMenu }: { nav: string; menuOpen: boolean; onMenu: () => void }) {
+  const cell = (on: boolean): CSSProperties => ({
+    flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3,
+    height: TABBAR_H, textDecoration: 'none', border: 0, background: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: 0,
+    fontSize: 11, fontWeight: on ? 600 : 500, color: on ? C.accent : C.muted,
+  })
+  return (
+    <nav aria-label="Быстрые разделы" style={{
+      position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 50, display: 'flex', background: C.card, borderTop: `1px solid ${C.line}`,
+      paddingBottom: SAFE_BOTTOM, paddingLeft: SAFE_LEFT, paddingRight: SAFE_RIGHT,
+    }}>
+      {TABBAR.map(t => {
+        const on = !menuOpen && nav === t.to
+        return (
+          <NavLink key={t.to} to={t.to} end style={cell(on)} aria-current={on ? 'page' : undefined}>
+            <Icon name={t.icon} size={22} /><span>{t.label}</span>
+          </NavLink>
+        )
+      })}
+      <button type="button" onClick={onMenu} style={cell(menuOpen)} aria-label="Меню">
+        <Icon name="menu" size={22} /><span>Меню</span>
+      </button>
+    </nav>
+  )
+}
+
 // ── Тема ────────────────────────────────────────────────────────────────────
 type Theme = 'light' | 'dark' | 'system'
 function applyTheme(t: Theme) {
@@ -126,6 +167,7 @@ function Shell() {
   const [menuOpen, setMenuOpen] = useState(false)
   const [moreOpen, setMoreOpen] = useState(false)
   const [theme, setTheme] = useTheme()
+  const phone = useNarrow()
 
   useEffect(() => { setNavigator(to => navigate(to)) }, [navigate])
   useEffect(() => { setMenuOpen(false) }, [location.pathname])
@@ -175,8 +217,9 @@ function Shell() {
   }
 
   const sidebar = (
-    <aside style={{ width: 236, flexShrink: 0, background: C.card, borderRight: `1px solid ${C.line}`, display: 'flex', flexDirection: 'column', height: '100dvh',
-      ...(narrow ? { position: 'fixed', top: 0, left: 0, zIndex: 60, transform: menuOpen ? 'none' : 'translateX(-100%)', transition: 'transform .2s ease', boxShadow: menuOpen ? C.shadow : 'none' } : { position: 'sticky', top: 0 }) }}>
+    <aside style={{ width: 236, flexShrink: 0, background: C.card, borderRight: `1px solid ${C.line}`, display: 'flex', flexDirection: 'column', height: '100dvh', boxSizing: 'border-box',
+      ...(narrow ? { position: 'fixed', top: 0, left: 0, zIndex: 60, transform: menuOpen ? 'none' : 'translateX(-100%)', transition: 'transform .2s ease', boxShadow: menuOpen ? C.shadow : 'none',
+        paddingTop: SAFE_TOP, paddingBottom: SAFE_BOTTOM, paddingLeft: SAFE_LEFT, width: `calc(236px + ${SAFE_LEFT})`, maxWidth: '85vw' } : { position: 'sticky', top: 0 }) }}>
       <div style={{ padding: '14px 16px', borderBottom: `1px solid ${C.line}`, display: 'flex', alignItems: 'center', gap: 10 }}>
         <img src="/mayak-logo.png" style={{ width: 30, height: 30, borderRadius: 7, objectFit: 'cover' }} alt="" />
         <div style={{ minWidth: 0 }}>
@@ -197,7 +240,7 @@ function Shell() {
         ))}
       </nav>
       <div style={{ borderTop: `1px solid ${C.line}`, display: 'flex', alignItems: 'center' }}>
-        <button type="button" onClick={() => setShowSettings(true)} title="Профиль и доступы"
+        <button type="button" onClick={() => setShowSettings(true)} title="Профиль, телефон и уведомления"
           style={{ flex: 1, minWidth: 0, padding: '12px 8px 12px 16px', border: 0, background: 'none', display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}>
           <div style={{ width: 30, height: 30, borderRadius: '50%', background: C.text, display: 'grid', placeItems: 'center', fontSize: 11, fontWeight: 600, color: C.card, flexShrink: 0 }}>{initials}</div>
           <div style={{ minWidth: 0 }}>
@@ -219,8 +262,9 @@ function Shell() {
       {sidebar}
       {narrow && menuOpen && <div onClick={() => setMenuOpen(false)} style={{ position: 'fixed', inset: 0, background: C.overlay, zIndex: 55 }} />}
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-        <header style={{ background: C.card, borderBottom: `1px solid ${C.line}`, padding: narrow ? '10px 14px' : '12px 24px', display: 'flex', alignItems: 'center', gap: 12, position: 'sticky', top: 0, zIndex: 40 }}>
-          {narrow && (
+        <header style={{ background: C.card, borderBottom: `1px solid ${C.line}`, padding: narrow ? '10px 14px' : '12px 24px', display: 'flex', alignItems: 'center', gap: 12, position: 'sticky', top: 0, zIndex: 40,
+          ...(narrow ? { paddingTop: `calc(10px + ${SAFE_TOP})`, paddingLeft: `calc(14px + ${SAFE_LEFT})`, paddingRight: `calc(14px + ${SAFE_RIGHT})` } : {}) }}>
+          {narrow && !phone && (
             <button type="button" onClick={() => setMenuOpen(true)} aria-label="Меню" style={{ border: `1px solid ${C.line}`, background: C.card, borderRadius: 8, width: 38, height: 38, display: 'grid', placeItems: 'center', cursor: 'pointer', color: C.text, flexShrink: 0 }}>
               <Icon name="menu" size={18} />
             </button>
@@ -228,10 +272,13 @@ function Shell() {
           <h1 style={{ fontSize: narrow ? 16 : 18, fontWeight: 600, margin: 0, letterSpacing: '-0.2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{title}</h1>
           <div style={{ marginLeft: 'auto', flex: narrow ? 1 : '0 1 420px', minWidth: 0 }}><GlobalSearch /></div>
         </header>
-        <main style={{ flex: 1, padding: narrow ? 14 : 24, minWidth: 0 }}>
+        <main style={{ flex: 1, padding: narrow ? 14 : 24, minWidth: 0,
+          ...(narrow ? { paddingLeft: `calc(14px + ${SAFE_LEFT})`, paddingRight: `calc(14px + ${SAFE_RIGHT})` } : {}),
+          ...(phone ? { paddingBottom: `calc(${TABBAR_H + 20}px + ${SAFE_BOTTOM})` } : {}) }}>
           <Outlet />
         </main>
       </div>
+      {phone && <TabBar nav={nav} menuOpen={menuOpen} onMenu={() => setMenuOpen(o => !o)} />}
       {showSettings && <SettingsModal user={user} profile={profile} onClose={() => setShowSettings(false)} onLogout={logout} />}
     </div>
   )
@@ -261,6 +308,7 @@ const router = createBrowserRouter([{
     { path: 'floorplan', element: <FloorPlanPage onOpenTenant={id => go('/tenants/' + id)} /> },
     { path: 'units', element: <UnitsPage /> },
     { path: 'meters', element: <MetersPage /> },
+    { path: 'meters/round', element: <MeterRoundPage /> },
     { path: 'invoices', element: <InvoicesPage /> },
     { path: 'invoices/:id', element: <InvoiceRoute /> },
     { path: 'billing', element: <BillingPage /> },

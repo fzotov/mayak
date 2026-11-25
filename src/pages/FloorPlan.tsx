@@ -1,7 +1,7 @@
 // План этажей: подложка-чертёж и кликабельные кабинеты; свободные подсвечены, справа — карточка выбранного кабинета.
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
-import { Page, Card, Row, Button, Badge, Segmented, ErrorBox, Muted, money, dateRu, C } from '../components/ui'
+import { Page, Card, Row, Button, Badge, Segmented, ErrorBox, Muted, money, dateRu, useNarrow, C } from '../components/ui'
 
 // Exact SVG paths derived from pixel-accurate room fills in the source floor-plan images.
 // Floor 2 viewBox: 0 0 2048 1150 | Floor 3 viewBox: 0 0 1984 1296
@@ -107,6 +107,8 @@ export function FloorPlanPage({ onOpenTenant }: { onOpenTenant?: (id: string) =>
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [debug] = useState(false)
+  const narrow = useNarrow()
+  const [zoom, setZoom] = useState(() => (window.innerWidth < 768 ? 2.2 : 1))
 
   const load = useCallback(() => {
     setLoading(true)
@@ -213,13 +215,18 @@ export function FloorPlanPage({ onOpenTenant }: { onOpenTenant?: (id: string) =>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'flex-start' }}>
         {/* Floor plan — single SVG with image + hit areas in the same coordinate system */}
         <div style={{ flex: '1 1 560px', minWidth: 0 }}>
-          <Card title={<span style={{ fontWeight: 500, color: C.muted, fontSize: 13 }}>БЦ Маяк · {floor} этаж — нажмите на кабинет{loading ? ' · загрузка арендаторов…' : ''}</span>}>
+          <Card pad={!narrow} title={<span style={{ fontWeight: 500, color: C.muted, fontSize: 13 }}>БЦ Маяк · {floor} этаж — нажмите на кабинет{loading ? ' · загрузка арендаторов…' : ''}</span>}
+            actions={narrow ? <Row gap={4} wrap={false}>
+              <Button small onClick={() => setZoom(z => Math.max(1, +(z - 0.6).toFixed(1)))} disabled={zoom <= 1} aria-label="Уменьшить">−</Button>
+              <Button small onClick={() => setZoom(z => Math.min(4, +(z + 0.6).toFixed(1)))} disabled={zoom >= 4} aria-label="Увеличить">+</Button>
+            </Row> : undefined}>
+            <div style={narrow ? { overflow: 'auto', WebkitOverflowScrolling: 'touch', maxHeight: '62dvh', touchAction: 'pan-x pan-y pinch-zoom' } : undefined}>
             <svg
               viewBox={viewBox}
-              width="100%"
+              width={narrow ? `${zoom * 100}%` : '100%'}
               preserveAspectRatio="xMidYMid meet"
               xmlns="http://www.w3.org/2000/svg"
-              style={{ display: 'block', borderRadius: 6, height: 'auto' }}
+              style={{ display: 'block', borderRadius: 6, height: 'auto', maxWidth: 'none' }}
             >
               {/* Floor plan image — same coordinate space as hit paths */}
               <image
@@ -247,11 +254,33 @@ export function FloorPlanPage({ onOpenTenant }: { onOpenTenant?: (id: string) =>
                 })}
               </g>
             </svg>
+            </div>
           </Card>
         </div>
 
+        {/* На телефоне — панель снизу, над нижним меню */}
+        {narrow && selRoom && (
+          <div style={{ position: 'fixed', left: 12, right: 12, bottom: 'calc(70px + env(safe-area-inset-bottom, 0px))', zIndex: 45, background: C.card, border: `1px solid ${C.line}`, borderRadius: 12, boxShadow: C.shadow, padding: 14, display: 'grid', gap: 10 }}>
+            <Row gap={8} wrap={false}>
+              <span style={{ fontWeight: 600, fontSize: 15 }}>Кабинет № {selRoom.number}</span>
+              <Badge tone={isFree ? 'green' : 'blue'}>{isFree ? 'Свободен' : 'Занято'}</Badge>
+              <span style={{ marginLeft: 'auto', fontSize: 13, color: C.muted, whiteSpace: 'nowrap' }}>{areaLabel(selRoom)}</span>
+            </Row>
+            {selTenant ? <>
+              <div style={{ fontSize: 14, fontWeight: 500, lineHeight: 1.35 }}>{selTenant.full_name}<div style={{ fontSize: 12, color: C.muted, fontWeight: 400 }}>Итого в мес.: {money(selTenant.monthly_total, { zero: '—' })}</div></div>
+              <Row gap={8} wrap={false}>
+                <Button kind="primary" style={{ flex: 2, minHeight: 44 }} onClick={() => onOpenTenant?.(selTenant.id)}>Открыть арендатора</Button>
+                <Button style={{ flex: 1, minHeight: 44 }} onClick={() => setSelId(null)}>Закрыть</Button>
+              </Row>
+            </> : <Row gap={8} wrap={false}>
+              <span style={{ flex: 1 }}><Muted small>{selRoom.serviceLabel ?? 'Нет данных об арендаторе'}</Muted></span>
+              <Button style={{ minHeight: 44 }} onClick={() => setSelId(null)}>Закрыть</Button>
+            </Row>}
+          </div>
+        )}
+
         {/* Sidebar */}
-        {selRoom && (
+        {!narrow && selRoom && (
           <div style={{ flex: '1 1 260px', maxWidth: 360, minWidth: 0 }}>
           <Card title={`Кабинет № ${selRoom.number}`} actions={<Button small kind="ghost" onClick={() => setSelId(null)}>Закрыть</Button>}>
             <div style={{ display: 'grid', gap: 0 }}>

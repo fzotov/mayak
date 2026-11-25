@@ -1,7 +1,7 @@
 import { apiFetch, openStoredFile } from '../lib/api'
 import { go } from '../lib/nav'
 import { PAY_STATUS } from '../lib/accounting'
-import { Page, Card, Row, Button, Badge, Field, Input, Select, Tabs, Table, Modal, Notice, Loading, Empty, ErrorBox, Muted, Sub, money, dateRu, C } from '../components/ui'
+import { Page, Card, Row, Button, Badge, Field, Input, Select, Tabs, Table, Modal, Notice, Loading, Empty, ErrorBox, Muted, Sub, money, dateRu, telHref, useNarrow, C } from '../components/ui'
 import { Icon } from '../components/icons'
 import { TenantPortalAccess } from '../components/TenantPortalAccess'
 import { useState, useEffect } from 'react'
@@ -228,6 +228,7 @@ function printContract(type: string, tenant: typeof emptyForm, contractNumber: s
 
 export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId?: string | null; onBack: () => void; onCreateInvoice?: () => void }) {
   const [tab, setTab] = useState(0)
+  const narrow = useNarrow()
   const [editing, setEditing] = useState(false)
   const [showSuccess, setShowSuccess] = useState(false)
   const [form, setForm] = useState(emptyForm)
@@ -519,7 +520,11 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
     <Field key={k} label={label} wide={wide}>
       {editing
         ? <Input type={type} value={String(form[k])} onChange={f(k) as any} />
-        : <Value>{String(saved[k]) || '—'}</Value>}
+        : <Value>{type === 'tel' && telHref(String(saved[k]))
+            ? <a href={telHref(String(saved[k]))} style={{ color: C.accent, textDecoration: 'none' }}>{String(saved[k])}</a>
+            : type === 'email' && saved[k]
+              ? <a href={'mailto:' + String(saved[k])} style={{ color: C.accent, textDecoration: 'none' }}>{String(saved[k])}</a>
+              : String(saved[k]) || '—'}</Value>}
     </Field>
   )
 
@@ -527,11 +532,26 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
   if (loadError) return <Page><ErrorBox error={loadError} /><div><Button onClick={onBack}>Назад</Button></div></Page>
 
   const allDone = stepsComplete === onboardingSteps.length
+  const callTo = telHref(saved.contactPhone) || telHref(saved.phone)
+  const mailTo = saved.contactEmail || saved.email
+  const quick: React.CSSProperties = {
+    flex: 1, minWidth: 0, minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: C.radiusSm,
+    fontSize: 14, fontWeight: 600, textDecoration: 'none', border: `1px solid ${C.line}`, background: C.card, color: C.text, fontFamily: 'inherit', cursor: 'pointer',
+  }
+  const off: React.CSSProperties = { ...quick, color: C.faint, pointerEvents: 'none' }
 
   return (
     <div style={{ maxWidth: 900 }}>
       {invoiceCreated && <Toast>Счёт создан</Toast>}
       {showSuccess && <SuccessToast />}
+
+      {narrow && !editing && (
+        <div style={{ position: 'sticky', top: 'calc(58px + env(safe-area-inset-top, 0px))', zIndex: 30, display: 'flex', gap: 8, padding: '8px 0', margin: '-8px 0 8px', background: C.bg }}>
+          {callTo ? <a href={callTo} style={{ ...quick, background: C.accent, color: C.onAccent, borderColor: C.accent }}>Позвонить</a> : <span style={off}>Нет телефона</span>}
+          {mailTo ? <a href={'mailto:' + mailTo} style={quick}>Написать</a> : <span style={off}>Нет почты</span>}
+          <button type="button" style={quick} onClick={() => go('/settlements/' + tenantId)}>Расчёты</button>
+        </div>
+      )}
 
       <Page
         title={

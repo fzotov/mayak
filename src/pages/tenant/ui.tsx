@@ -1,5 +1,6 @@
 // Общие элементы кабинета арендатора: одна тёмная тема, крупные зоны нажатия для телефона.
-import type { CSSProperties, ReactNode } from 'react'
+import { useEffect, useState, type CSSProperties, type ReactNode } from 'react'
+import { openStoredFile, storedFileUrl } from '../../lib/api'
 
 export const T = {
   bg: 'var(--bg)', surface: 'var(--surface)', raised: 'var(--surface-2)', border: 'var(--border)', text: 'var(--text)', sub: 'var(--text-2)', muted: 'var(--text-3)',
@@ -65,3 +66,39 @@ export function Note({ children, tone = 'bad' }: { children: ReactNode; tone?: '
   return <div style={{ background: bg, border: `1px solid ${tone === 'ok' ? 'var(--green-bg)' : 'var(--red-border)'}`, borderRadius: 8, padding: '10px 12px', fontSize: 13, color: c, marginTop: 12 }}>{children}</div>
 }
 export const page: CSSProperties = { display: 'flex', flexDirection: 'column', gap: 14, maxWidth: 760, margin: '0 auto', fontFamily: 'var(--font)', color: T.text }
+
+/** Миниатюры фото из закрытого хранилища: временные ссылки, нажатие открывает фото целиком. */
+export function StoredPhotos({ urls, caption }: { urls?: string[] | null; caption: string }) {
+  const [signed, setSigned] = useState<string[]>([])
+  const key = (urls || []).join('|')
+  useEffect(() => {
+    let alive = true
+    if (!urls?.length) { setSigned([]); return }
+    Promise.all(urls.map(u => storedFileUrl(u).catch(() => ''))).then(s => { if (alive) setSigned(s) })
+    return () => { alive = false }
+  }, [key])
+  if (!urls?.length) return null
+  return (
+    <div style={{ marginTop: 10 }}>
+      <div style={{ fontSize: 12, color: T.muted, marginBottom: 6 }}>{caption}</div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+        {urls.map((u, i) => {
+          const s = signed[i]
+          const box: CSSProperties = { width: 72, height: 72, borderRadius: 8, border: `1px solid ${T.border}`, background: T.raised, overflow: 'hidden', display: 'block', flexShrink: 0 }
+          return s
+            ? <a key={u} href={s} target="_blank" rel="noopener" aria-label={`${caption}, фото ${i + 1}`} style={box}><img src={s} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} /></a>
+            : <button key={u} type="button" onClick={() => openStoredFile(u)} aria-label={`${caption}, фото ${i + 1}`} style={{ ...box, padding: 0, cursor: 'pointer' }} />
+        })}
+      </div>
+    </div>
+  )
+}
+
+export function CameraIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+      <path d="M2 6a1.5 1.5 0 0 1 1.5-1.5h2l1.2-2h4.6l1.2 2h2A1.5 1.5 0 0 1 16 6v7.5A1.5 1.5 0 0 1 14.5 15h-11A1.5 1.5 0 0 1 2 13.5V6z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+      <circle cx="9" cy="9.5" r="2.8" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
+  )
+}

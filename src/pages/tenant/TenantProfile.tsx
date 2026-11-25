@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { apiFetch } from '../../lib/api'
 import { useTenant } from './useTenant'
 import { Card, Title, Row, Button, Loading, Note, input, label, page } from './ui'
+import { TenantDeviceCard } from './TenantDevice'
 
 export default function TenantProfile({ tenantId }: { tenantId: string }) {
   const { tenant: t, loading } = useTenant(tenantId)
@@ -42,6 +43,7 @@ export default function TenantProfile({ tenantId }: { tenantId: string }) {
         <Row label="ИНН" value={t?.inn} />
         <Row label="Помещение" value={t?.unit_number ? `№ ${t.unit_number}` : null} />
       </Card>
+      <TenantDeviceCard />
       <Card>
         <Title>Контакты для связи</Title>
         <form onSubmit={save}>

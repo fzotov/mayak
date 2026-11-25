@@ -18,3 +18,11 @@ export async function openStoredFile(urlOrPath: string) {
   if (error || !data?.signedUrl) { alert('Не удалось открыть файл'); return }
   window.open(data.signedUrl, '_blank', 'noopener')
 }
+
+/** Временная ссылка на файл из закрытого хранилища (для <img>). Чужие адреса возвращает как есть. */
+export async function storedFileUrl(urlOrPath: string, seconds = 3600): Promise<string> {
+  const m = urlOrPath.match(/\/storage\/v1\/object\/(?:public|sign)\/([^/]+)\/([^?]+)/)
+  if (!m) return urlOrPath
+  const { data } = await supabase.storage.from(m[1]).createSignedUrl(decodeURIComponent(m[2]), seconds)
+  return data?.signedUrl || ''
+}

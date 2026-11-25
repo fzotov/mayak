@@ -1,5 +1,6 @@
 // POST /api/tenant-meter-reading — арендатор передаёт показание своего счётчика.
 import { requireTenant, admin } from './_lib/auth.js'
+import { savePhoto } from './_lib/upload.js'
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end()
@@ -17,13 +18,18 @@ export default async function handler(req, res) {
     .order('reading_date', { ascending: false }).order('created_at', { ascending: false }).limit(1).maybeSingle()
   const previous = Number(last?.reading ?? 0)
   if (reading < previous) return res.status(400).json({ ok: false, error: `Показание меньше предыдущего (${previous})` })
+  let photo_url = null
+  if (req.body?.photo) {
+    try { photo_url = await savePhoto('meter-photos', `tenant/${me.tenantId}/${meterId}-${Date.now()}.jpg`, req.body.photo) }
+    catch (e) { return res.status(400).json({ ok: false, error: e.message }) }
+  }
   const consumption = reading - previous
   const amount = Math.round(consumption * Number(meter.tariff ?? 0) * 100) / 100
 
   const { error } = await db.from('meter_readings').insert({
     meter_id: meterId, reading, previous_reading: previous, consumption, amount,
     reading_date: new Date().toISOString().slice(0, 10),
-    period: new Date().toISOString().slice(0, 7) + '-01', prev_value: previous, curr_value: reading,
+    period: new Date().toISOString().slice(0, 7) + '-01', prev_value: previous, curr_value: reading, photo_url, recognized_by_ai: !!req.body?.recognized,
   })
   if (error) return res.status(500).json({ ok: false, error: error.message })
   res.status(200).json({ ok: true, consumption, amount })

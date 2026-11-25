@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { apiFetch } from '../lib/api'
+import DeviceCard from '../components/DeviceCard'
 import { C, Modal, Button, Field, Input, Select, Notice, Muted, Row, Loading, Empty, ErrorBox } from '../components/ui'
 
 const ROLES: Record<string, string> = { owner: 'Владелец', manager: 'Управляющий' }
@@ -9,7 +10,7 @@ const h: React.CSSProperties = { fontSize: 13, fontWeight: 600, color: C.text, m
 interface Props { user: any; profile: { full_name: string; role: string }; onClose: () => void; onLogout: () => void }
 type Msg = { ok: boolean; text: string } | null
 
-/** Профиль: смена пароля, выход; для владельца — кто имеет доступ в систему. */
+/** Профиль: этот телефон (установка, push), смена пароля, выход; для владельца — кто имеет доступ в систему. */
 export function SettingsModal({ user, profile, onClose, onLogout }: Props) {
   const isOwner = profile.role === 'owner'
   const [newPw, setNewPw] = useState('')
@@ -67,8 +68,10 @@ export function SettingsModal({ user, profile, onClose, onLogout }: Props) {
 
   return (
     <>
-      <Modal title="Профиль" onClose={() => { if (!revoking) onClose() }} width={520}
+      <Modal title="Профиль и телефон" onClose={() => { if (!revoking) onClose() }} width={520}
         footer={<Button onClick={onLogout}>Выйти</Button>}>
+        <div style={{ paddingBottom: 12, borderBottom: `1px solid ${C.line}` }}><DeviceCard /></div>
+
         <div>
           <div style={{ fontSize: 16, fontWeight: 600 }}>{profile.full_name || user.email}</div>
           <Muted small>{ROLES[profile.role] || profile.role} · {user.email}</Muted>

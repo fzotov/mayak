@@ -23,7 +23,7 @@ export default function TenantDashboard({ tenantId, onNavigate }: { tenantId: st
     <div style={page}>
       <Card pad={22}>
         <div style={{ fontSize: 13, color: T.muted, marginBottom: 8 }}>{net === null ? 'Взаиморасчёты' : net > 0 ? 'К оплате' : net < 0 ? 'Переплата' : 'Взаиморасчёты'}</div>
-        <div style={{ fontSize: 34, fontWeight: 600, letterSpacing: '-1px', color: net === null ? T.text : net > 0 ? T.bad : net < 0 ? T.ok : T.text, lineHeight: 1.1 }}>
+        <div style={{ fontSize: 'clamp(26px, 8.5vw, 34px)', fontWeight: 600, letterSpacing: '-1px', overflowWrap: 'anywhere', color: net === null ? T.text : net > 0 ? T.bad : net < 0 ? T.ok : T.text, lineHeight: 1.1 }}>
           {net === null ? 'Нет данных' : net === 0 ? 'Задолженности нет' : money(Math.abs(net))}
         </div>
         <div style={{ fontSize: 13, color: T.muted, marginTop: 8, marginBottom: 18 }}>
@@ -39,7 +39,7 @@ export default function TenantDashboard({ tenantId, onNavigate }: { tenantId: st
 
       <Card>
         <Title right={days !== null && days <= 60 ? <Badge tone={days < 30 ? 'bad' : 'warn'}>{days > 0 ? `осталось ${days} дн.` : 'срок истёк'}</Badge> : undefined}>Аренда</Title>
-        <div style={{ fontSize: 16, fontWeight: 500, marginBottom: 4 }}>{tenant?.full_name}</div>
+        <div style={{ fontSize: 16, fontWeight: 500, marginBottom: 4, overflowWrap: 'anywhere' }}>{tenant?.full_name}</div>
         <Row label="Помещение" value={tenant?.unit_number ? `№ ${tenant.unit_number}` : null} />
         <Row label="Площадь" value={tenant?.area_actual ? `${tenant.area_actual} м²` : null} />
         <Row label="Договор" value={tenant?.contract_number ? `№ ${tenant.contract_number}` : null} />
@@ -47,7 +47,7 @@ export default function TenantDashboard({ tenantId, onNavigate }: { tenantId: st
       </Card>
 
       <Card>
-        <Title right={<button onClick={() => onNavigate('invoices')} style={{ background: 'none', border: 'none', color: T.sub, fontSize: 13, cursor: 'pointer', fontFamily: T.font }}>Все</button>}>Последние операции</Title>
+        <Title right={<button onClick={() => onNavigate('invoices')} style={{ minHeight: 44, padding: '0 4px', margin: '-12px 0', background: 'none', border: 'none', color: T.sub, fontSize: 13, cursor: 'pointer', fontFamily: T.font }}>Все</button>}>Последние операции</Title>
         {ops.length === 0 ? <Empty>Операций пока нет</Empty> : ops.map(o => <OpRow key={o.id} o={o} />)}
       </Card>
 
@@ -55,8 +55,8 @@ export default function TenantDashboard({ tenantId, onNavigate }: { tenantId: st
         <Card>
           <Title>Заявки в работе</Title>
           {repairs.map(r => (
-            <div key={r.id} onClick={() => onNavigate('repairs')} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '11px 0', borderTop: `1px solid ${T.border}`, fontSize: 14, cursor: 'pointer' }}>
-              <span>№ {r.number} · {r.category}</span>
+            <div key={r.id} onClick={() => onNavigate('repairs')} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, minHeight: 44, padding: '11px 0', borderTop: `1px solid ${T.border}`, fontSize: 14, cursor: 'pointer', boxSizing: 'border-box' }}>
+              <span style={{ minWidth: 0 }}>№ {r.number} · {r.category}</span>
               <Badge tone="warn">{r.status === 'new' ? 'новая' : r.status === 'accepted' ? 'принята' : 'в работе'}</Badge>
             </div>
           ))}

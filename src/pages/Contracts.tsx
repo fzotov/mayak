@@ -80,7 +80,7 @@ function NewLease({ onClose }: { onClose: () => void }) {
       <Field label="Арендатор"><select style={inputStyle} value={f.tenant} onChange={e => setF({ ...f, tenant: e.target.value })}>
         <option value="">Выберите…</option>{tenants.map(t => <option key={t.id} value={t.id}>{t.full_name}</option>)}
       </select></Field>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(140px, 100%), 1fr))', gap: 12 }}>
         <Field label="Номер"><input style={inputStyle} value={f.number} onChange={e => setF({ ...f, number: e.target.value })} /></Field>
         <Field label="Начало"><input type="date" style={inputStyle} value={f.start} onChange={e => setF({ ...f, start: e.target.value })} /></Field>
         <Field label="Окончание"><input type="date" style={inputStyle} value={f.end} onChange={e => setF({ ...f, end: e.target.value })} /></Field>
@@ -232,7 +232,7 @@ function NewRate({ line, onClose, onDone }: { line: LeaseLine; onClose: () => vo
   return (
     <Modal title="Новая ставка" onClose={onClose} footer={<><Button onClick={onClose}>Отмена</Button><Button kind="primary" onClick={apply}>Применить</Button></>}>
       <Notice>Сейчас: {money(line.amount)} в месяц{line.rate_per_sqm ? ` (${line.area} м² × ${money(line.rate_per_sqm)})` : ''}. Прежняя ставка останется в истории.</Notice>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(140px, 100%), 1fr))', gap: 12 }}>
         <Field label="С даты"><input type="date" style={inputStyle} value={f.from} onChange={e => setF({ ...f, from: e.target.value })} /></Field>
         <Field label="Ставка, ₽/м²"><input inputMode="decimal" style={inputStyle} value={f.rate} onChange={e => setF({ ...f, rate: e.target.value, amount: line.area && e.target.value ? String(Math.round(Number(line.area) * Number(e.target.value) * 100) / 100) : f.amount })} /></Field>
         <Field label="В месяц, ₽"><input inputMode="decimal" style={inputStyle} value={f.amount} onChange={e => setF({ ...f, amount: e.target.value })} /></Field>

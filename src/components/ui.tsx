@@ -32,6 +32,18 @@ export const today = () => new Date().toISOString().slice(0, 10)
 export const monthStart = (d = new Date()) => new Date(Date.UTC(d.getFullYear(), d.getMonth(), 1)).toISOString().slice(0, 10)
 
 // ── Раскладка ───────────────────────────────────────────────────────────────
+/** Телефон: экран уже 768px. Экраны «на ходу» рисуют карточки вместо таблиц. */
+export const PHONE_MAX = 768
+export function useNarrow(max = PHONE_MAX) {
+  const [narrow, setNarrow] = React.useState(() => typeof window !== 'undefined' && window.innerWidth < max)
+  React.useEffect(() => {
+    const on = () => setNarrow(window.innerWidth < max)
+    window.addEventListener('resize', on)
+    return () => window.removeEventListener('resize', on)
+  }, [max])
+  return narrow
+}
+
 export function Page({ title, actions, children }: { title?: React.ReactNode; actions?: React.ReactNode; children: React.ReactNode }) {
   return (
     <div style={{ display: 'grid', gap: 16, color: C.text, minWidth: 0 }}>
@@ -61,7 +73,7 @@ export function Card({ title, actions, children, pad = true }: { title?: React.R
 }
 
 export function Grid({ min = 180, gap = 12, children }: { min?: number; gap?: number; children: React.ReactNode }) {
-  return <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fit, minmax(${min}px, 1fr))`, gap }}>{children}</div>
+  return <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fit, minmax(min(${min}px, 100%), 1fr))`, gap }}>{children}</div>
 }
 
 export function Row({ gap = 8, align = 'center', wrap = true, children, justify }: { gap?: number; align?: React.CSSProperties['alignItems']; wrap?: boolean; justify?: React.CSSProperties['justifyContent']; children: React.ReactNode }) {
@@ -93,6 +105,19 @@ export function Button({ kind = 'secondary', small, ...p }: React.ButtonHTMLAttr
   )
 }
 
+/** Телефон для ссылки tel:. В поле бывает несколько номеров через запятую — берём первый. */
+export const telHref = (phone?: string | null) => {
+  const first = (phone || '').split(/[,;]|\s{2,}/)[0]
+  const digits = first.replace(/[^\d+]/g, '')
+  return digits.replace(/\D/g, '').length >= 5 ? 'tel:' + digits : ''
+}
+/** Номер телефона — нажимаемый: на телефоне сразу звонок. */
+export function PhoneLink({ phone }: { phone?: string | null }) {
+  if (!phone) return <>—</>
+  const href = telHref(phone)
+  return href ? <a href={href} style={{ color: C.accent, textDecoration: 'none', whiteSpace: 'nowrap' }}>{phone}</a> : <>{phone}</>
+}
+
 /** Внутренняя ссылка админки: работает «открыть в новой вкладке» и «Назад». */
 export function Link({ to, children, muted }: { to: string; children: React.ReactNode; muted?: boolean }) {
   return <RouterLink to={to} style={{ color: muted ? C.text : C.accent, textDecoration: 'none' }}>{children}</RouterLink>
@@ -111,16 +136,16 @@ export function Badge({ tone = 'neutral', children }: { tone?: Tone; children: R
 export function Stat({ label, value, sub, tone, onClick }: { label: string; value: React.ReactNode; sub?: React.ReactNode; tone?: 'red' | 'green' | 'amber' | 'blue'; onClick?: () => void }) {
   const color = tone === 'red' ? C.red : tone === 'green' ? C.green : tone === 'amber' ? C.amber : tone === 'blue' ? C.accent : C.text
   return (
-    <div onClick={onClick} style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: C.radius, padding: '12px 16px', cursor: onClick ? 'pointer' : undefined }}>
+    <div onClick={onClick} style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: C.radius, padding: '12px 16px', cursor: onClick ? 'pointer' : undefined, minWidth: 0 }}>
       <div style={{ fontSize: 12, color: C.muted, marginBottom: 4 }}>{label}</div>
-      <div style={{ fontSize: 18, fontWeight: 600, color, fontVariantNumeric: 'tabular-nums' }}>{value}</div>
+      <div style={{ fontSize: 18, fontWeight: 600, color, fontVariantNumeric: 'tabular-nums', overflowWrap: 'anywhere' }}>{value}</div>
       {sub && <div style={{ fontSize: 12, color: C.faint, marginTop: 2 }}>{sub}</div>}
     </div>
   )
 }
 
 export function Stats({ children }: { children: React.ReactNode }) {
-  return <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12 }}>{children}</div>
+  return <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(170px, 100%), 1fr))', gap: 12 }}>{children}</div>
 }
 
 // ── Таблица ─────────────────────────────────────────────────────────────────

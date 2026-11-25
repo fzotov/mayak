@@ -3,9 +3,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { apiFetch } from '../lib/api'
+import { go } from '../lib/nav'
 import { rpc, loadArticles, type Article } from '../lib/accounting'
 import { printAct } from './Settlements'
-import { Page, Card, Button, Badge, Stat, Stats, Table, Search, Segmented, Notice, Loading, ErrorBox, Link, Sub, Row, money, dateRu, C } from '../components/ui'
+import { Page, Card, Button, Badge, Stat, Stats, Table, Search, Segmented, Notice, Loading, ErrorBox, Empty, Link, Sub, Row, PhoneLink, money, dateRu, telHref, useNarrow, C } from '../components/ui'
 
 export interface SaldoRow {
   tenant_id: string; tenant_name: string; inn: string | null; email: string | null; debt: number; advance: number; deposit: number; balance: number
@@ -23,10 +24,15 @@ export default function DebtorsPage() {
   const [open, setOpen] = useState<string | null>(null)
   const [msg, setMsg] = useState<{ tone: 'green' | 'red'; text: string } | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
+  const [phones, setPhones] = useState<Record<string, string>>({})
+  const narrow = useNarrow()
 
   async function load() {
     setError('')
     try { setRows(await rpc<SaldoRow[]>('tenant_saldo')); setArticles(await loadArticles()) } catch (e: any) { setError(e.message); setRows([]) }
+    // телефон для звонка: контактное лицо, иначе общий номер арендатора
+    const { data } = await supabase.from('tenants').select('id, phone, contact_phone')
+    setPhones(Object.fromEntries((data || []).map((t: any) => [t.id, telHref(t.contact_phone) ? t.contact_phone : t.phone]).filter(([, p]) => telHref(p))))
   }
   useEffect(() => { load() }, [])
 
@@ -67,7 +73,47 @@ export default function DebtorsPage() {
         <Stat label="Должников с просрочкой" value={(rows || []).filter(r => Number(r.overdue) > 0).length} />
         <Stat label="Переплаты (авансы)" value={money((rows || []).reduce((s, r) => s + Math.max(0, -Number(r.balance)), 0))} tone="green" />
       </Stats>
-      <Card pad={false}>
+      {narrow ? (rows === null ? <Loading /> : shown.length === 0 ? <Card><Empty>{rows.length === 0 ? 'Начислений ещё нет' : 'Никого нет'}</Empty></Card> : (
+        <div style={{ display: 'grid', gap: 10 }}>
+          {shown.map(r => {
+            const tel = telHref(phones[r.tenant_id])
+            const big: React.CSSProperties = { minHeight: 44, flex: '1 1 40%' }
+            return (
+              <Card key={r.tenant_id}>
+                <div style={{ display: 'grid', gap: 8 }}>
+                  <Row justify="space-between" wrap={false} align="flex-start">
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, fontSize: 15, wordBreak: 'break-word' }}><Link to={'/tenants/' + r.tenant_id} muted>{r.tenant_name}</Link></div>
+                      {phones[r.tenant_id] && <Sub>{phones[r.tenant_id]}</Sub>}
+                    </div>
+                    {r.max_days_overdue > 0 && <Badge tone={r.max_days_overdue > 30 ? 'red' : 'amber'}>{r.max_days_overdue} дн.</Badge>}
+                  </Row>
+                  <Row gap={16}>
+                    <div><div style={{ fontSize: 12, color: C.muted }}>Сальдо</div><div style={{ fontSize: 18, fontWeight: 600, color: Number(r.balance) > 0 ? C.red : C.green, fontVariantNumeric: 'tabular-nums' }}>{money(r.balance)}</div></div>
+                    {Number(r.overdue) > 0 && <div><div style={{ fontSize: 12, color: C.muted }}>Просрочено</div><div style={{ fontSize: 15, fontWeight: 500, fontVariantNumeric: 'tabular-nums' }}>{money(r.overdue)}</div></div>}
+                  </Row>
+                  <div style={{ fontSize: 13, color: C.muted }}>Последнее поступление: {r.last_payment_date ? `${dateRu(r.last_payment_date)}, ${money(r.last_payment_amount)}` : 'не было'}</div>
+                  {open === r.tenant_id && (
+                    <div style={{ display: 'grid', gap: 3 }}>
+                      {r.articles.map(a => (
+                        <div key={a.code} style={{ display: 'flex', gap: 12, fontSize: 13, color: C.muted }}>
+                          <span style={{ flex: 1 }}>{a.name}</span><span style={{ color: Number(a.debt) > 0 ? C.red : C.green }}>{money(a.debt)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <Row gap={8}>
+                    {tel && <a href={tel} style={{ ...big, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: C.radiusSm, background: C.accent, color: C.onAccent, textDecoration: 'none', fontWeight: 600, fontSize: 14 }}>Позвонить</a>}
+                    {Number(r.balance) > 0 && <Button style={big} disabled={busy === r.tenant_id || !r.email} onClick={() => remind(r)}>{busy === r.tenant_id ? 'Отправляю…' : r.email ? 'Напомнить' : 'Нет почты'}</Button>}
+                    <Button style={big} onClick={() => setOpen(open === r.tenant_id ? null : r.tenant_id)}>{open === r.tenant_id ? 'Скрыть статьи' : 'По статьям'}</Button>
+                    <Button style={big} onClick={() => go('/settlements/' + r.tenant_id)}>Расчёты</Button>
+                  </Row>
+                </div>
+              </Card>
+            )
+          })}
+        </div>
+      )) : <Card pad={false}>
         {rows === null ? <Loading /> : (
           <Table rows={shown} rowKey={r => r.tenant_id} onRow={r => setOpen(open === r.tenant_id ? null : r.tenant_id)}
             empty={rows.length === 0 ? 'Начислений ещё нет: долги появятся после проведения биллинга и загрузки выписок' : 'Никого нет'} cols={[
@@ -75,6 +121,7 @@ export default function DebtorsPage() {
                 <div>
                   <Link to={'/settlements/' + r.tenant_id}>{r.tenant_name}</Link>
                   {r.inn && <Sub>ИНН {r.inn}</Sub>}
+                  {phones[r.tenant_id] && <div onClick={e => e.stopPropagation()} style={{ fontSize: 12, marginTop: 2 }}><PhoneLink phone={phones[r.tenant_id]} /></div>}
                   {open === r.tenant_id && (
                     <div style={{ marginTop: 8, display: 'grid', gap: 3 }}>
                       {r.articles.map(a => (
@@ -101,7 +148,7 @@ export default function DebtorsPage() {
               ) : null },
             ]} />
         )}
-      </Card>
+      </Card>}
     </Page>
   )
 }

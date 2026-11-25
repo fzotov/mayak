@@ -58,7 +58,7 @@ export default function TenantInvoices({ tenantId }: { tenantId: string }) {
     <div style={page}>
       <Card pad={22}>
         <div style={{ fontSize: 13, color: T.muted, marginBottom: 8 }}>{net !== null && net > 0 ? 'К оплате' : net !== null && net < 0 ? 'Переплата' : 'Сальдо'}</div>
-        <div style={{ fontSize: 34, fontWeight: 600, letterSpacing: '-1px', lineHeight: 1.1, color: net === null ? T.text : net > 0 ? T.bad : net < 0 ? T.ok : T.text }}>
+        <div style={{ fontSize: 'clamp(26px, 8.5vw, 34px)', fontWeight: 600, letterSpacing: '-1px', overflowWrap: 'anywhere', lineHeight: 1.1, color: net === null ? T.text : net > 0 ? T.bad : net < 0 ? T.ok : T.text }}>
           {net === null ? 'Нет данных' : net === 0 ? 'Задолженности нет' : money(Math.abs(net))}
         </div>
         <div style={{ fontSize: 13, color: T.muted, marginTop: 8 }}>
@@ -68,7 +68,7 @@ export default function TenantInvoices({ tenantId }: { tenantId: string }) {
 
       {requisites.length > 0 && (
         <Card>
-          <Title right={<button onClick={copy} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 7, color: T.text, fontSize: 13, padding: '6px 12px', cursor: 'pointer', fontFamily: T.font }}>{copied ? 'Скопировано' : 'Скопировать'}</button>}>Реквизиты для оплаты</Title>
+          <Title right={<button onClick={copy} style={{ background: 'none', border: `1px solid ${T.border}`, borderRadius: 7, color: T.text, fontSize: 13, minHeight: 44, margin: '-8px 0', padding: '6px 12px', cursor: 'pointer', fontFamily: T.font }}>{copied ? 'Скопировано' : 'Скопировать'}</button>}>Реквизиты для оплаты</Title>
           {requisites.map(r => <Row key={r[0]} label={r[0]} value={r[1]} />)}
         </Card>
       )}
@@ -80,13 +80,13 @@ export default function TenantInvoices({ tenantId }: { tenantId: string }) {
             const s = INV_STATUS[i.pay_status] || { t: i.pay_status, tone: 'muted' as const }
             return (
               <div key={i.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '11px 0', borderTop: `1px solid ${T.border}` }}>
-                <div>
+                <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: 14 }}>№ {i.number} · {i.period}</div>
                   <div style={{ fontSize: 12, color: T.muted, marginTop: 2 }}>оплатить до {date(i.due_date)}{Number(i.open_amount) > 0 && Number(i.open_amount) < Number(i.total) ? ` · осталось ${money(i.open_amount)}` : ''}</div>
-                  {landlord && <button onClick={() => downloadInvoice(i, tenant, landlord)} style={{ marginTop: 6, background: 'none', border: 0, padding: 0, color: T.accent, fontSize: 13, cursor: 'pointer', fontFamily: T.font }}>Счёт с QR для оплаты</button>}
+                  {landlord && <button onClick={() => downloadInvoice(i, tenant, landlord)} style={{ minHeight: 44, background: 'none', border: 0, padding: 0, textDecoration: 'underline', textUnderlineOffset: 3, color: T.accent, fontSize: 13, cursor: 'pointer', fontFamily: T.font }}>Счёт с QR для оплаты</button>}
                 </div>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: 14, fontVariantNumeric: 'tabular-nums', marginBottom: 4 }}>{money(i.total)}</div>
+                <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                  <div style={{ fontSize: 14, fontVariantNumeric: 'tabular-nums', marginBottom: 4, whiteSpace: 'nowrap' }}>{money(i.total)}</div>
                   <Badge tone={s.tone}>{s.t}</Badge>
                 </div>
               </div>
@@ -111,8 +111,8 @@ export default function TenantInvoices({ tenantId }: { tenantId: string }) {
           <Title>Неоплаченные документы</Title>
           {opening.map(o => (
             <div key={o.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '11px 0', borderTop: `1px solid ${T.border}`, fontSize: 14 }}>
-              <div><div>{o.doc_type}{o.doc_number ? ` № ${o.doc_number}` : ''}</div><div style={{ fontSize: 12, color: T.muted, marginTop: 2 }}>{date(o.date)}</div></div>
-              <div style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: Number(o.charged) > 0 ? T.bad : T.ok }}>
+              <div style={{ minWidth: 0, overflowWrap: 'anywhere' }}><div>{o.doc_type}{o.doc_number ? ` № ${o.doc_number}` : ''}</div><div style={{ fontSize: 12, color: T.muted, marginTop: 2 }}>{date(o.date)}</div></div>
+              <div style={{ textAlign: 'right', flexShrink: 0, fontVariantNumeric: 'tabular-nums', color: Number(o.charged) > 0 ? T.bad : T.ok }}>
                 {Number(o.charged) > 0 ? `долг ${money(o.charged)}` : `аванс ${money(o.paid)}`}
               </div>
             </div>

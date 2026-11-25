@@ -11,6 +11,7 @@ import TenantInvoices from './pages/tenant/TenantInvoices';
 import TenantMeters from './pages/tenant/TenantMeters';
 import TenantRepairs from './pages/tenant/TenantRepairs';
 import TenantNotifications from './pages/tenant/TenantNotifications';
+import TenantDocuments from './pages/tenant/TenantDocuments';
 import TenantLayout from './pages/tenant/TenantLayout';
 
 export default function TenantApp() {
@@ -91,6 +92,8 @@ export default function TenantApp() {
     page = 'repairs';
   } else if (path.startsWith('/tenant/notifications')) {
     page = 'notifications';
+  } else if (path.startsWith('/tenant/documents')) {
+    page = 'documents';
   }
 
   let content: React.ReactElement;
@@ -108,6 +111,8 @@ export default function TenantApp() {
     content = <TenantRepairs tenantId={session.tenantId} />;
   } else if (page === 'notifications') {
     content = <TenantNotifications tenantId={session.tenantId} />;
+  } else if (page === 'documents') {
+    content = <TenantDocuments tenantId={session.tenantId} />;
   } else {
     content = <TenantDashboard tenantId={session.tenantId} onNavigate={onNavigate} />;
   }

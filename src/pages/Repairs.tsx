@@ -1,9 +1,11 @@
 // Заявки на ремонт: список с фильтрами, аварийные, карточка заявки с обработкой и историей статусов.
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
+import { compressImage } from '../lib/photo'
+import { PhotoThumbs } from '../components/Photos'
 import {
   Page, Card, Row, Button, Badge, Stat, Stats, Table, Field, Input, Select, Textarea, Segmented, Tabs, Modal, Notice,
-  Loading, ErrorBox, Empty, Sub, dateRu, dateTimeRu, C, type Tone,
+  Loading, ErrorBox, Empty, Sub, Muted, dateRu, dateTimeRu, today, useNarrow, C, type Tone,
 } from '../components/ui'
 
 interface Repair {
@@ -16,6 +18,8 @@ interface Repair {
   status: string
   description: string
   photos: string[] | null
+  photos_after: string[] | null
+  accepted_at: string | null
   assignee_id: string | null
   due_date: string | null
   completed_date: string | null
@@ -68,6 +72,58 @@ function Section({ children }: { children: React.ReactNode }) {
   return <div style={{ fontSize: 11, fontWeight: 600, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.5px', borderBottom: `1px solid ${C.line}`, paddingBottom: 6 }}>{children}</div>
 }
 
+// ─── Действия с заявкой (телефон и карточка) ────────────────────────────────
+type PhotoKind = 'before' | 'after'
+const OPEN = ['new', 'accepted', 'in_progress']
+
+/** Сменить статус: строка заявки + запись в историю. Уведомление арендатору шлёт триггер в базе. */
+async function changeRepair(r: Repair, patch: Partial<Repair>, comment?: string | null) {
+  const { error } = await supabase.from('repairs').update(patch).eq('id', r.id)
+  if (error) throw new Error(error.message)
+  if (patch.status && patch.status !== r.status) {
+    await supabase.from('repair_history').insert({ repair_id: r.id, status: patch.status, comment: comment || null })
+  }
+}
+
+/** Фото «до» или «после»: сжать, загрузить в repair-photos, дописать в заявку. Возвращает новый список. */
+async function addRepairPhotos(r: Repair, kind: PhotoKind, files: File[]): Promise<string[]> {
+  const urls: string[] = []
+  for (const f of files) {
+    const blob = await compressImage(f).catch(() => f)
+    const name = `${kind}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.jpg`
+    const path = r.tenant_id ? `tenant/${r.tenant_id}/${r.id}/${name}` : `staff/${r.id}/${name}`
+    const { error } = await supabase.storage.from('repair-photos').upload(path, blob, { contentType: 'image/jpeg' })
+    if (error) throw new Error('Фото не загрузилось: ' + error.message)
+    urls.push(supabase.storage.from('repair-photos').getPublicUrl(path).data.publicUrl)
+  }
+  const col = kind === 'before' ? 'photos' : 'photos_after'
+  const { data: cur } = await supabase.from('repairs').select(col).eq('id', r.id).single()
+  const next = [...(((cur as any)?.[col] as string[] | null) || []), ...urls]
+  const { error } = await supabase.from('repairs').update({ [col]: next }).eq('id', r.id)
+  if (error) throw new Error('Фото загружены, но не привязаны к заявке: ' + error.message)
+  return next
+}
+
+/** Кнопка «Фото до / после»: камера, можно несколько снимков. */
+function PhotoButton({ repair, kind, onDone, onError, big }: { repair: Repair; kind: PhotoKind; onDone: (urls: string[]) => void; onError: (m: string) => void; big?: boolean }) {
+  const ref = useRef<HTMLInputElement>(null)
+  const [busy, setBusy] = useState(false)
+  return <>
+    <input ref={ref} type="file" accept="image/*" capture="environment" multiple style={{ display: 'none' }}
+      onChange={async e => {
+        const files = Array.from(e.target.files || [])
+        e.target.value = ''
+        if (!files.length) return
+        setBusy(true)
+        try { onDone(await addRepairPhotos(repair, kind, files)) } catch (err: any) { onError(err.message) }
+        setBusy(false)
+      }} />
+    <Button small={!big} disabled={busy} onClick={() => ref.current?.click()} style={big ? { minHeight: 44, flex: '1 1 40%' } : undefined}>
+      {busy ? 'Загружаю…' : kind === 'before' ? 'Фото до' : 'Фото после'}
+    </Button>
+  </>
+}
+
 const two: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }
 
 // ─── Карточка заявки ─────────────────────────────────────────────────────────
@@ -80,7 +136,9 @@ function RepairModal({ repair, units, staff, onClose, onSaved, initialPriority }
   onSaved: () => void
   initialPriority?: string
 }) {
-  const [tab, setTab] = useState<'info' | 'process' | 'history'>('info')
+  const [tab, setTab] = useState<'info' | 'process' | 'photos' | 'history'>('info')
+  const [photos, setPhotos] = useState<{ before: string[]; after: string[] }>({ before: repair?.photos || [], after: repair?.photos_after || [] })
+  const [photosChanged, setPhotosChanged] = useState(false)
   const [form, setForm] = useState({
     unit_id: repair?.unit_id || '',
     category: repair?.category || 'Другое',
@@ -122,6 +180,7 @@ function RepairModal({ repair, units, staff, onClose, onSaved, initialPriority }
       due_date: form.due_date || null,
       completed_date: form.completed_date || null,
       cost: Number(form.cost),
+      ...(repair && form.status !== repair.status && form.status === 'accepted' && !repair.accepted_at ? { accepted_at: new Date().toISOString() } : {}),
     }
     if (repair?.id) {
       // Запись в историю, если статус изменился
@@ -150,13 +209,14 @@ function RepairModal({ repair, units, staff, onClose, onSaved, initialPriority }
   const title = repair ? `Заявка №${repair.number} от ${dateRu(repair.created_at)}` : 'Новая заявка'
 
   return (
-    <Modal title={title} onClose={onClose} width={600} footer={<>
-      {repair && tab !== 'history' && <Button kind="danger" onClick={remove} style={{ marginRight: 'auto' }}>Удалить</Button>}
-      <Button onClick={onClose}>Закрыть</Button>
-      {tab !== 'history' && <Button kind="primary" onClick={save} disabled={saving}>{saving ? 'Сохранение…' : 'Сохранить'}</Button>}
+    <Modal title={title} onClose={photosChanged ? onSaved : onClose} width={600} footer={<>
+      {repair && tab !== 'history' && tab !== 'photos' && <Button kind="danger" onClick={remove} style={{ marginRight: 'auto' }}>Удалить</Button>}
+      <Button onClick={photosChanged ? onSaved : onClose}>Закрыть</Button>
+      {tab !== 'history' && tab !== 'photos' && <Button kind="primary" onClick={save} disabled={saving}>{saving ? 'Сохранение…' : 'Сохранить'}</Button>}
     </>}>
       {form.priority === 'emergency' && <div><Badge tone="red">Аварийная</Badge></div>}
-      <Tabs<'info' | 'process' | 'history'> value={tab} onChange={setTab} tabs={[['info', 'Заявка'], ['process', 'Обработка'], ['history', 'История']]} />
+      <Tabs<'info' | 'process' | 'photos' | 'history'> value={tab} onChange={setTab}
+        tabs={[['info', 'Заявка'], ['process', 'Обработка'], ['photos', `Фото${photos.before.length + photos.after.length ? ' · ' + (photos.before.length + photos.after.length) : ''}`], ['history', 'История']]} />
       {error && <Notice tone="red">{error}</Notice>}
 
       {tab === 'info' && <>
@@ -214,6 +274,18 @@ function RepairModal({ repair, units, staff, onClose, onSaved, initialPriority }
         </Field>
       </>}
 
+      {tab === 'photos' && (
+        !repair?.id ? <Empty>Фото можно добавить после сохранения заявки</Empty> : <>
+          <PhotoThumbs urls={photos.before} label="До" size={88} />
+          <PhotoThumbs urls={photos.after} label="После" size={88} />
+          {!photos.before.length && !photos.after.length && <Muted small>Фото пока нет</Muted>}
+          <Row gap={8}>
+            <PhotoButton repair={repair} kind="before" onDone={u => { setPhotos(p => ({ ...p, before: u })); setPhotosChanged(true) }} onError={setError} />
+            <PhotoButton repair={repair} kind="after" onDone={u => { setPhotos(p => ({ ...p, after: u })); setPhotosChanged(true) }} onError={setError} />
+          </Row>
+        </>
+      )}
+
       {tab === 'history' && (
         !repair?.id ? <Empty>Изменений статуса нет</Empty>
           : historyError ? <ErrorBox error={historyError} onRetry={loadHistory} />
@@ -237,6 +309,82 @@ function RepairModal({ repair, units, staff, onClose, onSaved, initialPriority }
   )
 }
 
+// ─── Карточка заявки на телефоне ─────────────────────────────────────────────
+
+function MobileRepair({ r, staff, onChanged, onOpen }: { r: Repair; staff: Staff[]; onChanged: () => void; onOpen: () => void }) {
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const [assigning, setAssigning] = useState(false)
+  const [assignee, setAssignee] = useState(r.assignee_id || '')
+  const [closing, setClosing] = useState(false)
+  const [comment, setComment] = useState(r.comment || '')
+  const [before, setBefore] = useState(r.photos || [])
+  const [after, setAfter] = useState(r.photos_after || [])
+  const act = async (patch: Partial<Repair>, note?: string | null) => {
+    setBusy(true); setErr('')
+    try { await changeRepair(r, patch, note); setAssigning(false); setClosing(false); onChanged() } catch (e: any) { setErr('Не сохранилось: ' + e.message) }
+    setBusy(false)
+  }
+  const bigBtn: React.CSSProperties = { minHeight: 44, flex: '1 1 40%' }
+  const open = OPEN.includes(r.status)
+  return (
+    <Card>
+      <div style={{ display: 'grid', gap: 10, borderLeft: r.priority === 'emergency' ? `3px solid ${C.red}` : undefined, paddingLeft: r.priority === 'emergency' ? 10 : 0, marginLeft: r.priority === 'emergency' ? -4 : 0 }}>
+        <Row gap={6}>
+          <span style={{ fontWeight: 600 }}>№ {r.number}</span>
+          <StatusBadge s={r.status} />
+          {r.priority !== 'medium' && r.priority !== 'low' && <PriorityBadge p={r.priority} />}
+          <span style={{ marginLeft: 'auto', fontSize: 12, color: C.muted }}>{dateRu(r.created_at)}</span>
+          <Button small kind="ghost" onClick={onOpen} style={{ padding: '4px 0 4px 6px' }}>Подробнее</Button>
+        </Row>
+        <div style={{ fontSize: 15, lineHeight: 1.4, wordBreak: 'break-word' }}>{r.description}</div>
+        <div style={{ fontSize: 13, color: C.muted }}>
+          {[r.unit?.number && 'пом. ' + r.unit.number, r.tenant?.full_name, r.category].filter(Boolean).join(' · ')}
+          <div>Исполнитель: {r.assignee?.full_name || 'не назначен'}{r.due_date && <> · срок {dateRu(r.due_date)}</>}</div>
+        </div>
+        <PhotoThumbs urls={before} label="До" />
+        <PhotoThumbs urls={after} label="После" />
+        {r.comment && !open && <div style={{ fontSize: 13, color: C.muted }}>Комментарий: {r.comment}</div>}
+        {err && <Notice tone="red">{err}</Notice>}
+
+        {assigning && (
+          <div style={{ display: 'grid', gap: 8 }}>
+            <Select value={assignee} onChange={e => setAssignee(e.target.value)} style={{ fontSize: 16, padding: '10px 12px' }}>
+              <option value="">Не назначен</option>
+              {staff.map(s => <option key={s.id} value={s.id}>{s.full_name}</option>)}
+            </Select>
+            <Row gap={8}>
+              <Button kind="primary" style={bigBtn} disabled={busy} onClick={() => act({ assignee_id: assignee || null })}>Сохранить</Button>
+              <Button style={bigBtn} onClick={() => setAssigning(false)}>Отмена</Button>
+            </Row>
+          </div>
+        )}
+        {closing && (
+          <div style={{ display: 'grid', gap: 8 }}>
+            <Textarea value={comment} onChange={e => setComment(e.target.value)} placeholder="Что сделано (необязательно)" style={{ minHeight: 70, fontSize: 16 }} />
+            <Row gap={8}>
+              <Button kind="primary" style={bigBtn} disabled={busy} onClick={() => act({ status: 'completed', completed_date: today(), comment: comment || null }, comment)}>{busy ? 'Закрываю…' : 'Закрыть заявку'}</Button>
+              <Button style={bigBtn} onClick={() => setClosing(false)}>Отмена</Button>
+            </Row>
+          </div>
+        )}
+
+        {open && !assigning && !closing && (
+          <Row gap={8}>
+            {r.status === 'new' && <Button kind="primary" style={bigBtn} disabled={busy} onClick={() => act({ status: 'accepted', accepted_at: new Date().toISOString() })}>Принять</Button>}
+            {r.status === 'accepted' && <Button kind="primary" style={bigBtn} disabled={busy} onClick={() => act({ status: 'in_progress' })}>В работу</Button>}
+            {r.status === 'in_progress' && <Button kind="primary" style={bigBtn} disabled={busy} onClick={() => setClosing(true)}>Закрыть</Button>}
+            <Button style={bigBtn} disabled={busy} onClick={() => setAssigning(true)}>{r.assignee_id ? 'Переназначить' : 'Назначить'}</Button>
+            <PhotoButton big repair={r} kind="before" onDone={setBefore} onError={setErr} />
+            <PhotoButton big repair={r} kind="after" onDone={setAfter} onError={setErr} />
+            {r.status !== 'in_progress' && <Button style={bigBtn} disabled={busy} onClick={() => setClosing(true)}>Закрыть</Button>}
+          </Row>
+        )}
+      </div>
+    </Card>
+  )
+}
+
 // ─── Страница ────────────────────────────────────────────────────────────────
 
 export default function RepairsPage() {
@@ -245,21 +393,22 @@ export default function RepairsPage() {
   const [staff, setStaff] = useState<Staff[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const narrow = useNarrow()
   const [selected, setSelected] = useState<Repair | null>(null)
   const [showModal, setShowModal] = useState(false)
   const [initPriority, setInitPriority] = useState('medium')
 
   // Фильтры
   const [pageTab, setPageTab] = useState<'all' | 'emergency'>('all')
-  const [statusFilter, setStatusFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState(() => (window.innerWidth < 768 ? 'open' : ''))
   const [priorityFilter, setPriorityFilter] = useState('')
   const [catFilter, setCatFilter] = useState('')
   const [unitFilter, setUnitFilter] = useState('')
 
   useEffect(() => { fetchAll() }, [])
 
-  async function fetchAll() {
-    setLoading(true)
+  async function fetchAll(silent = false) {
+    if (!silent) setLoading(true)
     setError('')
     const [rep, u, s] = await Promise.all([
       supabase.from('repairs').select('*, tenant:tenants(full_name), unit:units(number), assignee:staff(full_name)')
@@ -305,7 +454,7 @@ export default function RepairsPage() {
   // Отфильтрованный список
   const base = pageTab === 'emergency' ? repairs.filter(r => r.priority === 'emergency') : repairs
   const filtered = base.filter(r => {
-    if (statusFilter && r.status !== statusFilter) return false
+    if (statusFilter === 'open' ? !OPEN.includes(r.status) : statusFilter && r.status !== statusFilter) return false
     if (priorityFilter && r.priority !== priorityFilter) return false
     if (catFilter && r.category !== catFilter) return false
     if (unitFilter && r.unit_id !== unitFilter) return false
@@ -313,6 +462,39 @@ export default function RepairsPage() {
   })
   const anyFilter = statusFilter || priorityFilter || catFilter || unitFilter
   const isOverdue = (r: Repair) => !!r.due_date && new Date(r.due_date) < new Date() && r.status !== 'completed'
+
+  if (narrow) {
+    const mode = pageTab === 'emergency' ? 'emergency' : statusFilter === 'open' ? 'open' : 'all'
+    return (
+      <Page>
+        <Row gap={8}>
+          <Button kind="primary" style={{ flex: 1, minHeight: 44 }} onClick={() => openNew()}>Новая заявка</Button>
+          <Button kind="danger" style={{ flex: 1, minHeight: 44 }} onClick={() => openNew('emergency')}>Аварийная</Button>
+        </Row>
+        <div>
+          <Segmented<'open' | 'emergency' | 'all'> value={mode} onChange={k => {
+            setPriorityFilter(''); setCatFilter(''); setUnitFilter('')
+            if (k === 'emergency') { setPageTab('emergency'); setStatusFilter('open') }
+            else { setPageTab('all'); setStatusFilter(k === 'open' ? 'open' : '') }
+          }} options={[
+            ['open', `Открытые · ${repairs.filter(r => OPEN.includes(r.status)).length}`],
+            ['emergency', <span key="e" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>Аварийные{emergencyOpen > 0 && <Badge tone="red">{emergencyOpen}</Badge>}</span>],
+            ['all', 'Все'],
+          ]} />
+        </div>
+        {error && <ErrorBox error={error} onRetry={() => fetchAll()} />}
+        {loading ? <Loading /> : filtered.length === 0 ? <Card><Empty>Заявок нет</Empty></Card> : (
+          <div style={{ display: 'grid', gap: 10 }}>
+            {filtered.map(r => <MobileRepair key={r.id + r.status + (r.assignee_id || '')} r={r} staff={staff} onChanged={() => fetchAll(true)} onOpen={() => openRepair(r)} />)}
+          </div>
+        )}
+        {showModal && (
+          <RepairModal repair={selected} units={units} staff={staff} onClose={() => setShowModal(false)}
+            onSaved={() => { setShowModal(false); fetchAll() }} initialPriority={initPriority} />
+        )}
+      </Page>
+    )
+  }
 
   return (
     <Page>
@@ -337,6 +519,7 @@ export default function RepairsPage() {
       <Row gap={8}>
         <Select style={{ width: 'auto' }} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
           <option value="">Все статусы</option>
+          <option value="open">Открытые</option>
           {Object.entries(STATUSES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
         </Select>
         <Select style={{ width: 'auto' }} value={priorityFilter} onChange={e => setPriorityFilter(e.target.value)}>
@@ -356,7 +539,7 @@ export default function RepairsPage() {
         )}
       </Row>
 
-      {error && <ErrorBox error={error} onRetry={fetchAll} />}
+      {error && <ErrorBox error={error} onRetry={() => fetchAll()} />}
 
       <Card pad={false}>
         {loading ? <Loading /> : (

@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase'
 import { Page, Card, Grid, Row, Button, Badge, Stat, Stats, Table, Field, Input, Select, Textarea, Modal, Notice, Loading, Empty, ErrorBox, Muted, Sub, C, money, num } from '../components/ui'
 import { Icon } from '../components/icons'
 
-const TYPES: Record<string, {label:string;icon:string;unit:string}> = {
+export const TYPES: Record<string, {label:string;icon:string;unit:string}> = {
   electricity: {label:'Электричество',icon:'',unit:'кВт·ч'},
   cold_water: {label:'Холодная вода',icon:'',unit:'м³'},
   hot_water: {label:'Горячая вода',icon:'',unit:'м³'},

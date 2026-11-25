@@ -78,6 +78,7 @@ const NAV_ITEMS = [
   { key: 'home',          label: 'Главная',      icon: 'home' },
   { key: 'invoices',      label: 'Расчёты',       icon: 'invoices' },
   { key: 'contract',      label: 'Договор',       icon: 'contract' },
+  { key: 'documents',     label: 'Документы',     icon: 'documents' },
   { key: 'meters',        label: 'Счётчики',      icon: 'meters' },
   { key: 'repairs',       label: 'Заявки',        icon: 'repairs' },
   { key: 'notifications', label: 'Уведомления',   icon: 'notifications' },
@@ -265,54 +266,67 @@ export default function TenantLayout({ children, activePage, onNavigate }: Tenan
   // ─── MOBILE ──────────────────────────────────────────────────────────────
   const drawerItems = [
     { key: 'contract',      label: 'Договор',     icon: 'contract' },
+    { key: 'documents',     label: 'Документы',   icon: 'documents' },
     { key: 'notifications', label: 'Уведомления', icon: 'notifications' },
     { key: 'profile',       label: 'Мои данные',  icon: 'profile' },
   ] as const
 
   return (
-    <div style={{ fontFamily: C.font, background: C.bg, color: C.text, minHeight: '100vh', paddingTop: 52, paddingBottom: 60 }}>
-      {/* Top bar */}
+    <div style={{ fontFamily: C.font, background: C.bg, color: C.text, minHeight: '100dvh', paddingTop: 'calc(52px + env(safe-area-inset-top))', overflowX: 'clip' }}>
+      {/* Top bar: в установленном приложении статус-бар прозрачный, поэтому отступ сверху на его высоту */}
       <div style={{
-        position: 'fixed', top: 0, left: 0, right: 0, height: 52, zIndex: 100,
+        position: 'fixed', top: 0, left: 0, right: 0, height: 52, zIndex: 100, boxSizing: 'content-box',
+        paddingTop: 'env(safe-area-inset-top)', paddingLeft: 'max(12px, env(safe-area-inset-left))', paddingRight: 'max(8px, env(safe-area-inset-right))',
         background: C.bg, borderBottom: `1px solid ${C.border}`,
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 16px',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
       }}>
-        <img src="/mayak-logo.png" alt="Маяк" style={{ height: 32, display: 'block', borderRadius: 4 }} />
-        <div style={{ fontSize: 14, fontWeight: 500, color: C.text }}>{PAGE_TITLES[activePage] ?? 'Маяк'}</div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <button onClick={() => onNavigate('notifications')} style={{ position: 'relative', border: 'none', background: 'none', cursor: 'pointer', padding: 4, color: C.mutedMid, display: 'flex' }}>
+        <img src="/mayak-logo.png" alt="Маяк" style={{ height: 32, display: 'block', borderRadius: 4, flexShrink: 0 }} />
+        <div style={{ flex: 1, minWidth: 0, textAlign: 'center', fontSize: 14, fontWeight: 500, color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{PAGE_TITLES[activePage] ?? 'Маяк'}</div>
+        <div style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+          <button onClick={() => onNavigate('notifications')} aria-label="Уведомления" style={{ position: 'relative', width: 44, height: 44, border: 'none', background: 'none', cursor: 'pointer', padding: 0, color: C.mutedMid, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             {Icons.bell}
             {unreadCount > 0 && (
               <span style={{
-                position: 'absolute', top: 0, right: 0, minWidth: 14, height: 14, borderRadius: 7,
+                position: 'absolute', top: 6, right: 4, minWidth: 14, height: 14, borderRadius: 7,
                 background: 'var(--red)', color: 'var(--text)', fontSize: 9, fontWeight: 700,
                 display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px',
               }}>{unreadCount}</span>
             )}
           </button>
-          <button onClick={() => setDrawerOpen(true)} style={{
-            width: 30, height: 30, borderRadius: '50%', background: 'var(--border-strong)',
-            color: C.accent, border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 600,
-          }}>{ava}</button>
+          <button onClick={() => setDrawerOpen(true)} aria-label="Меню" style={{
+            width: 44, height: 44, padding: 0, border: 'none', background: 'none', cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <span style={{
+              width: 30, height: 30, borderRadius: '50%', background: 'var(--border-strong)',
+              color: C.accent, fontSize: 11, fontWeight: 600, fontFamily: C.font,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>{ava}</span>
+          </button>
         </div>
       </div>
 
       {/* Content */}
-      <div style={{ padding: '16px 16px calc(84px + env(safe-area-inset-bottom))', minHeight: 'calc(100dvh - 112px)' }}>
+      <div style={{
+        paddingTop: 16, paddingBottom: 'calc(84px + env(safe-area-inset-bottom))',
+        paddingLeft: 'max(16px, env(safe-area-inset-left))', paddingRight: 'max(16px, env(safe-area-inset-right))',
+        minWidth: 0,
+      }}>
         {children}
       </div>
 
       {/* Bottom nav */}
       <div style={{
-        position: 'fixed', bottom: 0, left: 0, right: 0, height: 60, zIndex: 100, paddingBottom: 'env(safe-area-inset-bottom)', boxSizing: 'content-box',
+        position: 'fixed', bottom: 0, left: 0, right: 0, height: 60, zIndex: 100, boxSizing: 'content-box',
+        paddingBottom: 'env(safe-area-inset-bottom)', paddingLeft: 'env(safe-area-inset-left)', paddingRight: 'env(safe-area-inset-right)',
         background: C.bg, borderTop: `1px solid ${C.border}`,
         display: 'flex', alignItems: 'stretch',
       }}>
         {MOBILE_BOTTOM.map(item => {
           const active = activePage === item.key
           return (
-            <button key={item.key} onClick={() => onNavigate(item.key)} style={{
-              flex: 1, border: 'none', background: 'none', cursor: 'pointer',
+            <button key={item.key} onClick={() => onNavigate(item.key)} aria-current={active ? 'page' : undefined} style={{
+              flex: 1, minWidth: 0, border: 'none', background: 'none', cursor: 'pointer',
               display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3,
               color: active ? C.accent : C.muted, fontFamily: C.font,
             }}>
@@ -322,7 +336,7 @@ export default function TenantLayout({ children, activePage, onNavigate }: Tenan
           )
         })}
         <button onClick={() => setDrawerOpen(true)} style={{
-          flex: 1, border: 'none', background: 'none', cursor: 'pointer',
+          flex: 1, minWidth: 0, border: 'none', background: 'none', cursor: 'pointer',
           display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3,
           color: C.muted, fontFamily: C.font,
         }}>
@@ -343,16 +357,19 @@ export default function TenantLayout({ children, activePage, onNavigate }: Tenan
       <div style={{
         position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 201,
         background: C.surface, borderRadius: '12px 12px 0 0', borderTop: `1px solid ${C.border}`,
-        padding: '16px 0 32px',
+        padding: '16px 0 calc(16px + env(safe-area-inset-bottom))',
+        paddingLeft: 'env(safe-area-inset-left)', paddingRight: 'env(safe-area-inset-right)',
+        maxHeight: '85dvh', overflowY: 'auto', boxSizing: 'border-box',
         transform: drawerOpen ? 'translateY(0)' : 'translateY(100%)',
-        transition: 'transform .25s ease',
+        visibility: drawerOpen ? 'visible' : 'hidden',
+        transition: drawerOpen ? 'transform .25s ease' : 'transform .25s ease, visibility 0s linear .25s',
       }}>
         <div style={{ width: 32, height: 3, borderRadius: 2, background: C.border, margin: '0 auto 16px' }} />
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '0 16px 14px', borderBottom: `1px solid ${C.border}` }}>
-          <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--border-strong)', color: C.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 600 }}>{ava}</div>
-          <div>
-            <div style={{ fontSize: 14, fontWeight: 500, color: C.text }}>{tenantName || email}</div>
+          <div style={{ width: 36, height: 36, flexShrink: 0, borderRadius: '50%', background: 'var(--border-strong)', color: C.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 600 }}>{ava}</div>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 14, fontWeight: 500, color: C.text, overflowWrap: 'anywhere' }}>{tenantName || email}</div>
             {unitNumber && <div style={{ fontSize: 12, color: C.muted }}>{unitNumber}</div>}
           </div>
         </div>
@@ -361,9 +378,9 @@ export default function TenantLayout({ children, activePage, onNavigate }: Tenan
           const badge = item.key === 'notifications' && unreadCount > 0 ? unreadCount : null
           return (
             <button key={item.key} onClick={() => { onNavigate(item.key); setDrawerOpen(false) }} style={{
-              display: 'flex', alignItems: 'center', gap: 12, width: '100%', padding: '13px 16px',
-              border: 'none', background: 'none', cursor: 'pointer', fontFamily: C.font,
-              fontSize: 14, color: C.text, textAlign: 'left',
+              display: 'flex', alignItems: 'center', gap: 12, width: '100%', minHeight: 48, padding: '0 16px',
+              border: 'none', background: activePage === item.key ? 'var(--surface-2)' : 'none', cursor: 'pointer', fontFamily: C.font,
+              fontSize: 15, color: C.text, textAlign: 'left',
             }}>
               <span style={{ color: C.mutedMid, display: 'flex' }}>{Icons[item.icon as keyof typeof Icons]}</span>
               <span style={{ flex: 1 }}>{item.label}</span>
@@ -376,9 +393,9 @@ export default function TenantLayout({ children, activePage, onNavigate }: Tenan
 
         <div style={{ height: 1, background: C.border, margin: '6px 0' }} />
         <button onClick={logout} style={{
-          display: 'flex', alignItems: 'center', gap: 12, width: '100%', padding: '13px 16px',
+          display: 'flex', alignItems: 'center', gap: 12, width: '100%', minHeight: 48, padding: '0 16px',
           border: 'none', background: 'none', cursor: 'pointer', fontFamily: C.font,
-          fontSize: 14, color: C.danger, textAlign: 'left',
+          fontSize: 15, color: C.danger, textAlign: 'left',
         }}>
           <span style={{ display: 'flex' }}>{Icons.logout}</span>
           Выйти

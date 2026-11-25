@@ -1,6 +1,9 @@
 import './index.css'
 import { StrictMode, Suspense, lazy } from 'react'
 import { createRoot } from 'react-dom/client'
+import { registerServiceWorker } from './lib/pwa'
+
+registerServiceWorker()
 
 // Это приложение обслуживает внутренние разделы:
 //   /*         система управления зданием (админка)
