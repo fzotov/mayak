@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { ALL_ROOMS, unitKey, unitKeys, type Room } from '../lib/floorGeometry'
 import { fetchSiteLeads, updateLeadStatus, type SiteLead } from '../lib/siteLeads'
-import { Page, Card, Row, Button, Badge, Stat, Stats, Table, Field, Input, Select, Textarea, Segmented, Tabs, Notice, Loading, ErrorBox, Sub, Muted, C, type Tone } from '../components/ui'
+import { Page, Card, Row, Button, Badge, Stat, Stats, Table, Field, Input, Select, Textarea, Segmented, Tabs, Notice, Loading, ErrorBox, Sub, Muted, Link, C, type Tone } from '../components/ui'
+import { go } from '../lib/nav'
 
 // ─── Управление публичным сайтом: витрина помещений и заявки ────────────────
 // Состав помещений берём из плана этажей, а статус, цену, фото и видео —
@@ -362,6 +363,8 @@ function UnitEditor({ row, hasSiteCols, onSaved, onClose }: { row: Row; hasSiteC
 
 /* ─── Заявки с сайта ─────────────────────────────────────────────────────── */
 
+const DEAL_STAGE: Record<string, string> = { new: 'новая', contacted: 'связались', viewing: 'показ', offer: 'предложение', contract: 'договор', won: 'заселён', lost: 'отказ' }
+
 function LeadsTab() {
   const [leads, setLeads] = useState<Lead[]>([])
   const [loading, setLoading] = useState(true)
@@ -369,8 +372,12 @@ function LeadsTab() {
   const [filter, setFilter] = useState<'all' | 'new' | 'in_work' | 'done'>('all')
   const [saveError, setSaveError] = useState('')
 
+  const [deals, setDeals] = useState<Record<string, { id: string; number: number; stage: string }>>({})
+
   async function load() {
     setLoading(true)
+    const { data: d } = await supabase.from('deals').select('id, number, stage, lead_id').not('lead_id', 'is', null)
+    setDeals(Object.fromEntries((d || []).map((x: any) => [x.lead_id, x])))
     const { leads, fallback } = await fetchSiteLeads()
     setMissing(fallback)
     setLeads(leads)
@@ -383,6 +390,17 @@ function LeadsTab() {
     setSaveError('')
     setLeads(l => l.map(x => x.id === id ? { ...x, status } : x))
     try { await updateLeadStatus(id, status, missing) } catch (e: any) { setLeads(prev); setSaveError(e.message) }
+  }
+
+  async function makeDeal(l: Lead) {
+    setSaveError('')
+    const { data, error } = await supabase.from('deals').insert({
+      kind: 'new', stage: 'new', name: l.name || null, phone: l.phone || null, email: l.email || null, source: 'site',
+      source_detail: l.source || null, lead_id: l.id, area_wanted: l.area_wanted ? Number(l.area_wanted) || null : null, notes: l.message || null,
+      next_step: 'Связаться с клиентом', next_step_at: new Date().toISOString().slice(0, 10),
+    }).select('id').single()
+    if (error) { setSaveError(error.message); return }
+    go('/deals/' + data.id)
   }
 
   const shown = useMemo(() => leads.filter(l => filter === 'all' || l.status === filter), [leads, filter])
@@ -428,6 +446,9 @@ function LeadsTab() {
             ) },
             { key: 's', title: 'Источник', render: l => <Muted small>{l.source || '—'}</Muted> },
             { key: 'st', title: 'Статус', sort: l => l.status, render: l => {
+              const dl = deals[l.id]
+              if (dl) return <Link to={'/deals/' + dl.id}>Сделка № {dl.number} · {DEAL_STAGE[dl.stage] || dl.stage}</Link>
+              if (!missing && l.status !== 'done') return <Button small onClick={() => makeDeal(l)}>Создать сделку</Button>
               const st = LEAD_STATUS[l.status] || LEAD_STATUS.new
               return (
                 <Select value={l.status} onChange={e => setStatus(l.id, e.target.value)}

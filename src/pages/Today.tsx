@@ -24,6 +24,7 @@ export default function TodayPage() {
   const [toPay, setToPay] = useState<any[]>([])
   const [expiring, setExpiring] = useState<any[]>([])
   const [occupancy, setOccupancy] = useState({ total: 0, busy: 0 })
+  const [steps, setSteps] = useState<any[]>([])
 
   useEffect(() => {
     const weekAgo = new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10)
@@ -41,6 +42,7 @@ export default function TodayPage() {
     supabase.from('tasks').select('id, title, status, priority').in('status', ['todo', 'open', 'in_progress']).order('created_at', { ascending: false }).limit(6).then(({ data }) => setTasks(data || []))
     supabase.from('incoming_invoices').select('id, supplier, amount, description, due_date').eq('status', 'APPROVED').order('due_date').then(({ data }) => setToPay(data || []))
     supabase.from('leases').select('id, number, end_date, tenants(full_name)').eq('status', 'active').gte('end_date', d).lte('end_date', in30).order('end_date').then(({ data }) => setExpiring(data || []))
+    supabase.from('deals').select('id, number, kind, name, company, next_step, next_step_at').not('stage', 'in', '(won,lost)').lte('next_step_at', d).order('next_step_at').limit(8).then(({ data }) => setSteps(data || []))
     supabase.from('units').select('status').then(({ data }) => setOccupancy({ total: data?.length || 0, busy: (data || []).filter((u: any) => u.status === 'occupied').length }))
   }, [])
 
@@ -56,7 +58,7 @@ export default function TodayPage() {
       {problems !== 0 && <Alert tone="red" onClick={() => go('/settlements?tab=check')}>{problems > 0 ? `Самопроверка расчётов нашла расхождения: ${problems}. Откройте и разберите.` : 'Самопроверка расчётов не выполнилась — откройте «Самопроверку».'}</Alert>}
       {unrec > 0 && <Alert onClick={() => go('/bank?tab=unrec')}>Не опознан плательщик: {unrec}. Укажите арендатора — деньги сразу лягут на его баланс.</Alert>}
       {emergency.length > 0 && <Alert tone="red" onClick={() => go('/repairs')}>Аварийные заявки: {emergency.length}. {emergency.map(r => r.description).filter(Boolean).slice(0, 2).join('; ')}</Alert>}
-      {newLeads.length > 0 && <Alert tone="blue" onClick={() => go('/site')}>Новые заявки с сайта: {newLeads.length} — ждут ответа.</Alert>}
+      {newLeads.length > 0 && <Alert tone="blue" onClick={() => go('/deals')}>Новые заявки с сайта: {newLeads.length} — ждут ответа.</Alert>}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(150px, 100%), 1fr))', gap: 12 }}>
         <Stat label="Поступило за 7 дней" value={money(inWeek)} sub={`${receipts.length} платежей`} tone="green" onClick={() => go('/bank')} />
@@ -81,7 +83,14 @@ export default function TodayPage() {
             { key: 'd', title: 'Дней', align: 'right', render: r => <Badge tone={r.max_days_overdue > 30 ? 'red' : 'amber'}>{r.max_days_overdue}</Badge> },
           ]} />
         </Card>
-        <Card pad={false} title="Заявки с сайта" actions={<Button small kind="ghost" onClick={() => go('/site')}>Все</Button>}>
+        <Card pad={false} title={`Сделки: шаги на сегодня${steps.length ? ' · ' + steps.length : ''}`} actions={<Button small kind="ghost" onClick={() => go('/deals')}>Сделки</Button>}>
+          <Table rows={steps} rowKey={x => x.id} onRow={x => go('/deals/' + x.id)} dense empty="На сегодня шагов нет" cols={[
+            { key: 'c', title: 'Клиент', render: x => <><div>{x.company || x.name || '№ ' + x.number}</div><Sub>{x.kind === 'renewal' ? 'продление' : 'новый клиент'}</Sub></> },
+            { key: 's', title: 'Шаг', render: x => x.next_step },
+            { key: 'd', title: 'Когда', render: x => <Badge tone={x.next_step_at < new Date().toISOString().slice(0, 10) ? 'red' : 'amber'}>{dateRu(x.next_step_at)}</Badge> },
+          ]} />
+        </Card>
+        <Card pad={false} title="Заявки с сайта" actions={<Button small kind="ghost" onClick={() => go('/deals')}>Сделки</Button>}>
           {leads.length === 0 ? <Empty>Заявок нет</Empty> : (
             <Table rows={leads.slice(0, 5)} rowKey={l => l.id} dense cols={[
               { key: 'n', title: 'Кто', render: l => <><div>{l.name || '—'}{l.status === 'new' && <> <Badge tone="blue">новая</Badge></>}</div><Sub>{l.phone}</Sub></> },

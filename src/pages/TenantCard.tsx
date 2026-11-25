@@ -1,6 +1,7 @@
 import { apiFetch, openStoredFile } from '../lib/api'
 import { go } from '../lib/nav'
 import { PAY_STATUS } from '../lib/accounting'
+import { TenantJournal } from '../components/TenantJournal'
 import { Page, Card, Row, Button, Badge, Field, Input, Select, Tabs, Table, Modal, Notice, Loading, Empty, ErrorBox, Muted, Sub, money, dateRu, telHref, useNarrow, C } from '../components/ui'
 import { Icon } from '../components/icons'
 import { TenantPortalAccess } from '../components/TenantPortalAccess'
@@ -8,7 +9,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 
 // Tabs: Онбординг | Общие | Помещения | Счётчики | Счета | Документы | Договоры
-const TABS = ['Онбординг', 'Общие', 'Помещения', 'Счётчики', 'Счета', 'Документы', 'Договоры']
+const TABS = ['Онбординг', 'Общие', 'Помещения', 'Счётчики', 'Счета', 'Документы', 'Договоры', 'Обращения']
 const TYPE_LABELS: Record<string, string> = { COMPANY: 'Юрлицо', IP: 'ИП', INDIVIDUAL: 'Физлицо', SELF_EMPLOYED: 'Самозанятый' }
 const METER_LABELS: Record<string, string> = { electricity: 'Электричество', cold_water: 'Холодная вода', hot_water: 'Горячая вода' }
 const METER_UNITS: Record<string, string> = { electricity: 'кВт·ч', cold_water: 'м³', hot_water: 'м³' }
@@ -1085,6 +1086,8 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
             )}
           </>
         )}
+
+        {tab === 7 && dbId && <TenantJournal tenantId={dbId} />}
       </Page>
     </div>
   )

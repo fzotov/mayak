@@ -40,12 +40,16 @@ import ReconcilePage from './pages/Reconcile'
 import LedgerPage from './pages/Ledger'
 import ImportTenantsPage from './pages/ImportTenants'
 import AdvertisingStele from './pages/AdvertisingStele'
+import DealsPage from './pages/Deals'
+import DealCardPage from './pages/DealCard'
+import DealsReportPage from './pages/DealsReport'
 
 // ── Меню: по задачам, а не по таблицам ──────────────────────────────────────
 interface NavItem { to: string; label: string; icon: string }
 const NAV: { label: string; items: NavItem[]; more?: boolean }[] = [
   { label: '', items: [{ to: '/', label: 'Сегодня', icon: 'dashboard' }] },
   { label: 'Арендаторы', items: [
+    { to: '/deals', label: 'Сделки', icon: 'deals' },
     { to: '/tenants', label: 'Арендаторы', icon: 'tenants' },
     { to: '/contracts', label: 'Договоры', icon: 'contracts' },
     { to: '/letters', label: 'Письма', icon: 'letters' },
@@ -85,6 +89,7 @@ const NAV: { label: string; items: NavItem[]; more?: boolean }[] = [
   ] },
 ]
 const EXTRA_TITLES: [RegExp, string, string][] = [
+  [/^\/deals\/report/, 'Отчёт по сделкам', '/deals'], [/^\/deals\//, 'Сделка', '/deals'],
   [/^\/tenants\/new/, 'Новый арендатор', '/tenants'], [/^\/tenants\/import/, 'Импорт арендаторов', '/tenants'],
   [/^\/tenants\//, 'Карточка арендатора', '/tenants'], [/^\/settlements\//, 'Расчёты с арендатором', '/settlements'],
   [/^\/invoices\//, 'Счёт', '/invoices'], [/^\/contracts\//, 'Договор', '/contracts'], [/^\/billing/, 'Биллинг', '/invoices'],
@@ -290,6 +295,7 @@ const TenantCardRoute = P(id => <TenantCardPage key={id} tenantId={id} onBack={(
 const SettlementsRoute = P(id => <SettlementsPage tenantId={id} />)
 const InvoiceRoute = P(id => <InvoicesPage invoiceId={id} />)
 const ContractRoute = P(id => <ContractsPage leaseId={id} />)
+const DealRoute = P(id => <DealCardPage key={id} dealId={id} />)
 
 function NotFound() {
   return <div style={{ padding: 40, textAlign: 'center', color: C.muted }}>Такой страницы нет. <a href="/" style={{ color: C.accent }}>На «Сегодня»</a></div>
@@ -298,6 +304,9 @@ function NotFound() {
 const router = createBrowserRouter([{
   path: '/', element: <Shell />, children: [
     { index: true, element: <TodayPage /> },
+    { path: 'deals', element: <DealsPage /> },
+    { path: 'deals/report', element: <DealsReportPage /> },
+    { path: 'deals/:id', element: <DealRoute /> },
     { path: 'tenants', element: <TenantsPage /> },
     { path: 'tenants/new', element: <TenantNewPage onBack={() => go('/tenants')} onSaved={() => go('/tenants')} /> },
     { path: 'tenants/import', element: <ImportTenantsPage onDone={() => go('/tenants')} /> },
