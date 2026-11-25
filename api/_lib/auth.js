@@ -51,8 +51,9 @@ export function esc(s) {
 }
 
 /** Выгрузка взаиморасчётов из 1С. Адрес и токен — только из переменных окружения. */
-export async function fetch1cDebtsXml() {
-  const url = process.env.ONEC_DEBTS_URL || 'https://o.mayak-d.ru/export/debts.xml'
+export async function fetch1cDebtsXml(asOf) {
+  const base = process.env.ONEC_DEBTS_URL || 'https://o.mayak-d.ru/export/debts.xml'
+  const url = asOf ? base + (base.includes('?') ? '&' : '?') + 'asOf=' + encodeURIComponent(asOf) : base
   const token = process.env.ONEC_TOKEN
   if (!token) throw new Error('Не задан ONEC_TOKEN')
   const resp = await fetch(url, { headers: { 'X-Auth-Token': token }, signal: AbortSignal.timeout(50000) })

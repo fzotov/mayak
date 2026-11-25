@@ -43,6 +43,7 @@ import AdvertisingStele from './pages/AdvertisingStele'
 import DealsPage from './pages/Deals'
 import DealCardPage from './pages/DealCard'
 import DealsReportPage from './pages/DealsReport'
+import OnecTransferPage from './pages/OnecTransfer'
 
 // ── Меню: по задачам, а не по таблицам ──────────────────────────────────────
 interface NavItem { to: string; label: string; icon: string }
@@ -76,6 +77,7 @@ const NAV: { label: string; items: NavItem[]; more?: boolean }[] = [
     { to: '/payment-calendar', label: 'Платёжный календарь', icon: 'payment-calendar' },
     { to: '/reconcile', label: 'Сверка расходов', icon: 'reconcile' },
     { to: '/ledger', label: 'Баланс по 1С', icon: 'ledger' },
+    { to: '/onec', label: 'Переход с 1С', icon: 'ledger' },
     { to: '/heat', label: 'Тепло', icon: 'heat' },
     { to: '/stele', label: 'Рекламная стела', icon: 'stele' },
     { to: '/inventory', label: 'Склад', icon: 'inventory' },
@@ -330,6 +332,7 @@ const router = createBrowserRouter([{
     { path: 'payment-calendar', element: <PaymentCalendarPage /> },
     { path: 'reconcile', element: <ReconcilePage /> },
     { path: 'ledger', element: <LedgerPage /> },
+    { path: 'onec', element: <OnecTransferPage /> },
     { path: 'repairs', element: <RepairsPage /> },
     { path: 'tasks', element: <TasksPage /> },
     { path: 'my-tasks', element: <MyTasksPage /> },
