@@ -1,4 +1,5 @@
 // Письма: входящие и исходящие, распознавание загруженного письма и генерация текста через AI, задача по входящему письму.
+import { ask } from '../components/Dialogs'
 import { apiFetch } from '../lib/api'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
@@ -200,7 +201,7 @@ function LetterModal({ letter, onClose, onSaved }: { letter: Letter | null; onCl
   }
 
   async function remove() {
-    if (!letter?.id || !confirm('Удалить письмо?')) return
+    if (!letter?.id || !(await ask('Удалить письмо?', { ok: 'Удалить', danger: true }))) return
     const { error } = await supabase.from('letters').delete().eq('id', letter.id)
     if (error) { setError('Ошибка удаления: ' + error.message); return }
     onSaved()

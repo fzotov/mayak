@@ -4,6 +4,7 @@ import { ALL_ROOMS, unitKey, unitKeys, type Room } from '../lib/floorGeometry'
 import { fetchSiteLeads, updateLeadStatus, type SiteLead } from '../lib/siteLeads'
 import { Page, Card, Row, Button, Badge, Stat, Stats, Table, Field, Input, Select, Textarea, Segmented, Tabs, Notice, Loading, ErrorBox, Sub, Muted, Link, C, type Tone } from '../components/ui'
 import { go } from '../lib/nav'
+import { ask, notify } from '../components/Dialogs'
 
 // ─── Управление публичным сайтом: витрина помещений и заявки ────────────────
 // Состав помещений берём из плана этажей, а статус, цену, фото и видео —
@@ -127,8 +128,8 @@ function UnitsTab() {
   /** Проставляет «занято» там, где есть арендатор, и «свободно» — где его нет. */
   async function syncWithTenants() {
     const diff = rows.filter(r => (r.tenantName ? 'occupied' : 'free') !== r.status)
-    if (!diff.length) return alert('Статусы уже совпадают с карточками арендаторов')
-    if (!confirm(`Обновить статус у ${diff.length} помещений по данным арендаторов?\n\nЭто изменит то, что видно на сайте.`)) return
+    if (!diff.length) return notify('Статусы уже совпадают с карточками арендаторов')
+    if (!(await ask(`Обновить статус у ${diff.length} помещений по данным арендаторов?\n\nЭто изменит то, что видно на сайте.`, { ok: 'Обновить', danger: false }))) return
     setSyncing(true)
     for (const r of diff) {
       const status = r.tenantName ? 'occupied' : 'free'
@@ -237,7 +238,7 @@ function UnitEditor({ row, hasSiteCols, onSaved, onClose }: { row: Row; hasSiteC
     const { data, error } = await supabase.from('units')
       .insert({ number: row.room.number, floor: row.floor, area: row.room.area, type: 'office', status })
       .select('id').single()
-    if (error) { alert('Не удалось создать помещение: ' + error.message); return null }
+    if (error) { notify('Не удалось создать помещение: ' + error.message, 'red'); return null }
     return data.id
   }
 
@@ -252,7 +253,7 @@ function UnitEditor({ row, hasSiteCols, onSaved, onClose }: { row: Row; hasSiteC
       const { error } = await supabase.storage.from(BUCKET).upload(path, file, { upsert: true, contentType: file.type })
       if (error) {
         setBusy('')
-        alert(`Не удалось загрузить ${file.name}: ${error.message}\n\nЕсли ошибка про бакет или доступ — выполните миграцию supabase/migrations/20260920_site.sql.`)
+        notify(`Не удалось загрузить ${file.name}: ${error.message}\n\nЕсли ошибка про бакет или доступ — выполните миграцию supabase/migrations/20260920_site.sql.`, 'red')
         return
       }
       const { data: pub } = supabase.storage.from(BUCKET).getPublicUrl(path)
@@ -285,7 +286,7 @@ function UnitEditor({ row, hasSiteCols, onSaved, onClose }: { row: Row; hasSiteC
     if (hasSiteCols) { payload.video_url = video || null; payload.is_published = published }
     const { error } = await supabase.from('units').update(payload).eq('id', id)
     setBusy('')
-    if (error) { alert('Ошибка сохранения: ' + error.message); return }
+    if (error) { notify('Ошибка сохранения: ' + error.message, 'red'); return }
     onSaved()
   }
 

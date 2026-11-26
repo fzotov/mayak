@@ -80,3 +80,6 @@ body {
 input, select, textarea, button {
   font-family: inherit;
 }
+
+/* Подложка плана этажа — светлый чертёж; в тёмной теме инвертируется, подсветка кабинетов поверх не меняется. */
+:root[data-theme='dark'] .plan-underlay { filter: invert(0.9) grayscale(1) brightness(0.9); }

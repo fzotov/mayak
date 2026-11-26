@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { Page, Card, Row, Button, Badge, Table, Field, Input, Select, Textarea, Search, Notice, Loading, ErrorBox, dateRu, C } from '../components/ui'
+import { ask } from '../components/Dialogs'
 
 interface Article { id: string; title: string; content: string; category: string; created_at: string }
 
@@ -63,7 +64,7 @@ export function KnowledgeBasePage() {
   }
 
   async function deleteArticle(id: string) {
-    if (!confirm('Удалить статью?')) return
+    if (!(await ask('Удалить статью?', { ok: 'Удалить', danger: true }))) return
     const { error } = await supabase.from('kb_articles').delete().eq('id', id)
     if (error) { setMsg({ tone: 'red', text: 'Статья не удалена: ' + error.message }); return }
     setArticles(prev => prev.filter(a => a.id !== id))

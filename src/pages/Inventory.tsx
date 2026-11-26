@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { Page, Card, Button, Badge, Table, Field, Input, Select, Textarea, Tabs, Modal, Notice, Loading, Empty, ErrorBox, Stat, Stats, Row, Muted, Sub, money, num, C, type Tone } from '../components/ui'
+import { ask } from '../components/Dialogs'
 
 interface Item {
   id: string
@@ -108,7 +109,7 @@ function ItemModal({ item, staff, onClose, onSaved }: { item: Item | null; staff
   }
 
   async function deleteCategory() {
-    if (!confirm('Удалить категорию «' + form.category + '»?')) return
+    if (!(await ask('Удалить категорию «' + form.category + '»?', { ok: 'Удалить', danger: true }))) return
     const { error } = await supabase.from('inventory_categories').delete().eq('name', form.category)
     if (error) { setErr('Категория не удалена: ' + error.message); return }
     const { data } = await supabase.from('inventory_categories').select('name').order('name')
@@ -133,7 +134,7 @@ function ItemModal({ item, staff, onClose, onSaved }: { item: Item | null; staff
   }
 
   async function remove() {
-    if (!item?.id || !confirm('Удалить товар?')) return
+    if (!item?.id || !(await ask('Удалить товар?', { ok: 'Удалить', danger: true }))) return
     const { error } = await supabase.from('inventory').delete().eq('id', item.id)
     if (error) { setErr('Ошибка удаления: ' + error.message); return }
     onSaved()

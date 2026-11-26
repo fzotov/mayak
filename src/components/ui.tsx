@@ -245,12 +245,19 @@ export function Tabs<K extends string>({ tabs, value, onChange }: { tabs: [K, st
 }
 
 // ── Окна и сообщения ────────────────────────────────────────────────────────
+let modalStack: string[] = []
 export function Modal({ title, onClose, children, footer, width = 480 }: { title: string; onClose: () => void; children: React.ReactNode; footer?: React.ReactNode; width?: number }) {
+  // Esc закрывает только верхнее окно (подтверждение поверх карточки)
+  const id = React.useId()
   React.useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    modalStack.push(id)
+    return () => { modalStack = modalStack.filter(x => x !== id) }
+  }, [id])
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && modalStack[modalStack.length - 1] === id) onClose() }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
+  }, [onClose, id])
   return (
     <div onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}
       style={{ position: 'fixed', inset: 0, background: C.overlay, display: 'grid', placeItems: 'center', zIndex: 1000, padding: 16 }}>

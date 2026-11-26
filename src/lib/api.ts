@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { notify } from '../components/Dialogs'
 
 /** Вызов серверной функции от имени вошедшего пользователя. */
 export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
@@ -15,7 +16,7 @@ export async function openStoredFile(urlOrPath: string) {
   if (!m) { window.open(urlOrPath, '_blank', 'noopener'); return }
   const [, bucket, path] = m
   const { data, error } = await supabase.storage.from(bucket).createSignedUrl(decodeURIComponent(path), 300)
-  if (error || !data?.signedUrl) { alert('Не удалось открыть файл'); return }
+  if (error || !data?.signedUrl) { notify('Не удалось открыть файл', 'red'); return }
   window.open(data.signedUrl, '_blank', 'noopener')
 }
 

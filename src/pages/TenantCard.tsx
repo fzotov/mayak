@@ -7,6 +7,7 @@ import { Icon } from '../components/icons'
 import { TenantPortalAccess } from '../components/TenantPortalAccess'
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
+import { ask } from '../components/Dialogs'
 
 // Tabs: Онбординг | Общие | Помещения | Счётчики | Счета | Документы | Договоры
 const TABS = ['Онбординг', 'Общие', 'Помещения', 'Счётчики', 'Счета', 'Документы', 'Договоры', 'Обращения']
@@ -479,7 +480,7 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
   }
 
   async function deleteContract(id: string) {
-    if (!confirm('Удалить документ?')) return
+    if (!(await ask('Удалить документ?', { ok: 'Удалить', danger: true }))) return
     const { error } = await supabase.from('tenant_contracts').delete().eq('id', id)
     if (error) { setActionError(error.message); return }
     setContracts(cs => cs.filter(c => c.id !== id))
@@ -505,7 +506,7 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
   }
 
   async function deleteDoc(id: string) {
-    if (!confirm('Удалить документ?')) return
+    if (!(await ask('Удалить документ?', { ok: 'Удалить', danger: true }))) return
     const { error } = await supabase.from('tenant_documents').delete().eq('id', id)
     if (error) { setActionError(error.message); return }
     setDocuments(ds => ds.filter(d => d.id !== id))
@@ -577,7 +578,7 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
         ) : (
           <>
             <Button onClick={() => setEditing(true)}>Редактировать</Button>
-            <Button kind="primary" onClick={() => { go('/settlements/' + tenantId) }}>Расчёты</Button>
+            {!narrow && <Button kind="primary" onClick={() => { go('/settlements/' + tenantId) }}>Расчёты</Button>}
           </>
         )}>
 

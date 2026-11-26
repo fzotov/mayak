@@ -144,8 +144,10 @@ export default function ReconcilePage() {
   async function confirmDebitMatch(tx: BankTx, inv: IncomingInvoice) {
     await run(tx.id, async () => {
       const r = await supabase.rpc('bank_mark_expense', { p_tx: tx.id, p_invoice: inv.id })
-      if (!r.error) await supabase.from('incoming_invoices').update({ status: 'PAID' }).eq('id', inv.id)
-      return r
+      if (r.error) return r
+      // расход сверен; счёт поставщика отмечаем оплаченным — если не получилось, говорим об этом
+      const u = await supabase.from('incoming_invoices').update({ status: 'PAID' }).eq('id', inv.id)
+      return u.error ? { error: { message: 'Списание сверено, но счёт поставщика не отмечен оплаченным: ' + u.error.message } } : r
     })
   }
 

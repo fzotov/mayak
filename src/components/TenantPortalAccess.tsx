@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { apiFetch } from '../lib/api'
 import { Card, Button, Input, Notice, ErrorBox, Muted, Badge, C, dateRu } from './ui'
+import { ask } from './Dialogs'
 
 /** Блок в карточке арендатора: кто имеет доступ в кабинет, приглашение по почте. */
 export function TenantPortalAccess({ tenantId, defaultEmail }: { tenantId: string; defaultEmail?: string }) {
@@ -25,7 +26,7 @@ export function TenantPortalAccess({ tenantId, defaultEmail }: { tenantId: strin
   }
 
   const unlink = async (u: any) => {
-    if (!confirm(`Закрыть доступ в кабинет для ${u.email}?`)) return
+    if (!(await ask(`Закрыть доступ в кабинет для ${u.email}?`, { ok: 'Закрыть доступ', danger: true }))) return
     const { error } = await supabase.from('tenant_users').delete().eq('user_id', u.user_id)
     if (error) setMsg({ ok: false, text: error.message })
     load()

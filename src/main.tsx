@@ -2,6 +2,7 @@ import './index.css'
 import { StrictMode, Suspense, lazy } from 'react'
 import { createRoot } from 'react-dom/client'
 import { registerServiceWorker } from './lib/pwa'
+import { DialogHost } from './components/Dialogs'
 
 registerServiceWorker()
 
@@ -26,5 +27,6 @@ root.render(
     <Suspense fallback={loader}>
       {path === '/tenant' || path.startsWith('/tenant/') ? <TenantApp /> : <AdminApp />}
     </Suspense>
+    <DialogHost />
   </StrictMode>,
 )

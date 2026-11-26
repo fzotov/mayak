@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { Page, Card, Button, Badge, Table, Field, Input, Select, Textarea, Tabs, Modal, Notice, Loading, ErrorBox, Muted, Sub, C } from '../components/ui'
+import { ask } from '../components/Dialogs'
 
 interface Category { id: string; name: string }
 interface Counterparty {
@@ -79,7 +80,7 @@ function CounterpartyModal({ cp, categories, onClose, onSaved }: {
   }
 
   async function remove() {
-    if (!cp?.id || !confirm('Удалить контрагента?')) return
+    if (!cp?.id || !(await ask('Удалить контрагента?', { ok: 'Удалить', danger: true }))) return
     const { error } = await supabase.from('counterparties').delete().eq('id', cp.id)
     if (error) { setErr('Ошибка: ' + error.message); return }
     onSaved()
@@ -223,7 +224,7 @@ export default function CounterpartiesPage() {
     const msg = count > 0
       ? `Удалить категорию «${cat.name}»? ${count} контрагент(ов) перейдут в «Без категории».`
       : `Удалить категорию «${cat.name}»?`
-    if (!confirm(msg)) return
+    if (!(await ask(msg, { ok: 'Удалить', danger: true }))) return
     const { error } = await supabase.from('counterparty_categories').delete().eq('id', cat.id)
     if (error) { setError('Ошибка: ' + error.message); return }
     if (selectedCat === cat.id) setSelectedCat(null)

@@ -1,6 +1,7 @@
 // Переход с 1С (ТЗ v2, §5 «Этап 3»): загрузка выгрузки взаиморасчётов debts.xml, сопоставление арендаторов и договоров,
 // входящие остатки с разбивкой по статьям, сверка «Маяк = 1С» до копейки и проведение остатков на дату перехода.
 // Вся логика — в базе (supabase/migrations/20261201_onec.sql); экран только показывает и вызывает функции.
+import { ask, notify } from '../components/Dialogs'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router'
 import { supabase } from '../lib/supabase'
@@ -550,7 +551,7 @@ function RulesCard({ articles, isOwner, onChanged }: { articles: Article[]; isOw
     setForm(null); await load(); onChanged()
   }
   async function remove(r: Rule) {
-    if (!window.confirm(`Удалить правило «${r.pattern}» → ${articles.find(a => a.code === r.article_code)?.name || r.article_code}?`)) return
+    if (!(await ask(`Удалить правило «${r.pattern}» → ${articles.find(a => a.code === r.article_code)?.name || r.article_code}?`, { ok: 'Удалить', danger: true }))) return
     setErr(null)
     const { error } = await supabase.from('onec_article_rules').delete().eq('id', r.id)
     if (error) { setErr(errText(error)); return }
@@ -683,7 +684,7 @@ function PostTab({ imp, lines, onDone }: { imp: Imp; lines: Line[] | null; onDon
   }
   async function doStorno() {
     setWorking(true); setErr(null)
-    try { const k = await rpc<number>('onec_opening_storno', { p_import: imp.id, p_reason: reason.trim() }); setStorno(false); setReason(''); setResult(null); await onDone(); setErr(null); alert(`Остатки отменены сторно: документов ${k}.`) }
+    try { const k = await rpc<number>('onec_opening_storno', { p_import: imp.id, p_reason: reason.trim() }); setStorno(false); setReason(''); setResult(null); await onDone(); setErr(null); notify(`Остатки отменены сторно: документов ${k}.`, 'green') }
     catch (e) { setErr(errText(e)); setStorno(false) }
     setWorking(false)
   }

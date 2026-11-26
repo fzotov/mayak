@@ -1,4 +1,5 @@
 // Заявки на ремонт: список с фильтрами, аварийные, карточка заявки с обработкой и историей статусов.
+import { ask } from '../components/Dialogs'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { compressImage } from '../lib/photo'
@@ -200,7 +201,7 @@ function RepairModal({ repair, units, staff, onClose, onSaved, initialPriority }
   }
 
   async function remove() {
-    if (!repair?.id || !confirm('Удалить заявку?')) return
+    if (!repair?.id || !(await ask('Удалить заявку?', { ok: 'Удалить', danger: true }))) return
     const { error } = await supabase.from('repairs').delete().eq('id', repair.id)
     if (error) { setError('Ошибка: ' + error.message); return }
     onSaved()

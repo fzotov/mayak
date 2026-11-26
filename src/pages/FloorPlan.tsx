@@ -230,6 +230,7 @@ export function FloorPlanPage({ onOpenTenant }: { onOpenTenant?: (id: string) =>
             >
               {/* Floor plan image — same coordinate space as hit paths */}
               <image
+                className="plan-underlay"
                 href={floorImg}
                 x={0} y={0}
                 width={imgW} height={imgH}

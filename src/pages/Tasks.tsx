@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import { go } from '../lib/nav'
 import { supabase } from '../lib/supabase'
 import { Page, Row, Button, Badge, Field, Input, Select, Textarea, Modal, Notice, Loading, ErrorBox, Muted, dateRu, C } from '../components/ui'
+import { ask } from '../components/Dialogs'
 
 interface Task {
   id: string
@@ -53,7 +54,7 @@ function TaskModal({ task, staff, onClose, onSaved }: { task: Task | null; staff
   }
 
   async function remove() {
-    if (!task?.id || !confirm('Удалить задачу?')) return
+    if (!task?.id || !(await ask('Удалить задачу?', { ok: 'Удалить', danger: true }))) return
     const { error } = await supabase.from('tasks').delete().eq('id', task.id)
     if (error) { setError('Ошибка удаления: ' + error.message); return }
     onSaved()
