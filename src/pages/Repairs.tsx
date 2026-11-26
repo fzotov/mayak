@@ -1,7 +1,9 @@
 // Заявки на ремонт: список с фильтрами, аварийные, карточка заявки с обработкой и историей статусов.
 import { ask } from '../components/Dialogs'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useRef } from 'react'
 import { supabase } from '../lib/supabase'
+import { useSb, useAction, useInvalidate, sb, errText } from '../lib/query'
+import type { Tables, TablesInsert, TablesUpdate } from '../lib/database.types'
 import { compressImage } from '../lib/photo'
 import { PhotoThumbs } from '../components/Photos'
 import {
@@ -9,38 +11,15 @@ import {
   Loading, ErrorBox, Empty, Sub, Muted, dateRu, dateTimeRu, today, useNarrow, C, type Tone,
 } from '../components/ui'
 
-interface Repair {
-  id: string
-  number: number
-  tenant_id: string | null
-  unit_id: string | null
-  category: string
-  priority: string
-  status: string
-  description: string
-  photos: string[] | null
-  photos_after: string[] | null
-  accepted_at: string | null
-  assignee_id: string | null
-  due_date: string | null
-  completed_date: string | null
-  cost: number
-  comment: string | null
-  created_at: string
-  tenant?: { full_name: string }
-  unit?: { number: string }
-  assignee?: { full_name: string }
+/** Заявка из выборки '*, tenant:tenants(full_name), unit:units(number), assignee:staff(full_name)'. */
+type Repair = Tables<'repairs'> & {
+  tenant: { full_name: string } | null
+  unit: { number: string } | null
+  assignee: { full_name: string } | null
 }
 
-interface RepairHistory {
-  id: string
-  status: string
-  comment: string | null
-  created_at: string
-}
-
-interface Unit { id: string; number: string }
-interface Staff { id: string; full_name: string }
+type Unit = Pick<Tables<'units'>, 'id' | 'number'>
+type Staff = Pick<Tables<'staff'>, 'id' | 'full_name'>
 
 const CATEGORIES = ['Электрика', 'Сантехника', 'Отопление', 'Интернет', 'Уборка', 'Другое']
 const PRIORITIES: Record<string, { label: string; tone: Tone }> = {
@@ -58,13 +37,13 @@ const STATUSES: Record<string, { label: string; tone: Tone }> = {
 }
 const TONE_COLOR: Record<Tone, string> = { neutral: C.lineStrong, green: C.green, red: C.red, amber: C.amber, blue: C.accent, violet: C.violet }
 
-function PriorityBadge({ p }: { p: string }) {
-  const d = PRIORITIES[p] || PRIORITIES.medium
+function PriorityBadge({ p }: { p: string | null }) {
+  const d = PRIORITIES[p ?? ''] || PRIORITIES.medium
   return <Badge tone={d.tone}>{d.label}</Badge>
 }
 
-function StatusBadge({ s }: { s: string }) {
-  const d = STATUSES[s] || STATUSES.new
+function StatusBadge({ s }: { s: string | null }) {
+  const d = STATUSES[s ?? ''] || STATUSES.new
   return <Badge tone={d.tone}>{d.label}</Badge>
 }
 
@@ -76,13 +55,13 @@ function Section({ children }: { children: React.ReactNode }) {
 // ─── Действия с заявкой (телефон и карточка) ────────────────────────────────
 type PhotoKind = 'before' | 'after'
 const OPEN = ['new', 'accepted', 'in_progress']
+const isOpen = (status: string | null) => OPEN.includes(status ?? '')
 
 /** Сменить статус: строка заявки + запись в историю. Уведомление арендатору шлёт триггер в базе. */
-async function changeRepair(r: Repair, patch: Partial<Repair>, comment?: string | null) {
-  const { error } = await supabase.from('repairs').update(patch).eq('id', r.id)
-  if (error) throw new Error(error.message)
+async function changeRepair(r: Repair, patch: TablesUpdate<'repairs'>, comment?: string | null) {
+  await sb(supabase.from('repairs').update(patch).eq('id', r.id))
   if (patch.status && patch.status !== r.status) {
-    await supabase.from('repair_history').insert({ repair_id: r.id, status: patch.status, comment: comment || null })
+    await sb(supabase.from('repair_history').insert({ repair_id: r.id, status: patch.status, comment: comment || null }))
   }
 }
 
@@ -97,10 +76,11 @@ async function addRepairPhotos(r: Repair, kind: PhotoKind, files: File[]): Promi
     if (error) throw new Error('Фото не загрузилось: ' + error.message)
     urls.push(supabase.storage.from('repair-photos').getPublicUrl(path).data.publicUrl)
   }
-  const col = kind === 'before' ? 'photos' : 'photos_after'
-  const { data: cur } = await supabase.from('repairs').select(col).eq('id', r.id).single()
-  const next = [...(((cur as any)?.[col] as string[] | null) || []), ...urls]
-  const { error } = await supabase.from('repairs').update({ [col]: next }).eq('id', r.id)
+  // Текущий список читается с проверкой ошибки: иначе при сбое чтения старые фото затёрлись бы новыми.
+  const cur = await sb(supabase.from('repairs').select('photos, photos_after').eq('id', r.id).single())
+  const next = [...((kind === 'before' ? cur.photos : cur.photos_after) || []), ...urls]
+  const patch: TablesUpdate<'repairs'> = kind === 'before' ? { photos: next } : { photos_after: next }
+  const { error } = await supabase.from('repairs').update(patch).eq('id', r.id)
   if (error) throw new Error('Фото загружены, но не привязаны к заявке: ' + error.message)
   return next
 }
@@ -109,6 +89,7 @@ async function addRepairPhotos(r: Repair, kind: PhotoKind, files: File[]): Promi
 function PhotoButton({ repair, kind, onDone, onError, big }: { repair: Repair; kind: PhotoKind; onDone: (urls: string[]) => void; onError: (m: string) => void; big?: boolean }) {
   const ref = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState(false)
+  const invalidate = useInvalidate()
   return <>
     <input ref={ref} type="file" accept="image/*" capture="environment" multiple style={{ display: 'none' }}
       onChange={async e => {
@@ -116,7 +97,7 @@ function PhotoButton({ repair, kind, onDone, onError, big }: { repair: Repair; k
         e.target.value = ''
         if (!files.length) return
         setBusy(true)
-        try { onDone(await addRepairPhotos(repair, kind, files)) } catch (err: any) { onError(err.message) }
+        try { onDone(await addRepairPhotos(repair, kind, files)); void invalidate('repairs') } catch (err) { onError(errText(err)) }
         setBusy(false)
       }} />
     <Button small={!big} disabled={busy} onClick={() => ref.current?.click()} style={big ? { minHeight: 44, flex: '1 1 40%' } : undefined}>
@@ -152,59 +133,40 @@ function RepairModal({ repair, units, staff, onClose, onSaved, initialPriority }
     cost: repair?.cost || 0,
     comment: repair?.comment || '',
   })
-  const [history, setHistory] = useState<RepairHistory[] | null>(null)
-  const [historyError, setHistoryError] = useState('')
   const [error, setError] = useState('')
-  const [saving, setSaving] = useState(false)
-  const set = (k: string, v: string | number) => setForm(f => ({ ...f, [k]: v }))
+  const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm(f => ({ ...f, [k]: v }))
 
-  useEffect(() => {
-    if (repair?.id && tab === 'history') loadHistory()
-  }, [tab])
+  const historyQ = useSb(['repair_history', repair?.id],
+    () => sb(supabase.from('repair_history').select('*').eq('repair_id', repair?.id ?? '').order('created_at', { ascending: false })),
+    { enabled: !!repair?.id && tab === 'history' })
 
-  async function loadHistory() {
-    setHistoryError('')
-    const { data, error } = await supabase.from('repair_history').select('*')
-      .eq('repair_id', repair!.id).order('created_at', { ascending: false })
-    if (error) setHistoryError(error.message)
-    setHistory(data || [])
-  }
+  const saveAction = useAction(async (f: typeof form) => {
+    const payload: TablesInsert<'repairs'> = {
+      ...f,
+      unit_id: f.unit_id || null,
+      assignee_id: f.assignee_id || null,
+      due_date: f.due_date || null,
+      completed_date: f.completed_date || null,
+      cost: Number(f.cost),
+      ...(repair && f.status !== repair.status && f.status === 'accepted' && !repair.accepted_at ? { accepted_at: new Date().toISOString() } : {}),
+    }
+    // Сначала заявка, потом запись в историю (если статус изменился) — история не пишется, если заявка не сохранилась.
+    if (repair) await changeRepair(repair, payload, f.comment)
+    else await sb(supabase.from('repairs').insert(payload))
+  }, { invalidate: ['repairs', 'repair_history'], onSuccess: onSaved })
+  const removeAction = useAction(async (id: string) => { await sb(supabase.from('repairs').delete().eq('id', id)) },
+    { invalidate: ['repairs', 'repair_history'], onSuccess: onSaved })
+  const saving = saveAction.isPending
 
-  async function save() {
+  function save() {
     if (!form.description.trim()) { setTab('info'); setError('Введите описание проблемы'); return }
     setError('')
-    setSaving(true)
-    const payload = {
-      ...form,
-      unit_id: form.unit_id || null,
-      assignee_id: form.assignee_id || null,
-      due_date: form.due_date || null,
-      completed_date: form.completed_date || null,
-      cost: Number(form.cost),
-      ...(repair && form.status !== repair.status && form.status === 'accepted' && !repair.accepted_at ? { accepted_at: new Date().toISOString() } : {}),
-    }
-    if (repair?.id) {
-      // Запись в историю, если статус изменился
-      if (form.status !== repair.status) {
-        await supabase.from('repair_history').insert({
-          repair_id: repair.id, status: form.status, comment: form.comment || null,
-        })
-      }
-      const { error } = await supabase.from('repairs').update(payload).eq('id', repair.id)
-      if (error) { setError('Ошибка: ' + error.message); setSaving(false); return }
-    } else {
-      const { error } = await supabase.from('repairs').insert(payload)
-      if (error) { setError('Ошибка: ' + error.message); setSaving(false); return }
-    }
-    setSaving(false)
-    onSaved()
+    saveAction.mutate(form)
   }
 
   async function remove() {
-    if (!repair?.id || !(await ask('Удалить заявку?', { ok: 'Удалить', danger: true }))) return
-    const { error } = await supabase.from('repairs').delete().eq('id', repair.id)
-    if (error) { setError('Ошибка: ' + error.message); return }
-    onSaved()
+    if (!repair || !(await ask('Удалить заявку?', { ok: 'Удалить', danger: true }))) return
+    removeAction.mutate(repair.id)
   }
 
   const title = repair ? `Заявка №${repair.number} от ${dateRu(repair.created_at)}` : 'Новая заявка'
@@ -219,6 +181,8 @@ function RepairModal({ repair, units, staff, onClose, onSaved, initialPriority }
       <Tabs<'info' | 'process' | 'photos' | 'history'> value={tab} onChange={setTab}
         tabs={[['info', 'Заявка'], ['process', 'Обработка'], ['photos', `Фото${photos.before.length + photos.after.length ? ' · ' + (photos.before.length + photos.after.length) : ''}`], ['history', 'История']]} />
       {error && <Notice tone="red">{error}</Notice>}
+      {saveAction.error && <Notice tone="red">Ошибка: {saveAction.error}</Notice>}
+      {removeAction.error && <Notice tone="red">Ошибка: {removeAction.error}</Notice>}
 
       {tab === 'info' && <>
         <div style={two}>
@@ -289,13 +253,13 @@ function RepairModal({ repair, units, staff, onClose, onSaved, initialPriority }
 
       {tab === 'history' && (
         !repair?.id ? <Empty>Изменений статуса нет</Empty>
-          : historyError ? <ErrorBox error={historyError} onRetry={loadHistory} />
-          : history === null ? <Loading />
-          : history.length === 0 ? <Empty>Изменений статуса нет</Empty>
+          : historyQ.error ? <ErrorBox error={historyQ.error.message} onRetry={() => historyQ.refetch()} />
+          : !historyQ.data ? <Loading />
+          : historyQ.data.length === 0 ? <Empty>Изменений статуса нет</Empty>
           : (
             <div style={{ display: 'grid', gap: 8 }}>
-              {history.map(h => (
-                <div key={h.id} style={{ padding: '10px 12px', background: C.card2, borderRadius: C.radiusSm, borderLeft: `3px solid ${TONE_COLOR[(STATUSES[h.status] || STATUSES.new).tone]}` }}>
+              {historyQ.data.map(h => (
+                <div key={h.id} style={{ padding: '10px 12px', background: C.card2, borderRadius: C.radiusSm, borderLeft: `3px solid ${TONE_COLOR[(STATUSES[h.status ?? ''] || STATUSES.new).tone]}` }}>
                   <Row gap={8}>
                     <StatusBadge s={h.status} />
                     <span style={{ fontSize: 12, color: C.muted }}>{dateTimeRu(h.created_at)}</span>
@@ -312,8 +276,7 @@ function RepairModal({ repair, units, staff, onClose, onSaved, initialPriority }
 
 // ─── Карточка заявки на телефоне ─────────────────────────────────────────────
 
-function MobileRepair({ r, staff, onChanged, onOpen }: { r: Repair; staff: Staff[]; onChanged: () => void; onOpen: () => void }) {
-  const [busy, setBusy] = useState(false)
+function MobileRepair({ r, staff, onOpen }: { r: Repair; staff: Staff[]; onOpen: () => void }) {
   const [err, setErr] = useState('')
   const [assigning, setAssigning] = useState(false)
   const [assignee, setAssignee] = useState(r.assignee_id || '')
@@ -321,13 +284,14 @@ function MobileRepair({ r, staff, onChanged, onOpen }: { r: Repair; staff: Staff
   const [comment, setComment] = useState(r.comment || '')
   const [before, setBefore] = useState(r.photos || [])
   const [after, setAfter] = useState(r.photos_after || [])
-  const act = async (patch: Partial<Repair>, note?: string | null) => {
-    setBusy(true); setErr('')
-    try { await changeRepair(r, patch, note); setAssigning(false); setClosing(false); onChanged() } catch (e: any) { setErr('Не сохранилось: ' + e.message) }
-    setBusy(false)
-  }
+  const action = useAction((v: { patch: TablesUpdate<'repairs'>; note?: string | null }) => changeRepair(r, v.patch, v.note), {
+    invalidate: ['repairs', 'repair_history'],
+    onSuccess: () => { setAssigning(false); setClosing(false) },
+  })
+  const busy = action.isPending
+  const act = (patch: TablesUpdate<'repairs'>, note?: string | null) => { setErr(''); action.mutate({ patch, note }) }
   const bigBtn: React.CSSProperties = { minHeight: 44, flex: '1 1 40%' }
-  const open = OPEN.includes(r.status)
+  const open = isOpen(r.status)
   return (
     <Card>
       <div style={{ display: 'grid', gap: 10, borderLeft: r.priority === 'emergency' ? `3px solid ${C.red}` : undefined, paddingLeft: r.priority === 'emergency' ? 10 : 0, marginLeft: r.priority === 'emergency' ? -4 : 0 }}>
@@ -347,6 +311,7 @@ function MobileRepair({ r, staff, onChanged, onOpen }: { r: Repair; staff: Staff
         <PhotoThumbs urls={after} label="После" />
         {r.comment && !open && <div style={{ fontSize: 13, color: C.muted }}>Комментарий: {r.comment}</div>}
         {err && <Notice tone="red">{err}</Notice>}
+        {action.error && <Notice tone="red">Не сохранилось: {action.error}</Notice>}
 
         {assigning && (
           <div style={{ display: 'grid', gap: 8 }}>
@@ -389,11 +354,6 @@ function MobileRepair({ r, staff, onChanged, onOpen }: { r: Repair; staff: Staff
 // ─── Страница ────────────────────────────────────────────────────────────────
 
 export default function RepairsPage() {
-  const [repairs, setRepairs] = useState<Repair[]>([])
-  const [units, setUnits] = useState<Unit[]>([])
-  const [staff, setStaff] = useState<Staff[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
   const narrow = useNarrow()
   const [selected, setSelected] = useState<Repair | null>(null)
   const [showModal, setShowModal] = useState(false)
@@ -406,24 +366,17 @@ export default function RepairsPage() {
   const [catFilter, setCatFilter] = useState('')
   const [unitFilter, setUnitFilter] = useState('')
 
-  useEffect(() => { fetchAll() }, [])
-
-  async function fetchAll(silent = false) {
-    if (!silent) setLoading(true)
-    setError('')
-    const [rep, u, s] = await Promise.all([
-      supabase.from('repairs').select('*, tenant:tenants(full_name), unit:units(number), assignee:staff(full_name)')
-        .order('created_at', { ascending: false }),
-      supabase.from('units').select('id, number').order('number'),
-      supabase.from('staff').select('id, full_name').eq('status', 'active').order('full_name'),
-    ])
-    const err = rep.error || u.error || s.error
-    if (err) setError(err.message)
-    setRepairs(rep.data || [])
-    setUnits(u.data || [])
-    setStaff(s.data || [])
-    setLoading(false)
-  }
+  const repairsQ = useSb(['repairs'], () => sb(supabase.from('repairs')
+    .select('*, tenant:tenants(full_name), unit:units(number), assignee:staff(full_name)')
+    .order('created_at', { ascending: false })))
+  const unitsQ = useSb(['units', 'id,number'], () => sb(supabase.from('units').select('id, number').order('number')))
+  const staffQ = useSb(['staff', 'id,full_name', 'active'], () => sb(supabase.from('staff').select('id, full_name').eq('status', 'active').order('full_name')))
+  const repairs: Repair[] = repairsQ.data ?? []
+  const units: Unit[] = unitsQ.data ?? []
+  const staff: Staff[] = staffQ.data ?? []
+  const loading = repairsQ.isPending
+  const error = (repairsQ.error || unitsQ.error || staffQ.error)?.message ?? ''
+  const fetchAll = () => { repairsQ.refetch(); unitsQ.refetch(); staffQ.refetch() }
 
   function openNew(priority = 'medium') {
     setSelected(null)
@@ -443,10 +396,10 @@ export default function RepairsPage() {
   const completed = repairs.filter(r => r.status === 'completed').length
   const emergencyOpen = repairs.filter(r => r.priority === 'emergency' && r.status !== 'completed').length
   const avgDays = (() => {
-    const done = repairs.filter(r => r.completed_date && r.created_at)
+    const done = repairs.flatMap(r => r.completed_date && r.created_at ? [{ from: r.created_at, to: r.completed_date }] : [])
     if (!done.length) return '—'
     const avg = done.reduce((s, r) => {
-      const d = (new Date(r.completed_date!).getTime() - new Date(r.created_at).getTime()) / 86400000
+      const d = (new Date(r.to).getTime() - new Date(r.from).getTime()) / 86400000
       return s + d
     }, 0) / done.length
     return avg.toFixed(1)
@@ -455,7 +408,7 @@ export default function RepairsPage() {
   // Отфильтрованный список
   const base = pageTab === 'emergency' ? repairs.filter(r => r.priority === 'emergency') : repairs
   const filtered = base.filter(r => {
-    if (statusFilter === 'open' ? !OPEN.includes(r.status) : statusFilter && r.status !== statusFilter) return false
+    if (statusFilter === 'open' ? !isOpen(r.status) : statusFilter && r.status !== statusFilter) return false
     if (priorityFilter && r.priority !== priorityFilter) return false
     if (catFilter && r.category !== catFilter) return false
     if (unitFilter && r.unit_id !== unitFilter) return false
@@ -478,7 +431,7 @@ export default function RepairsPage() {
             if (k === 'emergency') { setPageTab('emergency'); setStatusFilter('open') }
             else { setPageTab('all'); setStatusFilter(k === 'open' ? 'open' : '') }
           }} options={[
-            ['open', `Открытые · ${repairs.filter(r => OPEN.includes(r.status)).length}`],
+            ['open', `Открытые · ${repairs.filter(r => isOpen(r.status)).length}`],
             ['emergency', <span key="e" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>Аварийные{emergencyOpen > 0 && <Badge tone="red">{emergencyOpen}</Badge>}</span>],
             ['all', 'Все'],
           ]} />
@@ -486,12 +439,12 @@ export default function RepairsPage() {
         {error && <ErrorBox error={error} onRetry={() => fetchAll()} />}
         {loading ? <Loading /> : filtered.length === 0 ? <Card><Empty>Заявок нет</Empty></Card> : (
           <div style={{ display: 'grid', gap: 10 }}>
-            {filtered.map(r => <MobileRepair key={r.id + r.status + (r.assignee_id || '')} r={r} staff={staff} onChanged={() => fetchAll(true)} onOpen={() => openRepair(r)} />)}
+            {filtered.map(r => <MobileRepair key={r.id + r.status + (r.assignee_id || '')} r={r} staff={staff} onOpen={() => openRepair(r)} />)}
           </div>
         )}
         {showModal && (
           <RepairModal repair={selected} units={units} staff={staff} onClose={() => setShowModal(false)}
-            onSaved={() => { setShowModal(false); fetchAll() }} initialPriority={initPriority} />
+            onSaved={() => setShowModal(false)} initialPriority={initPriority} />
         )}
       </Page>
     )
@@ -556,7 +509,7 @@ export default function RepairsPage() {
                 {r.description.slice(0, 50)}{r.description.length > 50 ? '…' : ''}
               </div>
             ) },
-            { key: 'p', title: 'Приоритет', sort: r => ['low', 'medium', 'high', 'emergency'].indexOf(r.priority), render: r => <PriorityBadge p={r.priority} /> },
+            { key: 'p', title: 'Приоритет', sort: r => ['low', 'medium', 'high', 'emergency'].indexOf(r.priority ?? ''), render: r => <PriorityBadge p={r.priority} /> },
             { key: 's', title: 'Статус', sort: r => r.status, render: r => <StatusBadge s={r.status} /> },
             { key: 'a', title: 'Исполнитель', sort: r => r.assignee?.full_name || null, render: r => <span style={{ whiteSpace: 'nowrap', color: C.muted }}>{r.assignee?.full_name || '—'}</span> },
             { key: 'due', title: 'Срок', sort: r => r.due_date, render: r => (
@@ -577,7 +530,7 @@ export default function RepairsPage() {
           units={units}
           staff={staff}
           onClose={() => setShowModal(false)}
-          onSaved={() => { setShowModal(false); fetchAll() }}
+          onSaved={() => setShowModal(false)}
           initialPriority={initPriority}
         />
       )}
@@ -587,7 +540,10 @@ export default function RepairsPage() {
 
 // ─── Горячие заявки для «Сегодня» ────────────────────────────────────────────
 
-export async function fetchHotRepairs() {
+/** Горячая заявка (высокий приоритет или аварийная) для экрана «Сегодня». */
+export type HotRepair = Pick<Tables<'repairs'>, 'id' | 'number' | 'priority' | 'status' | 'category' | 'description' | 'created_at'> & { unit: { number: string } | null }
+
+export async function fetchHotRepairs(): Promise<HotRepair[]> {
   const { data } = await supabase.from('repairs')
     .select('id, number, priority, status, category, description, created_at, unit:units(number)')
     .in('priority', ['high', 'emergency'])

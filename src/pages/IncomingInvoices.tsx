@@ -1,34 +1,21 @@
 // Входящие счета от поставщиков и подрядчиков: добавление с распознаванием файла, согласование письмом, отметка оплаты.
 import { apiFetch, openStoredFile } from '../lib/api'
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { sb, useSb, useAction, errText } from '../lib/query'
+import type { Tables, TablesUpdate } from '../lib/database.types'
 import {
   Page, Card, Row, Button, Badge, Stat, Stats, Table, Field, Input, Select, Textarea, Segmented, Modal, Notice, Loading, ErrorBox, Empty, Muted, Sub, money, num, dateRu, dateTimeRu, useNarrow, C, type Tone,
 } from '../components/ui'
 
-interface IncomingInvoice {
-  id: string
-  supplier: string
-  amount: number
-  vat: number | null
-  invoice_date: string | null
-  due_date: string | null
-  description: string | null
-  file_url: string | null
-  status: string
-  building_id: string | null
-  created_at: string
-  approval_requested_to: string | null
-  approved_by: string | null
-  approved_at: string | null
-}
+type IncomingInvoice = Tables<'incoming_invoices'>
+type StaffMember = Pick<Tables<'staff'>, 'id' | 'full_name' | 'email' | 'position'>
 
-interface StaffMember {
-  id: string
-  full_name: string
-  email: string
-  position: string | null
-}
+/** Ответ /api/recognize-invoice. */
+interface Recognized { ok?: boolean; error?: string; supplier?: string; amount?: number | string | null; vat?: number | string | null; invoice_date?: string; due_date?: string; description?: string }
+
+/** Счёт поставщика влияет и на платёжный календарь (строка «Счёт: …»). */
+const INV_TABLES = ['incoming_invoices', 'payment_calendar']
 
 const STATUS_CONFIG: Record<string, { label: string; tone: Tone }> = {
   NEW:              { label: 'Новый',           tone: 'blue' },
@@ -73,43 +60,24 @@ const emptyForm = (): FormData => ({
 })
 
 export default function IncomingInvoicesPage() {
-  const [invoices, setInvoices] = useState<IncomingInvoice[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
   const narrow = useNarrow()
   const [filterStatus, setFilterStatus] = useState<Filter>(() => (window.innerWidth < 768 ? 'TODO' : 'ALL'))
-  const [deciding, setDeciding] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState<FormData>(emptyForm())
-  const [saving, setSaving] = useState(false)
-  const [saveError, setSaveError] = useState('')
   const [recognizing, setRecognizing] = useState(false)
   const [recognizeError, setRecognizeError] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   // Approval modal
   const [approvalInvoice, setApprovalInvoice] = useState<IncomingInvoice | null>(null)
-  const [staff, setStaff] = useState<StaffMember[]>([])
   const [approvalEmail, setApprovalEmail] = useState('')
-  const [sendingApproval, setSendingApproval] = useState(false)
   const [approvalSent, setApprovalSent] = useState(false)
-  const [approvalError, setApprovalError] = useState('')
 
-  async function load() {
-    setLoading(true)
-    setError('')
-    const { data, error } = await supabase
-      .from('incoming_invoices')
-      .select('*')
-      .order('created_at', { ascending: false })
-    if (error) setError(error.message)
-    setInvoices((data as IncomingInvoice[]) || [])
-    setLoading(false)
-  }
-
-  useEffect(() => {
-    load()
-    supabase.from('staff').select('id,full_name,email,position').eq('status','active').then(({ data }) => setStaff((data as StaffMember[]) || []))
-  }, [])
+  const invQ = useSb(['incoming_invoices'], () => sb(supabase.from('incoming_invoices').select('*').order('created_at', { ascending: false })))
+  const staffQ = useSb(['staff', 'approvers'], () => sb(supabase.from('staff').select('id,full_name,email,position').eq('status', 'active')))
+  const invoices: IncomingInvoice[] = invQ.data ?? []
+  const staff: StaffMember[] = staffQ.data ?? []
+  const loading = invQ.isPending
+  const load = () => { invQ.refetch() }
 
   function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -141,7 +109,7 @@ export default function IncomingInvoicesPage() {
       })
 
       const text = await r.text()
-      let d: any
+      let d: Recognized
       try { d = JSON.parse(text) } catch {
         setRecognizeError(`Ответ не JSON (${r.status}): ${text.slice(0, 120)}`)
         setRecognizing(false)
@@ -162,122 +130,120 @@ export default function IncomingInvoicesPage() {
       } else {
         setRecognizeError(d.error || 'Не удалось распознать')
       }
-    } catch (e: any) {
-      setRecognizeError(e.message || 'Ошибка сети')
+    } catch (e) {
+      setRecognizeError(errText(e) || 'Ошибка сети')
     }
     setRecognizing(false)
   }
 
-  async function uploadFile(): Promise<string | null> {
-    if (!form.fileBase64 || !form.fileName) return null
-    const byteChars = atob(form.fileBase64)
+  async function uploadFile(f: FormData): Promise<string | null> {
+    if (!f.fileBase64 || !f.fileName) return null
+    const byteChars = atob(f.fileBase64)
     const bytes = new Uint8Array(byteChars.length)
     for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i)
-    const blob = new Blob([bytes], { type: form.fileMime })
-    const ext = form.fileName.split('.').pop() || 'pdf'
+    const blob = new Blob([bytes], { type: f.fileMime })
+    const ext = f.fileName.split('.').pop() || 'pdf'
     const path = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
-    const { error } = await supabase.storage.from('invoices').upload(path, blob, { contentType: form.fileMime })
-    if (error) { console.error('Upload error:', error); return null }
+    const { error } = await supabase.storage.from('invoices').upload(path, blob, { contentType: f.fileMime })
+    // раньше ошибка загрузки только писалась в консоль, и счёт сохранялся без файла молча
+    if (error) throw new Error('файл не загружен: ' + error.message)
     const { data } = supabase.storage.from('invoices').getPublicUrl(path)
     return data.publicUrl
   }
 
-  async function save() {
-    if (!form.supplier || !form.amount) return
-    setSaving(true)
-    setSaveError('')
-    const amount = parseFloat(form.amount.replace(',', '.')) || 0
-    const fileUrl = await uploadFile()
-    const { data: inv, error } = await supabase
+  const saveA = useAction(async (f: FormData) => {
+    const amount = parseFloat(f.amount.replace(',', '.')) || 0
+    const fileUrl = await uploadFile(f)
+    const inv = await sb(supabase
       .from('incoming_invoices')
       .insert({
-        supplier: form.supplier,
+        supplier: f.supplier,
         amount,
-        invoice_date: form.invoice_date || null,
-        due_date: form.due_date || null,
-        description: form.description || null,
+        invoice_date: f.invoice_date || null,
+        due_date: f.due_date || null,
+        description: f.description || null,
         file_url: fileUrl,
-        vat: form.vat ? (parseFloat(form.vat.replace(',', '.')) || null) : null,
+        vat: f.vat ? (parseFloat(f.vat.replace(',', '.')) || null) : null,
         status: 'NEW',
       })
       .select()
-      .single()
+      .single())
 
-    if (error) {
-      setSaving(false)
-      setSaveError('Счёт не сохранён: ' + error.message)
-      return
+    if (f.due_date) {
+      // раньше ошибка этой вставки молча терялась
+      try {
+        await sb(supabase.from('payment_calendar').insert({
+          name: `Счёт: ${f.supplier}`,
+          amount,
+          due_date: f.due_date,
+          type: 'INVOICE',
+          status: 'PENDING',
+          incoming_invoice_id: inv.id,
+        }))
+      } catch (e) { throw new Error('счёт сохранён, но не добавлен в платёжный календарь: ' + errText(e)) }
     }
+  }, { invalidate: INV_TABLES, onSuccess: () => { setShowForm(false); setForm(emptyForm()) } })
+  const saving = saveA.isPending
 
-    if (inv && form.due_date) {
-      await supabase.from('payment_calendar').insert({
-        name: `Счёт: ${form.supplier}`,
-        amount,
-        due_date: form.due_date,
-        type: 'INVOICE',
-        status: 'PENDING',
-        incoming_invoice_id: inv.id,
-      })
-    }
-
-    setSaving(false)
-    setShowForm(false)
-    setForm(emptyForm())
-    load()
+  function save() {
+    if (!form.supplier || !form.amount) return
+    saveA.mutate(form, { onError: () => load() })
   }
 
-  async function updateStatus(id: string, status: string) {
-    const { error } = await supabase.from('incoming_invoices').update({ status }).eq('id', id)
-    if (error) { setError('Статус не изменён: ' + error.message); return }
-    setInvoices(prev => prev.map(i => i.id === id ? { ...i, status } : i))
+  const statusA = useAction(async (v: { id: string; status: string }) => {
+    await sb(supabase.from('incoming_invoices').update({ status: v.status }).eq('id', v.id))
+  }, { invalidate: INV_TABLES })
+  function updateStatus(id: string, status: string) {
+    statusA.mutate({ id, status })
   }
 
   /** Решение по счёту прямо из админки: согласовать или отклонить. */
-  async function decide(inv: IncomingInvoice, approve: boolean) {
-    setDeciding(inv.id); setError('')
-    const patch = approve
+  const decideA = useAction(async (v: { inv: IncomingInvoice; approve: boolean }) => {
+    const patch: TablesUpdate<'incoming_invoices'> = v.approve
       ? { status: 'APPROVED', approved_by: await myName(), approved_at: new Date().toISOString() }
       : { status: 'REJECTED' }
-    const { error } = await supabase.from('incoming_invoices').update(patch).eq('id', inv.id)
-    setDeciding(null)
-    if (error) { setError((approve ? 'Счёт не согласован: ' : 'Счёт не отклонён: ') + error.message); return }
-    setInvoices(prev => prev.map(i => i.id === inv.id ? { ...i, ...patch } : i))
+    try { await sb(supabase.from('incoming_invoices').update(patch).eq('id', v.inv.id)) }
+    catch (e) { throw new Error((v.approve ? 'Счёт не согласован: ' : 'Счёт не отклонён: ') + errText(e)) }
+  }, { invalidate: INV_TABLES })
+  const deciding = decideA.isPending ? decideA.variables?.inv.id ?? null : null
+  function decide(inv: IncomingInvoice, approve: boolean) {
+    decideA.mutate({ inv, approve })
   }
 
-  async function sendApproval() {
-    if (!approvalInvoice || !approvalEmail) return
-    setSendingApproval(true)
-    setApprovalError('')
-    const member = staff.find(s => s.email === approvalEmail)
+  const approvalA = useAction(async (v: { inv: IncomingInvoice; email: string }) => {
+    const member = staff.find(s => s.email === v.email)
     const r = await apiFetch('/api/request-invoice-approval', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        invoiceId: approvalInvoice.id,
-        toEmail: approvalEmail,
+        invoiceId: v.inv.id,
+        toEmail: v.email,
         toName: member?.full_name || '',
-        invoiceData: approvalInvoice,
+        invoiceData: v.inv,
       }),
     })
-    const d = await r.json().catch(() => ({ ok: false, error: 'Ошибка' }))
-    if (d.ok) {
-      setApprovalSent(true)
-      setInvoices(prev => prev.map(i => i.id === approvalInvoice.id
-        ? { ...i, status: 'PENDING_APPROVAL', approval_requested_to: approvalEmail }
-        : i
-      ))
-    } else {
-      setApprovalError('Ошибка: ' + d.error)
-    }
-    setSendingApproval(false)
+    const d: { ok?: boolean; error?: string } = await r.json().catch(() => ({ ok: false, error: 'Ошибка' }))
+    if (!d.ok) throw new Error(d.error)
+  }, { invalidate: INV_TABLES, onSuccess: () => setApprovalSent(true) })
+  const sendingApproval = approvalA.isPending
+  const approvalError = approvalA.error ? 'Ошибка: ' + approvalA.error : ''
+
+  function sendApproval() {
+    if (!approvalInvoice || !approvalEmail) return
+    approvalA.mutate({ inv: approvalInvoice, email: approvalEmail })
   }
+
+  const error = invQ.error ? invQ.error.message
+    : statusA.error ? 'Статус не изменён: ' + statusA.error
+    : decideA.error
+  const saveError = saveA.error ? 'Счёт не сохранён: ' + saveA.error : ''
 
   const filtered = filterStatus === 'ALL' ? invoices : filterStatus === 'TODO' ? invoices.filter(i => TO_APPROVE.includes(i.status)) : invoices.filter(i => i.status === filterStatus)
   const total = filtered.reduce((s, i) => s + (i.amount || 0), 0)
   const pending = invoices.filter(i => i.status === 'NEW').reduce((s, i) => s + (i.amount || 0), 0)
 
   return (
-    <Page actions={<Button kind="primary" onClick={() => { setShowForm(true); setForm(emptyForm()); setSaveError(''); setRecognizeError(null) }}>Добавить счёт</Button>}>
+    <Page actions={<Button kind="primary" onClick={() => { setShowForm(true); setForm(emptyForm()); saveA.reset(); setRecognizeError(null) }}>Добавить счёт</Button>}>
       <Muted>Счета от поставщиков и подрядчиков</Muted>
 
       <Stats>
@@ -353,7 +319,7 @@ export default function IncomingInvoicesPage() {
             { key: 'act', title: 'Действия', render: i => (
               <Row gap={5}>
                 {(i.status === 'NEW' || i.status === 'PENDING_APPROVAL') && (
-                  <Button small onClick={() => { setApprovalInvoice(i); setApprovalEmail(''); setApprovalSent(false); setApprovalError('') }}>Согласовать</Button>
+                  <Button small onClick={() => { setApprovalInvoice(i); setApprovalEmail(''); setApprovalSent(false); approvalA.reset() }}>Согласовать</Button>
                 )}
                 {i.status === 'NEW' && (
                   <Button small disabled={deciding === i.id} onClick={() => decide(i, true)} style={{ color: C.green }}>Согласовать вручную</Button>
@@ -396,7 +362,7 @@ export default function IncomingInvoicesPage() {
               <Select value={approvalEmail} onChange={e => setApprovalEmail(e.target.value)}>
                 <option value="">— выберите сотрудника —</option>
                 {staff.filter(s => s.email).map(s => (
-                  <option key={s.id} value={s.email}>{s.full_name}{s.position ? ` (${s.position})` : ''}</option>
+                  <option key={s.id} value={s.email ?? ''}>{s.full_name}{s.position ? ` (${s.position})` : ''}</option>
                 ))}
               </Select>
             </Field>

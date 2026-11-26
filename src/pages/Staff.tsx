@@ -1,9 +1,13 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { C, Page, Row, Button, Badge, Field, Input, Select, Textarea, Segmented, Modal, Notice, Loading, Empty, ErrorBox, money, type Tone } from '../components/ui'
+import { sb, useSb, useAction, QueryState } from '../lib/query'
+import type { Tables } from '../lib/database.types'
+import { C, Page, Row, Button, Badge, Field, Input, Select, Textarea, Segmented, Modal, Notice, money, type Tone } from '../components/ui'
 
-interface Staff {
-  id: string
+type Staff = Tables<'staff'>
+
+/** Поля формы: в базе они могут быть пустыми (null), в форме — пустая строка / 0. */
+interface StaffForm {
   full_name: string
   position: string
   phone: string
@@ -15,7 +19,7 @@ interface Staff {
   notes: string
 }
 
-const empty: Omit<Staff, 'id'> = {
+const empty: StaffForm = {
   full_name: '', position: '', phone: '', email: '',
   salary: 0, role: 'staff', status: 'active', passport: '', notes: ''
 }
@@ -24,29 +28,33 @@ const roleLabel: Record<string, string> = { admin: 'Администратор',
 const roleTone: Record<string, Tone> = { admin: 'violet', manager: 'blue', staff: 'neutral' }
 
 function StaffModal({ s, onClose, onSaved }: { s: Staff | null; onClose: () => void; onSaved: () => void }) {
-  const [form, setForm] = useState<Omit<Staff, 'id'>>(s ? { ...s } : { ...empty })
-  const [saving, setSaving] = useState(false)
+  const [form, setForm] = useState<StaffForm>(s ? {
+    full_name: s.full_name, position: s.position ?? '', phone: s.phone ?? '', email: s.email ?? '',
+    salary: s.salary ?? 0, role: s.role ?? 'staff', status: s.status ?? 'active', passport: s.passport ?? '', notes: s.notes ?? '',
+  } : { ...empty })
   const [err, setErr] = useState('')
   const [confirmFire, setConfirmFire] = useState(false)
-  const set = (k: string, v: string | number) => setForm(f => ({ ...f, [k]: v }))
+  const set = <K extends keyof StaffForm>(k: K, v: StaffForm[K]) => setForm(f => ({ ...f, [k]: v }))
 
-  async function save() {
+  const saveA = useAction(async (f: StaffForm) => {
+    if (s?.id) await sb(supabase.from('staff').update(f).eq('id', s.id))
+    else await sb(supabase.from('staff').insert(f))
+  }, { invalidate: ['staff'], onSuccess: onSaved })
+  const fireA = useAction(async (id: string) => {
+    await sb(supabase.from('staff').update({ status: 'fired' }).eq('id', id))
+  }, { invalidate: ['staff'], onSuccess: onSaved })
+  const saving = saveA.isPending
+
+  function save() {
     if (!form.full_name.trim()) { setErr('Введите ФИО'); return }
-    setSaving(true); setErr('')
-    const { error } = s?.id
-      ? await supabase.from('staff').update(form).eq('id', s.id)
-      : await supabase.from('staff').insert(form)
-    setSaving(false)
-    if (error) { setErr('Ошибка сохранения: ' + error.message); return }
-    onSaved()
+    setErr('')
+    saveA.mutate(form)
   }
 
-  async function dismiss() {
+  function dismiss() {
     if (!s?.id) return
     setErr('')
-    const { error } = await supabase.from('staff').update({ status: 'fired' }).eq('id', s.id)
-    if (error) { setErr('Ошибка: ' + error.message); setConfirmFire(false); return }
-    onSaved()
+    fireA.mutate(s.id, { onError: () => setConfirmFire(false) })
   }
 
   const footer = confirmFire ? (
@@ -84,6 +92,8 @@ function StaffModal({ s, onClose, onSaved }: { s: Staff | null; onClose: () => v
       <Field label="Паспорт (серия и номер)"><Input value={form.passport} onChange={e => set('passport', e.target.value)} placeholder="4500 123456" /></Field>
       <Field label="Заметки"><Textarea value={form.notes} onChange={e => set('notes', e.target.value)} style={{ minHeight: 70 }} /></Field>
       {err && <Notice tone="red">{err}</Notice>}
+      {saveA.error && <Notice tone="red">Ошибка сохранения: {saveA.error}</Notice>}
+      {fireA.error && <Notice tone="red">Ошибка: {fireA.error}</Notice>}
     </Modal>
   )
 }
@@ -105,34 +115,25 @@ function StaffCard({ s, onClick }: { s: Staff; onClick: () => void }) {
       <div style={{ fontSize: 13, color: C.muted, display: 'flex', flexDirection: 'column', gap: 3 }}>
         {s.phone && <span>{s.phone}</span>}
         {s.email && <span>{s.email}</span>}
-        {s.salary > 0 && <span>{money(s.salary)}</span>}
+        {(s.salary ?? 0) > 0 && <span>{money(s.salary)}</span>}
       </div>
       <div style={{ marginTop: 10 }}>
-        <Badge tone={roleTone[s.role] || 'neutral'}>{roleLabel[s.role] || s.role}</Badge>
+        <Badge tone={roleTone[s.role ?? ''] || 'neutral'}>{roleLabel[s.role ?? ''] || s.role}</Badge>
       </div>
     </div>
   )
 }
 
 export default function StaffPage() {
-  const [staff, setStaff] = useState<Staff[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
   const [selected, setSelected] = useState<Staff | null>(null)
   const [showModal, setShowModal] = useState(false)
   const [filter, setFilter] = useState<'active' | 'fired' | 'all'>('active')
 
-  useEffect(() => { fetchStaff() }, [filter])
-
-  async function fetchStaff() {
-    setLoading(true); setError('')
+  const staffQ = useSb(['staff', filter], () => {
     let q = supabase.from('staff').select('*').order('full_name')
     if (filter !== 'all') q = q.eq('status', filter)
-    const { data, error } = await q
-    if (error) setError('Не удалось загрузить сотрудников: ' + error.message)
-    setStaff(data || [])
-    setLoading(false)
-  }
+    return sb(q)
+  })
 
   return (
     <Page>
@@ -141,14 +142,13 @@ export default function StaffPage() {
         <Button kind="primary" onClick={() => { setSelected(null); setShowModal(true) }}>Добавить сотрудника</Button>
       </Row>
 
-      {error && <ErrorBox error={error} onRetry={fetchStaff} />}
-      {loading ? <Loading /> : staff.length === 0 ? (!error && <Empty>Сотрудников нет</Empty>) : (
+      <QueryState q={staffQ} empty="Сотрудников нет">{staff => (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 12 }}>
           {staff.map(s => <StaffCard key={s.id} s={s} onClick={() => { setSelected(s); setShowModal(true) }} />)}
         </div>
-      )}
+      )}</QueryState>
 
-      {showModal && <StaffModal s={selected} onClose={() => setShowModal(false)} onSaved={() => { setShowModal(false); fetchStaff() }} />}
+      {showModal && <StaffModal s={selected} onClose={() => setShowModal(false)} onSaved={() => setShowModal(false)} />}
     </Page>
   )
 }

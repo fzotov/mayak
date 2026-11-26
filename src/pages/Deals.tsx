@@ -2,6 +2,7 @@
 // Доска по этапам или список; у каждой открытой сделки — следующий шаг с датой и ответственным.
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { sb, sbRpc, useSb, useAction, useInvalidate } from '../lib/query'
 import { go } from '../lib/nav'
 import { Page, Card, Row, Button, Badge, Stat, Stats, Table, Select, Search, Segmented, Loading, ErrorBox, Empty, Sub, C, dateRu, num, useNarrow, type Col } from '../components/ui'
 import {
@@ -16,9 +17,16 @@ type StageFilter = 'open' | 'all' | Stage
 export default function DealsPage() {
   const narrow = useNarrow()
   const { units, people, me, error: refsError } = useCrmRefs()
-  const [deals, setDeals] = useState<Deal[] | null>(null)
-  const [error, setError] = useState('')
-  const [syncNote, setSyncNote] = useState('')
+  const dealsQ = useSb(['deals', 'list'], async (): Promise<Deal[]> => {
+    const rows = await sb(supabase.from('deals').select(DEAL_SELECT).order('next_step_at', { ascending: true, nullsFirst: true }).order('created_at', { ascending: false }))
+    // kind и stage в базе ограничены проверками (new/renewal и этапы воронки) — строки сужаются до типов сделки
+    return rows as Deal[]
+  })
+  const deals = dealsQ.data ?? (dealsQ.isPending ? null : [])
+  const error = dealsQ.error?.message || ''
+  const load = () => { dealsQ.refetch() }
+  const invalidate = useInvalidate()
+  const [syncAdded, setSyncAdded] = useState('')
   const [kind, setKind] = useState<Kind>(() => (sessionGet('deals-kind') as Kind) || 'new')
   const [view, setView] = useState<View>(() => (sessionGet('deals-view') as View) || 'board')
   const [source, setSource] = useState('')
@@ -32,20 +40,13 @@ export default function DealsPage() {
   useEffect(() => { sessionSet('deals-kind', kind) }, [kind])
   useEffect(() => { sessionSet('deals-view', view) }, [view])
 
-  async function load() {
-    setError('')
-    const { data, error } = await supabase.from('deals').select(DEAL_SELECT).order('next_step_at', { ascending: true, nullsFirst: true }).order('created_at', { ascending: false })
-    if (error) { setError(error.message); setDeals([]); return }
-    setDeals((data || []) as Deal[])
-  }
-  useEffect(() => {
-    // Продления за 60/30 дней до конца договора: база создаёт их сама раз в сутки, здесь — подстраховка при открытии.
-    supabase.rpc('crm_sync_renewals').then(({ data, error }) => {
-      if (error) setSyncNote('Продления не обновились: ' + error.message)
-      else if (Number(data) > 0) setSyncNote(`Добавлено напоминаний о продлении: ${data}`)
-      load()
-    })
-  }, [])
+  // Продления за 60/30 дней до конца договора: база создаёт их сама раз в сутки, здесь — подстраховка при открытии.
+  const syncRenewals = useAction(() => sbRpc('crm_sync_renewals'), {
+    invalidate: ['deals', 'deal_units', 'deal_events'],
+    onSuccess: n => { if (Number(n) > 0) setSyncAdded(`Добавлено напоминаний о продлении: ${n}`) },
+  })
+  useEffect(() => { syncRenewals.mutate(undefined) }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  const syncNote = syncRenewals.error ? 'Продления не обновились: ' + syncRenewals.error : syncAdded
 
   const unitById = useMemo(() => Object.fromEntries(units.map(u => [u.id, u])), [units])
   const nameOf = (id: string | null) => people.find(p => p.user_id === id)?.full_name || (id ? 'Сотрудник' : '—')
@@ -122,7 +123,7 @@ export default function DealsPage() {
   </>
 
   const modal = creating && (
-    <DealFormModal deal={null} units={units} people={people} me={me} onClose={() => setCreating(false)} onSaved={id => { setCreating(false); go('/deals/' + id) }} />
+    <DealFormModal deal={null} units={units} people={people} me={me} onClose={() => setCreating(false)} onSaved={id => { setCreating(false); invalidate('deals', 'deal_units', 'deal_events'); go('/deals/' + id) }} />
   )
 
   // ── Телефон: карточки и этапы-чипы ────────────────────────────────────────

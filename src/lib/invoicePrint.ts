@@ -1,5 +1,6 @@
 // Печатная форма счёта на оплату с QR по ГОСТ Р 56042-2014. Реквизиты — из таблицы landlords.
 import QRCode from 'qrcode'
+import type { Tables } from './database.types'
 
 export interface PrintLine { name: string; amount: number }
 export interface PrintInvoice { number: string; date: string; tenantName: string; tenantInn?: string | null; basis: string; lines: PrintLine[]; balanceNote?: string | null; toPay: number }
@@ -8,14 +9,17 @@ const esc = (s: unknown) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&am
 const fmt = (n: number) => n.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const dateLong = (s: string) => new Date(s + 'T00:00:00').toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })
 
-export async function printInvoice(inv: PrintInvoice, ll: any) {
+/** Реквизиты получателя — строка landlords (достаточно полей, что идут в счёт и QR). */
+export type PrintLandlord = Pick<Tables<'landlords'>, 'name' | 'inn' | 'ogrn' | 'legal_address' | 'phone' | 'bank_name' | 'bik' | 'account' | 'corr_account'>
+
+export async function printInvoice(inv: PrintInvoice, ll: PrintLandlord) {
   const w = window.open('', '_blank')
   if (!w) return
   const total = inv.lines.reduce((s, l) => s + l.amount, 0)
   const purpose = `Оплата по счёту № ${inv.number} от ${new Date(inv.date + 'T00:00:00').toLocaleDateString('ru-RU')}. Без НДС`
   const qr = await QRCode.toDataURL([
-    'ST00012', `Name=${ll.name}`, `PersonalAcc=${ll.account}`, `BankName=${ll.bank_name}`, `BIC=${ll.bik}`,
-    `CorrespAcc=${ll.corr_account}`, `PayeeINN=${ll.inn}`, `Sum=${Math.round(inv.toPay * 100)}`, `Purpose=${purpose}`,
+    'ST00012', `Name=${ll.name}`, `PersonalAcc=${ll.account ?? ''}`, `BankName=${ll.bank_name ?? ''}`, `BIC=${ll.bik ?? ''}`,
+    `CorrespAcc=${ll.corr_account ?? ''}`, `PayeeINN=${ll.inn ?? ''}`, `Sum=${Math.round(inv.toPay * 100)}`, `Purpose=${purpose}`,
   ].join('|'), { width: 160, margin: 1, errorCorrectionLevel: 'M' })
   const td = 'border:1px solid #000;padding:3px 6px'
   w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Счёт ${esc(inv.number)}</title><style>

@@ -1,9 +1,10 @@
 // Биллинг: начисления за месяц по договорам, счётчикам и теплу — предпросмотр, затем проведение.
 // Считает база (billing_lines / billing_post); повторное проведение ничего не дублирует.
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { go } from '../lib/nav'
-import { rpc, type BillingLine, INVOICE_KIND } from '../lib/accounting'
-import { Page, Card, Button, Badge, Stat, Stats, Table, Field, Notice, Loading, Modal, inputStyle, money, dateRu, monthRu, C } from '../components/ui'
+import { rpc, LEDGER_KEYS, type BillingLine, INVOICE_KIND } from '../lib/accounting'
+import { useSb, useAction } from '../lib/query'
+import { Page, Card, Button, Badge, Stat, Stats, Table, Field, Notice, Loading, ErrorBox, Modal, inputStyle, money, dateRu, monthRu, C } from '../components/ui'
 
 interface Missing { tenant_id: string; tenant_name: string; meter_id: string; meter_type: string; meter_label: string | null }
 const METER: Record<string, string> = { electricity: 'электроэнергия', cold_water: 'холодная вода', hot_water: 'горячая вода' }
@@ -12,27 +13,26 @@ const ARTICLE: Record<string, string> = {
   AD_STELE: 'Стела', AD_OTHER: 'Реклама', PENALTY: 'Пени', SERVICE: 'Услуги', UTIL_OTHER: 'Возмещение', OTHER: 'Прочее',
 }
 
+/** Ответ billing_post (jsonb): сколько начислений проведено и счетов выставлено. */
+interface PostResult { charges: number; invoices: number }
+
 interface TenantGroup { tenant_id: string; tenant_name: string; lines: BillingLine[]; fresh: number; done: number }
 
 export function BillingPage() {
   const [month, setMonth] = useState(() => new Date().toISOString().slice(0, 7))
-  const [lines, setLines] = useState<BillingLine[] | null>(null)
-  const [missing, setMissing] = useState<Missing[]>([])
-  const [error, setError] = useState('')
-  const [posting, setPosting] = useState(false)
-  const [result, setResult] = useState<{ charges: number; invoices: number } | null>(null)
+  const [result, setResult] = useState<{ month: string; r: PostResult } | null>(null)
   const [open, setOpen] = useState<string | null>(null)
   const [ask, setAsk] = useState(false)
   const period = month + '-01'
 
-  async function load() {
-    setLines(null); setError('')
-    try {
-      const [l, m] = await Promise.all([rpc<BillingLine[]>('billing_lines', { p_period: period }), rpc<Missing[]>('billing_missing_readings', { p_period: period })])
-      setLines(l); setMissing(m)
-    } catch (e: any) { setError(e.message); setLines([]) }
-  }
-  useEffect(() => { setResult(null); load() }, [month])
+  const linesQ = useSb(['rpc:billing_lines', period], () => rpc<BillingLine[]>('billing_lines', { p_period: period }))
+  const missingQ = useSb(['rpc:billing_missing_readings', period], () => rpc<Missing[]>('billing_missing_readings', { p_period: period }))
+  const lines = linesQ.data ?? null
+  const missing = missingQ.data || []
+  const loadError = linesQ.error?.message || missingQ.error?.message || ''
+  const postA = useAction((p: string) => rpc<PostResult>('billing_post', { p_period: p }), {
+    invalidate: LEDGER_KEYS, onSuccess: r => setResult({ month, r }),
+  })
 
   const groups = useMemo<TenantGroup[]>(() => {
     const m = new Map<string, TenantGroup>()
@@ -49,11 +49,10 @@ export function BillingPage() {
   const freshSum = fresh.reduce((s, l) => s + Number(l.amount), 0)
   const doneSum = (lines || []).filter(l => l.already).reduce((s, l) => s + Number(l.amount), 0)
 
-  async function post() {
-    setAsk(false); setPosting(true); setError('')
-    try { setResult(await rpc('billing_post', { p_period: period })); await load() } catch (e: any) { setError(e.message) }
-    setPosting(false)
-  }
+  const posting = postA.isPending
+  // итог проведения показываем только за тот месяц, за который проводили
+  const shownResult = result && result.month === month ? result.r : null
+  function post() { setAsk(false); postA.mutate(period) }
 
   return (
     <Page actions={<>
@@ -66,8 +65,9 @@ export function BillingPage() {
           Аренда, уборка и реклама — по строкам договоров, неполный месяц пропорционально дням. Электроэнергия и вода — по показаниям за месяц, тепло — по распределению счёта за тепло. Пени — там, где включены в договоре.
         </div>
       </div>
-      {error && <Notice tone="red">{error}</Notice>}
-      {result && <Notice tone="green">Проведено начислений: {result.charges}, выставлено счетов: {result.invoices}. Оплаты и авансы разнесены автоматически.</Notice>}
+      {loadError && <ErrorBox error={loadError} onRetry={() => { linesQ.refetch(); missingQ.refetch() }} />}
+      {postA.error && <Notice tone="red">{postA.error}</Notice>}
+      {shownResult && <Notice tone="green">Проведено начислений: {shownResult.charges}, выставлено счетов: {shownResult.invoices}. Оплаты и авансы разнесены автоматически.</Notice>}
       <Stats>
         <Stat label="К проведению" value={money(freshSum)} />
         <Stat label="Уже проведено за месяц" value={money(doneSum)} />
@@ -81,7 +81,7 @@ export function BillingPage() {
         </Notice>
       )}
       <Card pad={false} title={`Начисления за ${monthRu(period).toLowerCase()}`}>
-        {lines === null ? <Loading /> : (
+        {linesQ.isPending ? <Loading /> : (
           <Table rows={groups} rowKey={g => g.tenant_id} onRow={g => setOpen(open === g.tenant_id ? null : g.tenant_id)}
             empty="Начислять нечего: нет действующих договоров со строками за этот месяц" cols={[
               { key: 't', title: 'Арендатор', render: g => (

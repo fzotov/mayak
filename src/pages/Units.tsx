@@ -3,25 +3,13 @@
 import { useState, useEffect } from 'react'
 import { useSearchParams } from 'react-router'
 import { supabase } from '../lib/supabase'
+import { useSb, useAction, sb } from '../lib/query'
+import type { Tables } from '../lib/database.types'
 import {
   Page, Card, Row, Button, Badge, Stat, Stats, Table, Field, Input, Select, Textarea, Search, Notice, Loading, ErrorBox, Sub, num, C, type Tone,
 } from '../components/ui'
 
-interface Unit {
-  id: string
-  number: string
-  floor: number
-  area: number
-  has_window: boolean
-  rooms_count: number
-  type: string
-  status: string
-  rent_rate: number
-  panorama_url: string
-  description: string
-  tenant_id: string | null
-  tenants?: { id: string; full_name: string } | null
-}
+type Unit = Tables<'units'> & { tenants: { id: string; full_name: string } | null }
 
 const TYPES: Record<string, { label: string }> = {
   office: { label: 'Офис' },
@@ -37,7 +25,7 @@ const STATUS: Record<string, { label: string; tone: Tone }> = {
   reserved: { label: 'Резерв', tone: 'amber' },
 }
 
-const rentOf = (area: number, rate: number) => (area && rate ? num(Math.round(area * rate)) + ' ₽' : '—')
+const rentOf = (area: number | null, rate: number | null) => (area && rate ? num(Math.round(area * rate)) + ' ₽' : '—')
 
 /** Подтверждение действия прямо на странице вместо системного confirm(). */
 function ConfirmNotice({ text, yes, onYes, onNo, busy }: { text: string; yes: string; onYes: () => void; onNo: () => void; busy?: boolean }) {
@@ -54,7 +42,7 @@ function ConfirmNotice({ text, yes, onYes, onNo, busy }: { text: string; yes: st
   )
 }
 
-function UnitForm({ unit, onBack }: { unit: any; onBack: () => void }) {
+function UnitForm({ unit, onBack }: { unit: Unit | null; onBack: () => void }) {
   const [form, setForm] = useState({
     number: unit?.number || '',
     floor: unit?.floor || 2,
@@ -67,31 +55,25 @@ function UnitForm({ unit, onBack }: { unit: any; onBack: () => void }) {
     panorama_url: unit?.panorama_url || '',
     description: unit?.description || '',
   })
-  const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
-  const set = (k: string, v: any) => setForm(f => ({ ...f, [k]: v }))
+  const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm(f => ({ ...f, [k]: v }))
 
-  async function save() {
+  const write = useAction(() => sb(unit?.id
+    ? supabase.from('units').update(form).eq('id', unit.id)
+    : supabase.from('units').insert(form)), { invalidate: ['units', 'tenants'], onSuccess: onBack })
+  const del = useAction(() => sb(supabase.from('units').delete().eq('id', unit?.id ?? '')), { invalidate: ['units', 'tenants'], onSuccess: onBack })
+  const saving = write.isPending || del.isPending
+
+  function save() {
     if (!form.number) { setError('Введите номер помещения'); return }
     setError('')
-    setSaving(true)
-    const { error } = unit?.id
-      ? await supabase.from('units').update(form).eq('id', unit.id)
-      : await supabase.from('units').insert(form)
-    setSaving(false)
-    if (error) { setError('Ошибка сохранения: ' + error.message); return }
-    onBack()
+    write.mutate(undefined, { onError: e => setError('Ошибка сохранения: ' + e.message) })
   }
 
-  async function remove() {
+  function remove() {
     if (!unit?.id) return
-    setSaving(true)
-    const { error } = await supabase.from('units').delete().eq('id', unit.id)
-    setSaving(false)
-    setConfirmDelete(false)
-    if (error) { setError('Ошибка удаления: ' + error.message); return }
-    onBack()
+    del.mutate(undefined, { onSettled: () => setConfirmDelete(false), onError: e => setError('Ошибка удаления: ' + e.message) })
   }
 
   const hasRent = !!(form.area && form.rent_rate)
@@ -153,32 +135,22 @@ function UnitForm({ unit, onBack }: { unit: any; onBack: () => void }) {
 export default function UnitsPage() {
   const [params] = useSearchParams()
   const qParam = params.get('q') || ''
-  const [units, setUnits] = useState<Unit[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [selected, setSelected] = useState<any>(null)
+  const unitsQ = useSb(['units', 'list'], () => sb(supabase.from('units').select('*, tenants(id, full_name)').order('floor').order('number')))
+  const units: Unit[] = unitsQ.data ?? []
+  const loading = unitsQ.isPending
+  const [selected, setSelected] = useState<Unit | null>(null)
   const [view, setView] = useState<'list' | 'edit'>('list')
   const [q, setQ] = useState(qParam)
   const [floorFilter, setFloorFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
 
-  useEffect(() => { load() }, [])
   // Переход из общего поиска, когда страница уже открыта: подставить новый номер.
   useEffect(() => { setQ(qParam); if (qParam) setView('list') }, [qParam])
 
-  async function load() {
-    setLoading(true)
-    setError('')
-    const { data, error } = await supabase.from('units').select('*, tenants(id, full_name)').order('floor').order('number')
-    if (error) setError(error.message)
-    setUnits(data || [])
-    setLoading(false)
-  }
+  if (view === 'edit') return <UnitForm unit={selected} onBack={() => setView('list')} />
 
-  if (view === 'edit') return <UnitForm unit={selected} onBack={() => { setView('list'); load() }} />
-
-  const floors = [...new Set(units.map(u => u.floor).filter(Boolean))].sort((a, b) => a - b)
+  const floors = [...new Set(units.map(u => u.floor).filter((f): f is number => !!f))].sort((a, b) => a - b)
   const s = q.trim().toLowerCase()
   const filtered = units.filter(u => {
     if (floorFilter && String(u.floor) !== floorFilter) return false
@@ -220,7 +192,7 @@ export default function UnitsPage() {
         </Select>
       </Row>
 
-      {error && <ErrorBox error={error} onRetry={load} />}
+      {unitsQ.error && <ErrorBox error={unitsQ.error.message} onRetry={() => unitsQ.refetch()} />}
 
       <Card pad={false}>
         {loading ? <Loading /> : (
@@ -230,11 +202,11 @@ export default function UnitsPage() {
             { key: 't', title: 'Арендатор', sort: u => u.tenants?.full_name ?? null, render: u => u.tenants?.full_name
               ? <div style={{ maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.tenants.full_name}</div>
               : <span style={{ color: C.faint }}>—</span> },
-            { key: 'ty', title: 'Тип', render: u => (TYPES[u.type] || TYPES.other).label },
+            { key: 'ty', title: 'Тип', render: u => ((u.type && TYPES[u.type]) || TYPES.other).label },
             { key: 'a', title: 'Площадь', align: 'right', sort: u => Number(u.area || 0), render: u => u.area ? `${u.area} м²` : '—' },
             { key: 'r', title: '₽/м²', align: 'right', sort: u => Number(u.rent_rate || 0), render: u => u.rent_rate ? num(u.rent_rate) + ' ₽' : '—' },
             { key: 'm', title: 'Сумма/мес', align: 'right', sort: u => (u.area || 0) * (u.rent_rate || 0), render: u => <span style={{ fontWeight: 500 }}>{rentOf(u.area, u.rent_rate)}</span> },
-            { key: 's', title: 'Статус', sort: u => u.status, render: u => { const st = STATUS[u.status] || STATUS.free; return <Badge tone={st.tone}>{st.label}</Badge> } },
+            { key: 's', title: 'Статус', sort: u => u.status, render: u => { const st = (u.status && STATUS[u.status]) || STATUS.free; return <Badge tone={st.tone}>{st.label}</Badge> } },
             { key: 'p', title: '', render: u => u.panorama_url
               ? <a href={u.panorama_url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} style={{ color: C.accent, textDecoration: 'none', fontSize: 12, fontWeight: 500 }}>Панорама 3D</a>
               : null },

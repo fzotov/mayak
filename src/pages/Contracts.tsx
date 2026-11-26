@@ -1,16 +1,31 @@
 // Договоры аренды (leases) со строками: помещения со ставкой, уборка, реклама и другие ежемесячные начисления.
 // Изменение ставки — новая строка с датой начала; старая закрывается датой окончания, история сохраняется.
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ChangeEvent } from 'react'
 import { go } from '../lib/nav'
 import { supabase } from '../lib/supabase'
-import { loadArticles, type Article, type Lease, type LeaseLine } from '../lib/accounting'
-import { Page, Card, Button, Badge, Table, Field, Modal, Notice, Loading, Stats, Stat, inputStyle, money, dateRu, today, C } from '../components/ui'
+import { loadArticles, type Lease, type LeaseLine } from '../lib/accounting'
+import { useSb, useAction, sb } from '../lib/query'
+import type { TablesInsert } from '../lib/database.types'
+import { Page, Card, Button, Badge, Table, Field, Modal, Notice, Loading, ErrorBox, Stats, Stat, inputStyle, money, dateRu, today, C } from '../components/ui'
 
 const goTo = (id?: string) => go('/contracts' + (id ? '/' + id : ''))
 const STATUS: Record<string, { label: string; tone: 'green' | 'neutral' | 'amber' }> = {
   active: { label: 'Действует', tone: 'green' }, draft: { label: 'Черновик', tone: 'amber' }, closed: { label: 'Закрыт', tone: 'neutral' },
 }
 interface LeaseRow extends Lease { tenants: { full_name: string } | null; lease_lines: LeaseLine[] }
+/** Поля строки договора в форме: числа набираются строкой и приводятся при сохранении. */
+type LineDraft = Omit<Partial<LeaseLine>, 'area' | 'rate_per_sqm' | 'amount'> & { area?: number | string | null; rate_per_sqm?: number | string | null; amount?: number | string }
+const LEASE_SELECT = '*, tenants(full_name), lease_lines(*)'
+const LEASE_TABLES = ['leases', 'lease_lines']
+/** Строка базы → LeaseRow: статус и режим счетов в базе — текст, в учёте — перечисление. */
+function toLeaseRow(r: { id: string; tenant_id: string | null; number: string | null; start_date: string | null; end_date: string | null; status: string | null; payment_day: number; deposit_required: number; billing_mode: string; penalty_enabled: boolean; penalty_rate: number; notes: string | null; tenants: { full_name: string } | null; lease_lines: LeaseLine[] }): LeaseRow {
+  return {
+    id: r.id, tenant_id: r.tenant_id ?? '', number: r.number, start_date: r.start_date, end_date: r.end_date,
+    status: (r.status || 'draft') as Lease['status'], payment_day: r.payment_day, deposit_required: r.deposit_required,
+    billing_mode: r.billing_mode as Lease['billing_mode'], penalty_enabled: r.penalty_enabled, penalty_rate: r.penalty_rate, notes: r.notes,
+    tenants: r.tenants, lease_lines: r.lease_lines,
+  }
+}
 const activeOn = (l: LeaseLine, d: string) => l.valid_from <= d && (!l.valid_to || l.valid_to >= d)
 
 export default function ContractsPage({ leaseId }: { leaseId?: string | null }) {
@@ -18,14 +33,11 @@ export default function ContractsPage({ leaseId }: { leaseId?: string | null }) 
 }
 
 function LeaseList() {
-  const [rows, setRows] = useState<LeaseRow[] | null>(null)
+  const leasesQ = useSb(['leases', 'list'], async () => (await sb(supabase.from('leases').select(LEASE_SELECT).order('start_date', { ascending: false }))).map(toLeaseRow))
+  const rows = leasesQ.data ?? null
   const [q, setQ] = useState('')
   const [status, setStatus] = useState('active')
   const [creating, setCreating] = useState(false)
-  useEffect(() => {
-    supabase.from('leases').select('*, tenants(full_name), lease_lines(*)').order('start_date', { ascending: false })
-      .then(({ data }) => setRows((data || []) as LeaseRow[]))
-  }, [])
   const d = today()
   const in60 = new Date(Date.now() + 60 * 864e5).toISOString().slice(0, 10)
   const shown = useMemo(() => (rows || []).filter(r => (!status || r.status === status) &&
@@ -47,7 +59,7 @@ function LeaseList() {
         <Stat label="Заканчиваются за 60 дней" value={shown.filter(r => r.end_date && r.end_date >= d && r.end_date <= in60).length} tone="amber" />
       </Stats>
       <Card pad={false}>
-        {rows === null ? <Loading /> : (
+        {leasesQ.error ? <ErrorBox error={leasesQ.error.message} onRetry={() => leasesQ.refetch()} /> : rows === null ? <Loading /> : (
           <Table rows={shown} rowKey={r => r.id} onRow={r => goTo(r.id)} empty="Договоров нет" cols={[
             { key: 't', title: 'Арендатор', render: r => r.tenants?.full_name || '—' },
             { key: 'n', title: 'Договор', render: r => <>№ {r.number || '—'}<div style={{ fontSize: 12, color: C.muted }}>с {dateRu(r.start_date)}{r.end_date ? ' по ' + dateRu(r.end_date) : ''}</div></> },
@@ -65,18 +77,20 @@ function LeaseList() {
 }
 
 function NewLease({ onClose }: { onClose: () => void }) {
-  const [tenants, setTenants] = useState<{ id: string; full_name: string }[]>([])
+  const tenantsQ = useSb(['tenants', 'names'], () => sb(supabase.from('tenants').select('id, full_name').order('full_name')))
+  const tenants = tenantsQ.data ?? []
   const [f, setF] = useState({ tenant: '', number: '', start: today(), end: '' })
   const [error, setError] = useState('')
-  useEffect(() => { supabase.from('tenants').select('id, full_name').order('full_name').then(({ data }) => setTenants(data || [])) }, [])
-  async function create() {
+  const insert = useAction(() => sb(supabase.from('leases').insert({ tenant_id: f.tenant, number: f.number || null, start_date: f.start, end_date: f.end || null, status: 'draft' }).select('id').single()),
+    { invalidate: LEASE_TABLES, onSuccess: data => goTo(data.id) })
+  function create() {
     if (!f.tenant || !f.start) { setError('Выберите арендатора и дату начала'); return }
-    const { data, error } = await supabase.from('leases').insert({ tenant_id: f.tenant, number: f.number || null, start_date: f.start, end_date: f.end || null, status: 'draft' }).select('id').single()
-    if (error) { setError(error.message); return }
-    goTo(data.id)
+    setError('')
+    insert.mutate(undefined)
   }
+  const shownError = error || insert.error || (tenantsQ.error ? 'Не удалось загрузить арендаторов: ' + tenantsQ.error.message : '')
   return (
-    <Modal title="Новый договор" onClose={onClose} footer={<><Button onClick={onClose}>Отмена</Button><Button kind="primary" onClick={create}>Создать</Button></>}>
+    <Modal title="Новый договор" onClose={onClose} footer={<><Button onClick={onClose}>Отмена</Button><Button kind="primary" onClick={create} disabled={insert.isPending}>Создать</Button></>}>
       <Field label="Арендатор"><select style={inputStyle} value={f.tenant} onChange={e => setF({ ...f, tenant: e.target.value })}>
         <option value="">Выберите…</option>{tenants.map(t => <option key={t.id} value={t.id}>{t.full_name}</option>)}
       </select></Field>
@@ -86,66 +100,70 @@ function NewLease({ onClose }: { onClose: () => void }) {
         <Field label="Окончание"><input type="date" style={inputStyle} value={f.end} onChange={e => setF({ ...f, end: e.target.value })} /></Field>
       </div>
       <Notice>Договор создаётся черновиком: добавьте строки (помещения и ставки) и переведите в «Действует» — тогда он попадёт в биллинг.</Notice>
-      {error && <Notice tone="red">{error}</Notice>}
+      {shownError && <Notice tone="red">{shownError}</Notice>}
     </Modal>
   )
 }
 
 function LeaseView({ id }: { id: string }) {
-  const [lease, setLease] = useState<LeaseRow | null>(null)
+  const leaseQ = useSb(['leases', id], async () => {
+    const l = toLeaseRow(await sb(supabase.from('leases').select(LEASE_SELECT).eq('id', id).single()))
+    l.lease_lines.sort((a, b) => a.article_code.localeCompare(b.article_code) || b.valid_from.localeCompare(a.valid_from))
+    return l
+  })
+  const articlesQ = useSb(['accounting_articles'], loadArticles)
+  const unitsQ = useSb(['units', 'short'], () => sb(supabase.from('units').select('id, number, area').order('number')))
+  const lease = leaseQ.data ?? null
+  const articles = articlesQ.data ?? []
+  const units = unitsQ.data ?? []
   const [form, setForm] = useState<Partial<Lease>>({})
-  const [articles, setArticles] = useState<Article[]>([])
-  const [units, setUnits] = useState<{ id: string; number: string; area: number }[]>([])
-  const [line, setLine] = useState<Partial<LeaseLine> | null>(null)
+  const [line, setLine] = useState<LineDraft | null>(null)
   const [rate, setRate] = useState<LeaseLine | null>(null)
   const [msg, setMsg] = useState<{ tone: 'green' | 'red'; text: string } | null>(null)
+  // Форма условий берёт значения из базы при каждой загрузке договора (как раньше после сохранения).
+  useEffect(() => { if (lease) setForm(lease) }, [lease])
+  const fail = (e: Error) => setMsg({ tone: 'red', text: e.message })
 
-  async function load() {
-    const { data } = await supabase.from('leases').select('*, tenants(full_name), lease_lines(*)').eq('id', id).single()
-    const l = data as LeaseRow
-    l.lease_lines.sort((a, b) => a.article_code.localeCompare(b.article_code) || b.valid_from.localeCompare(a.valid_from))
-    setLease(l); setForm(l)
-  }
-  useEffect(() => {
-    load(); loadArticles().then(setArticles)
-    supabase.from('units').select('id, number, area').order('number').then(({ data }) => setUnits((data || []) as any))
-  }, [id])
-
-  async function save() {
+  const saveLease = useAction(() => sb(supabase.from('leases').update({
+    number: form.number || null, start_date: form.start_date || null, end_date: form.end_date || null, status: form.status,
+    payment_day: Number(form.payment_day) || 5, deposit_required: Number(form.deposit_required) || 0, billing_mode: form.billing_mode,
+    penalty_enabled: !!form.penalty_enabled, penalty_rate: Number(form.penalty_rate) || 0, notes: form.notes || null, updated_at: new Date().toISOString(),
+  }).eq('id', id)), { invalidate: LEASE_TABLES })
+  function save() {
     setMsg(null)
-    const { error } = await supabase.from('leases').update({
-      number: form.number || null, start_date: form.start_date || null, end_date: form.end_date || null, status: form.status,
-      payment_day: Number(form.payment_day) || 5, deposit_required: Number(form.deposit_required) || 0, billing_mode: form.billing_mode,
-      penalty_enabled: !!form.penalty_enabled, penalty_rate: Number(form.penalty_rate) || 0, notes: form.notes || null, updated_at: new Date().toISOString(),
-    }).eq('id', id)
-    setMsg(error ? { tone: 'red', text: error.message } : { tone: 'green', text: 'Сохранено' })
-    if (!error) load()
+    saveLease.mutate(undefined, { onSuccess: () => setMsg({ tone: 'green', text: 'Сохранено' }), onError: fail })
   }
 
-  async function saveLine() {
-    if (!line) return
-    const row = {
-      lease_id: id, article_code: line.article_code || 'RENT', unit_id: line.unit_id || null, unit_label: line.unit_label || null,
-      area: line.area ? Number(line.area) : null, rate_per_sqm: line.rate_per_sqm ? Number(line.rate_per_sqm) : null,
-      amount: Number(line.amount) || 0, valid_from: line.valid_from || today(), valid_to: line.valid_to || null, note: line.note || null,
+  const writeLine = useAction(async (l: LineDraft) => {
+    const row: TablesInsert<'lease_lines'> = {
+      lease_id: id, article_code: l.article_code || 'RENT', unit_id: l.unit_id || null, unit_label: l.unit_label || null,
+      area: l.area ? Number(l.area) : null, rate_per_sqm: l.rate_per_sqm ? Number(l.rate_per_sqm) : null,
+      amount: Number(l.amount) || 0, valid_from: l.valid_from || today(), valid_to: l.valid_to || null, note: l.note || null,
     }
-    const { error } = line.id ? await supabase.from('lease_lines').update(row).eq('id', line.id) : await supabase.from('lease_lines').insert(row)
-    if (error) { setMsg({ tone: 'red', text: error.message }); return }
-    setLine(null); load()
+    await sb(l.id ? supabase.from('lease_lines').update(row).eq('id', l.id) : supabase.from('lease_lines').insert(row))
+  }, { invalidate: LEASE_TABLES })
+  function saveLine() {
+    if (!line) return
+    writeLine.mutate(line, { onSuccess: () => setLine(null), onError: fail })
   }
 
-  async function deleteLine(l: LeaseLine) {
-    const { count } = await supabase.from('charges').select('id', { count: 'exact', head: true }).like('billing_key', `L:${l.id}:%`)
-    if ((count || 0) > 0) { setMsg({ tone: 'red', text: 'По строке уже есть начисления — её нельзя удалить, только закрыть датой окончания' }); return }
-    const { error } = await supabase.from('lease_lines').delete().eq('id', l.id)
-    if (error) setMsg({ tone: 'red', text: error.message }); else load()
-  }
+  const removeLine = useAction(async (l: LeaseLine) => {
+    const { count, error } = await supabase.from('charges').select('id', { count: 'exact', head: true }).like('billing_key', `L:${l.id}:%`)
+    if (error) throw new Error(error.message)
+    if ((count || 0) > 0) throw new Error('По строке уже есть начисления — её нельзя удалить, только закрыть датой окончания')
+    await sb(supabase.from('lease_lines').delete().eq('id', l.id))
+  }, { invalidate: LEASE_TABLES })
+  const deleteLine = (l: LeaseLine) => removeLine.mutate(l, { onError: fail })
 
+  if (leaseQ.error) return <ErrorBox error={leaseQ.error.message} onRetry={() => leaseQ.refetch()} />
   if (!lease) return <Loading />
   const d = today()
   const monthly = lease.lease_lines.filter(l => activeOn(l, d)).reduce((s, l) => s + Number(l.amount), 0)
   const art = (c: string) => articles.find(a => a.code === c)?.name || c
-  const set = (k: keyof Lease) => (e: any) => setForm({ ...form, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value })
+  const set = (k: keyof Lease) => (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const t = e.target
+    setForm({ ...form, [k]: t instanceof HTMLInputElement && t.type === 'checkbox' ? t.checked : t.value })
+  }
 
   return (
     <Page title={`Договор № ${lease.number || 'без номера'} — ${lease.tenants?.full_name || ''}`} actions={<>
@@ -153,7 +171,8 @@ function LeaseView({ id }: { id: string }) {
       <Button onClick={() => { go('/settlements/' + lease.tenant_id )}}>Расчёты</Button>
     </>}>
       {msg && <Notice tone={msg.tone}>{msg.text}</Notice>}
-      <Card title="Условия" actions={<Button kind="primary" small onClick={save}>Сохранить</Button>}>
+      {(articlesQ.error || unitsQ.error) && <ErrorBox error={(articlesQ.error || unitsQ.error)?.message || ''} onRetry={() => { articlesQ.refetch(); unitsQ.refetch() }} />}
+      <Card title="Условия" actions={<Button kind="primary" small onClick={save} disabled={saveLease.isPending}>Сохранить</Button>}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
           <Field label="Номер"><input style={inputStyle} value={form.number || ''} onChange={set('number')} /></Field>
           <Field label="Статус"><select style={inputStyle} value={form.status} onChange={set('status')}>
@@ -190,7 +209,7 @@ function LeaseView({ id }: { id: string }) {
       <Notice>Неполный месяц при въезде и выезде биллинг считает пропорционально дням. Уже проведённые начисления правка строк не меняет — для них есть сторно в расчётах.</Notice>
 
       {line && (
-        <Modal title={line.id ? 'Строка договора' : 'Новая строка'} onClose={() => setLine(null)} footer={<><Button onClick={() => setLine(null)}>Отмена</Button><Button kind="primary" onClick={saveLine}>Сохранить</Button></>}>
+        <Modal title={line.id ? 'Строка договора' : 'Новая строка'} onClose={() => setLine(null)} footer={<><Button onClick={() => setLine(null)}>Отмена</Button><Button kind="primary" onClick={saveLine} disabled={writeLine.isPending}>Сохранить</Button></>}>
           <Field label="Статья"><select style={inputStyle} value={line.article_code} onChange={e => setLine({ ...line, article_code: e.target.value })}>
             {articles.filter(a => a.active && a.register === 'receivable' && !['OPENING', 'PENALTY'].includes(a.code)).map(a => <option key={a.code} value={a.code}>{a.grp}: {a.name}</option>)}
           </select></Field>
@@ -198,16 +217,16 @@ function LeaseView({ id }: { id: string }) {
             <Field label="Помещение"><select style={inputStyle} value={line.unit_id || ''} onChange={e => { const u = units.find(x => x.id === e.target.value); setLine({ ...line, unit_id: e.target.value || null, unit_label: u?.number || line.unit_label, area: u?.area ?? line.area }) }}>
               <option value="">{line.unit_label ? `как в карточке: ${line.unit_label}` : 'Не выбрано'}</option>{units.map(u => <option key={u.id} value={u.id}>{u.number} · {u.area} м²</option>)}
             </select></Field>
-            <Field label="Площадь, м²"><input inputMode="decimal" style={inputStyle} value={line.area ?? ''} onChange={e => { const area = e.target.value; setLine({ ...line, area: area as any, amount: line.rate_per_sqm && area ? Math.round(Number(area) * Number(line.rate_per_sqm) * 100) / 100 : line.amount }) }} /></Field>
-            <Field label="Ставка, ₽ за м² в месяц"><input inputMode="decimal" style={inputStyle} value={line.rate_per_sqm ?? ''} onChange={e => { const r = e.target.value; setLine({ ...line, rate_per_sqm: r as any, amount: line.area && r ? Math.round(Number(line.area) * Number(r) * 100) / 100 : line.amount }) }} /></Field>
-            <Field label="Сумма в месяц, ₽"><input inputMode="decimal" style={inputStyle} value={line.amount ?? ''} onChange={e => setLine({ ...line, amount: e.target.value as any })} /></Field>
+            <Field label="Площадь, м²"><input inputMode="decimal" style={inputStyle} value={line.area ?? ''} onChange={e => { const area = e.target.value; setLine({ ...line, area, amount: line.rate_per_sqm && area ? Math.round(Number(area) * Number(line.rate_per_sqm) * 100) / 100 : line.amount }) }} /></Field>
+            <Field label="Ставка, ₽ за м² в месяц"><input inputMode="decimal" style={inputStyle} value={line.rate_per_sqm ?? ''} onChange={e => { const r = e.target.value; setLine({ ...line, rate_per_sqm: r, amount: line.area && r ? Math.round(Number(line.area) * Number(r) * 100) / 100 : line.amount }) }} /></Field>
+            <Field label="Сумма в месяц, ₽"><input inputMode="decimal" style={inputStyle} value={line.amount ?? ''} onChange={e => setLine({ ...line, amount: e.target.value })} /></Field>
             <Field label="Действует с"><input type="date" style={inputStyle} value={line.valid_from || ''} onChange={e => setLine({ ...line, valid_from: e.target.value })} /></Field>
             <Field label="по" hint="пусто — бессрочно"><input type="date" style={inputStyle} value={line.valid_to || ''} onChange={e => setLine({ ...line, valid_to: e.target.value || null })} /></Field>
           </div>
           <Field label="Примечание"><input style={inputStyle} value={line.note || ''} onChange={e => setLine({ ...line, note: e.target.value })} /></Field>
         </Modal>
       )}
-      {rate && <NewRate line={rate} onClose={() => setRate(null)} onDone={() => { setRate(null); load() }} />}
+      {rate && <NewRate line={rate} onClose={() => setRate(null)} onDone={() => setRate(null)} />}
     </Page>
   )
 }
@@ -217,27 +236,29 @@ function NewRate({ line, onClose, onDone }: { line: LeaseLine; onClose: () => vo
   const nextMonth = (() => { const n = new Date(); return new Date(Date.UTC(n.getFullYear(), n.getMonth() + 1, 1)).toISOString().slice(0, 10) })()
   const [f, setF] = useState({ from: nextMonth, rate: String(line.rate_per_sqm ?? ''), amount: String(line.amount) })
   const [error, setError] = useState('')
-  async function apply() {
-    if (f.from <= line.valid_from) { setError('Новая ставка должна начинаться позже текущей'); return }
+  const change = useAction(async () => {
     const prevDay = new Date(new Date(f.from + 'T00:00:00Z').getTime() - 864e5).toISOString().slice(0, 10)
-    const { error: e1 } = await supabase.from('lease_lines').update({ valid_to: prevDay }).eq('id', line.id)
-    if (e1) { setError(e1.message); return }
-    const { error: e2 } = await supabase.from('lease_lines').insert({
+    await sb(supabase.from('lease_lines').update({ valid_to: prevDay }).eq('id', line.id))
+    await sb(supabase.from('lease_lines').insert({
       lease_id: line.lease_id, article_code: line.article_code, unit_id: line.unit_id, unit_label: line.unit_label, area: line.area,
       rate_per_sqm: f.rate ? Number(f.rate) : null, amount: Number(f.amount), valid_from: f.from, valid_to: line.valid_to, note: line.note,
-    })
-    if (e2) { setError(e2.message); return }
-    onDone()
+    }))
+  }, { invalidate: LEASE_TABLES, onSuccess: onDone })
+  function apply() {
+    if (f.from <= line.valid_from) { setError('Новая ставка должна начинаться позже текущей'); return }
+    setError('')
+    change.mutate(undefined)
   }
+  const shownError = error || change.error
   return (
-    <Modal title="Новая ставка" onClose={onClose} footer={<><Button onClick={onClose}>Отмена</Button><Button kind="primary" onClick={apply}>Применить</Button></>}>
+    <Modal title="Новая ставка" onClose={onClose} footer={<><Button onClick={onClose}>Отмена</Button><Button kind="primary" onClick={apply} disabled={change.isPending}>Применить</Button></>}>
       <Notice>Сейчас: {money(line.amount)} в месяц{line.rate_per_sqm ? ` (${line.area} м² × ${money(line.rate_per_sqm)})` : ''}. Прежняя ставка останется в истории.</Notice>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(140px, 100%), 1fr))', gap: 12 }}>
         <Field label="С даты"><input type="date" style={inputStyle} value={f.from} onChange={e => setF({ ...f, from: e.target.value })} /></Field>
         <Field label="Ставка, ₽/м²"><input inputMode="decimal" style={inputStyle} value={f.rate} onChange={e => setF({ ...f, rate: e.target.value, amount: line.area && e.target.value ? String(Math.round(Number(line.area) * Number(e.target.value) * 100) / 100) : f.amount })} /></Field>
         <Field label="В месяц, ₽"><input inputMode="decimal" style={inputStyle} value={f.amount} onChange={e => setF({ ...f, amount: e.target.value })} /></Field>
       </div>
-      {error && <Notice tone="red">{error}</Notice>}
+      {shownError && <Notice tone="red">{shownError}</Notice>}
     </Modal>
   )
 }

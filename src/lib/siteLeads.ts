@@ -1,32 +1,21 @@
 import { supabase } from './supabase'
+import type { Tables } from './database.types'
 
 /**
  * Заявки с сайта. Основное хранилище — таблица site_leads.
  * Пока её нет, сайт складывает обращения задачами («Заявка с сайта: …»),
  * и мы показываем их в том же виде, чтобы ничего не терялось.
  */
-export type SiteLead = {
-  id: string
-  created_at: string
-  name: string | null
-  phone: string
-  email: string | null
-  message: string | null
-  unit_number: string | null
-  area_wanted: number | null
-  source: string | null
-  page_url: string | null
-  status: string
-}
+export type SiteLead = Tables<'site_leads'>
 
 const field = (text: string, label: string) =>
   text.match(new RegExp(`${label}: (.+)`))?.[1]?.trim() || null
 
-function taskToLead(task: { id: string; title: string; description: string | null; created_at: string; status: string }): SiteLead {
+function taskToLead(task: Pick<Tables<'tasks'>, 'id' | 'title' | 'description' | 'created_at' | 'status'>): SiteLead {
   const text = task.description || ''
   return {
     id: task.id,
-    created_at: task.created_at,
+    created_at: task.created_at || '',
     name: field(text, 'Имя'),
     phone: field(text, 'Телефон') || task.title.replace('Заявка с сайта: ', ''),
     email: null,
@@ -42,7 +31,7 @@ function taskToLead(task: { id: string; title: string; description: string | nul
 export async function fetchSiteLeads(limit = 300): Promise<{ leads: SiteLead[]; fallback: boolean }> {
   const { data, error } = await supabase
     .from('site_leads').select('*').order('created_at', { ascending: false }).limit(limit)
-  if (!error) return { leads: (data || []) as SiteLead[], fallback: false }
+  if (!error) return { leads: data || [], fallback: false }
 
   const { data: tasks } = await supabase
     .from('tasks').select('id,title,description,created_at,status')

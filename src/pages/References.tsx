@@ -1,5 +1,7 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { sb, useSb, useAction } from '../lib/query'
+import type { Tables } from '../lib/database.types'
 import { C, Page, Card, Row, Button, Badge, Field, Input, Select, Textarea, Search, Tabs, Modal, Notice, Loading, Empty, ErrorBox, Muted, Table, dateRu } from '../components/ui'
 import { Icon } from '../components/icons'
 
@@ -41,30 +43,18 @@ const KEY_ICONS: Record<string, string> = {
   cleaning_price: 'repairs',
 }
 
-interface Setting { id: string; key: string; value: number; description: string; valid_from: string; created_at: string; created_by?: string }
+type Setting = Tables<'settings'>
 
 function TariffsSection() {
-  const [settings, setSettings] = useState<Setting[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
+  // тарифы читаются от имени вошедшего сотрудника (без входа таблица закрыта)
+  const settingsQ = useSb(['settings'], () => sb(supabase.from('settings').select('*').order('key').order('valid_from', { ascending: false })))
+  const settings: Setting[] = settingsQ.data ?? []
   const [editing, setEditing] = useState<string | null>(null)
   const [newValue, setNewValue] = useState('')
   const [validFrom, setValidFrom] = useState(new Date().toISOString().slice(0, 10))
-  const [saving, setSaving] = useState(false)
   const [saveErr, setSaveErr] = useState('')
   const [success, setSuccess] = useState('')
   const [expanded, setExpanded] = useState<string | null>(null)
-
-  async function fetch() {
-    setError('')
-    // тарифы читаются от имени вошедшего сотрудника (без входа таблица закрыта)
-    const { data, error } = await supabase.from('settings').select('*').order('key').order('valid_from', { ascending: false })
-    if (error) { setError('Не удалось загрузить тарифы: ' + error.message); setSettings([]) }
-    else setSettings((data || []) as Setting[])
-    setLoading(false)
-  }
-
-  useEffect(() => { fetch() }, [])
 
   const getCurrent = (key: string) =>
     settings.filter(s => s.key === key).sort((a, b) => b.valid_from.localeCompare(a.valid_from))[0]
@@ -72,31 +62,39 @@ function TariffsSection() {
   const getHistory = (key: string) =>
     settings.filter(s => s.key === key).sort((a, b) => b.valid_from.localeCompare(a.valid_from))
 
-  async function save(key: string) {
-    if (!newValue) return
-    setSaving(true); setSaveErr('')
+  const saveA = useAction(async (v: { key: string; value: number; validFrom: string }) => {
     const { data: u } = await supabase.auth.getUser()
-    const { data: prof } = u.user ? await supabase.from('profiles').select('full_name').eq('user_id', u.user.id).maybeSingle() : { data: null }
-    const { error } = await supabase.from('settings').insert({
-      key, value: parseFloat(newValue), description: KEY_LABELS[key], valid_from: validFrom,
+    const prof = u.user ? await sb(supabase.from('profiles').select('full_name').eq('user_id', u.user.id).maybeSingle()).catch(() => null) : null
+    await sb(supabase.from('settings').insert({
+      key: v.key, value: v.value, description: KEY_LABELS[v.key], valid_from: v.validFrom,
       created_by: prof?.full_name || u.user?.email || null,
-    })
-    if (error) { setSaveErr('Не удалось сохранить: ' + error.message); setSaving(false); return }
-    await fetch()
-    setEditing(null); setNewValue(''); setSaving(false)
-    setSuccess('Сохранено. Новое значение применится к новым счетам.')
-    setTimeout(() => setSuccess(''), 4000)
+    }))
+  }, {
+    invalidate: ['settings'],
+    onSuccess: () => {
+      setEditing(null); setNewValue('')
+      setSuccess('Сохранено. Новое значение применится к новым счетам.')
+      setTimeout(() => setSuccess(''), 4000)
+    },
+  })
+  const saving = saveA.isPending
+
+  function save(key: string) {
+    if (!newValue) return
+    setSaveErr('')
+    saveA.mutate({ key, value: parseFloat(newValue), validFrom }, { onError: e => setSaveErr('Не удалось сохранить: ' + e.message) })
   }
 
   const uniqueKeys = [...new Set(settings.map(s => s.key))]
 
-  if (loading) return <Loading />
+  if (settingsQ.isPending) return <Loading />
+  const error = settingsQ.error ? 'Не удалось загрузить тарифы: ' + settingsQ.error.message : ''
 
   return (
     <div style={{ display: 'grid', gap: 12 }}>
       <Muted>История изменений сохраняется — старые счета пересчитываться не будут.</Muted>
 
-      {error && <ErrorBox error={error} onRetry={fetch} />}
+      {error && <ErrorBox error={error} onRetry={() => settingsQ.refetch()} />}
       {success && <Notice tone="green">{success}</Notice>}
       {!error && uniqueKeys.length === 0 && <Card><Empty>Тарифов нет</Empty></Card>}
 
@@ -168,52 +166,51 @@ function TariffsSection() {
 
 // ─── УСЛУГИ ───────────────────────────────────────────────────────────────────
 
-interface Service { id: string; name: string; category: string; description: string; price: number; unit: string; vat: number }
-const emptyService: Omit<Service, 'id'> = { name: '', category: '', description: '', price: 0, unit: 'шт', vat: 0 }
+type Service = Tables<'services'>
+interface ServiceForm { name: string; category: string; description: string; price: number; unit: string; vat: number }
+const emptyService: ServiceForm = { name: '', category: '', description: '', price: 0, unit: 'шт', vat: 0 }
 
 function ServiceModal({ service, categories, onClose, onSaved }: { service: Service | null; categories: string[]; onClose: () => void; onSaved: () => void }) {
-  const [form, setForm] = useState<Omit<Service, 'id'>>(service ? { ...service } : { ...emptyService })
-  const [saving, setSaving] = useState(false)
-  const [units, setUnits] = useState<string[]>([])
+  const [form, setForm] = useState<ServiceForm>(service ? {
+    name: service.name, category: service.category ?? '', description: service.description ?? '',
+    price: service.price ?? 0, unit: service.unit ?? '', vat: service.vat ?? 0,
+  } : { ...emptyService })
   const [newUnit, setNewUnit] = useState('')
   const [err, setErr] = useState('')
   const [confirmDel, setConfirmDel] = useState(false)
-  const set = (k: string, v: string | number) => setForm(f => ({ ...f, [k]: v }))
+  const set = <K extends keyof ServiceForm>(k: K, v: ServiceForm[K]) => setForm(f => ({ ...f, [k]: v }))
 
-  useEffect(() => {
-    supabase.from('service_units').select('name').order('name').then(({ data, error }) => {
-      if (error) setErr('Не удалось загрузить единицы измерения: ' + error.message)
-      setUnits((data || []).map((u: any) => u.name))
-    })
-  }, [])
+  const unitsQ = useSb(['service_units', 'names'], () => sb(supabase.from('service_units').select('name').order('name')))
+  const units = (unitsQ.data ?? []).map(u => u.name)
 
-  async function addUnit() {
+  const addUnitA = useAction(async (name: string) => {
+    await sb(supabase.from('service_units').insert({ name }))
+  }, { invalidate: ['service_units'], onSuccess: (_r, name) => { set('unit', name); setNewUnit('') } })
+  const saveA = useAction(async (f: ServiceForm) => {
+    if (service?.id) await sb(supabase.from('services').update(f).eq('id', service.id))
+    else await sb(supabase.from('services').insert(f))
+  }, { invalidate: ['services'], onSuccess: onSaved })
+  const removeA = useAction(async (id: string) => {
+    await sb(supabase.from('services').delete().eq('id', id))
+  }, { invalidate: ['services'], onSuccess: onSaved })
+  const saving = saveA.isPending
+
+  function addUnit() {
     if (!newUnit.trim()) return
     setErr('')
-    const { error } = await supabase.from('service_units').insert({ name: newUnit.trim() })
-    if (error) { setErr('Не удалось добавить единицу: ' + error.message); return }
-    const { data } = await supabase.from('service_units').select('name').order('name')
-    setUnits((data || []).map((u: any) => u.name))
-    set('unit', newUnit.trim()); setNewUnit('')
+    addUnitA.mutate(newUnit.trim())
   }
 
-  async function save() {
+  function save() {
     if (!form.name.trim()) { setErr('Введите название'); return }
-    setSaving(true); setErr('')
-    const { error } = service?.id
-      ? await supabase.from('services').update(form).eq('id', service.id)
-      : await supabase.from('services').insert(form)
-    setSaving(false)
-    if (error) { setErr('Ошибка сохранения: ' + error.message); return }
-    onSaved()
+    setErr('')
+    saveA.mutate(form)
   }
 
-  async function remove() {
+  function remove() {
     if (!service?.id) return
     setErr('')
-    const { error } = await supabase.from('services').delete().eq('id', service.id)
-    if (error) { setErr('Не удалось удалить: ' + error.message); setConfirmDel(false); return }
-    onSaved()
+    removeA.mutate(service.id, { onError: () => setConfirmDel(false) })
   }
 
   const footer = confirmDel ? (
@@ -259,6 +256,10 @@ function ServiceModal({ service, categories, onClose, onSaved }: { service: Serv
       </div>
       <Field label="Описание"><Textarea value={form.description} onChange={e => set('description', e.target.value)} style={{ minHeight: 60 }} /></Field>
       {err && <Notice tone="red">{err}</Notice>}
+      {unitsQ.error && <Notice tone="red">Не удалось загрузить единицы измерения: {unitsQ.error.message}</Notice>}
+      {addUnitA.error && <Notice tone="red">Не удалось добавить единицу: {addUnitA.error}</Notice>}
+      {saveA.error && <Notice tone="red">Ошибка сохранения: {saveA.error}</Notice>}
+      {removeA.error && <Notice tone="red">Не удалось удалить: {removeA.error}</Notice>}
     </Modal>
   )
 }
@@ -282,28 +283,17 @@ function ServiceRow({ s, first, withVat, onClick }: { s: Service; first: boolean
 }
 
 function ServicesSection() {
-  const [services, setServices] = useState<Service[]>([])
-  const [categories, setCategories] = useState<string[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
+  const servicesQ = useSb(['services'], () => sb(supabase.from('services').select('*').order('category').order('name')))
+  const catsQ = useSb(['service_categories', 'names'], () => sb(supabase.from('service_categories').select('name').order('name')))
+  const services = servicesQ.data ?? []
+  const categories = (catsQ.data ?? []).map(c => c.name)
+  const loadErr = servicesQ.error || catsQ.error
+  const error = loadErr ? 'Не удалось загрузить услуги: ' + loadErr.message : ''
+  const load = () => { servicesQ.refetch(); catsQ.refetch() }
   const [selected, setSelected] = useState<Service | null>(null)
   const [showModal, setShowModal] = useState(false)
   const [catFilter, setCatFilter] = useState('')
   const [search, setSearch] = useState('')
-
-  async function load() {
-    setLoading(true); setError('')
-    const [{ data: sv, error: e1 }, { data: cats, error: e2 }] = await Promise.all([
-      supabase.from('services').select('*').order('category').order('name'),
-      supabase.from('service_categories').select('name').order('name')
-    ])
-    if (e1 || e2) setError('Не удалось загрузить услуги: ' + (e1 || e2)!.message)
-    setServices(sv || [])
-    setCategories((cats || []).map((c: any) => c.name))
-    setLoading(false)
-  }
-
-  useEffect(() => { load() }, [])
 
   const filtered = services.filter(s => {
     if (catFilter && s.category !== catFilter) return false
@@ -325,7 +315,7 @@ function ServicesSection() {
 
   const open = (s: Service | null) => { setSelected(s); setShowModal(true) }
 
-  if (loading) return <Loading />
+  if (servicesQ.isPending || catsQ.isPending) return <Loading />
 
   return (
     <div style={{ display: 'grid', gap: 12 }}>
@@ -360,63 +350,52 @@ function ServicesSection() {
         {filtered.length === 0 && !error && <Card><Empty>Услуги не найдены</Empty></Card>}
       </div>
 
-      {showModal && <ServiceModal service={selected} categories={categories} onClose={() => setShowModal(false)} onSaved={() => { setShowModal(false); load() }} />}
+      {showModal && <ServiceModal service={selected} categories={categories} onClose={() => setShowModal(false)} onSaved={() => setShowModal(false)} />}
     </div>
   )
 }
 
 // ─── ПРОСТОЙ СПИСОК (категории и единицы) ─────────────────────────────────────
 
+interface NameItem { id: string; name: string }
+
 function NameListSection({ table, placeholder, emptyText, kindLabel, mono }: { table: 'service_categories' | 'service_units'; placeholder: string; emptyText: string; kindLabel: string; mono?: boolean }) {
-  const [items, setItems] = useState<{ id: string; name: string }[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [actionErr, setActionErr] = useState('')
+  const itemsQ = useSb([table], () => sb(supabase.from(table).select('id, name').order('name')))
+  const items: NameItem[] = itemsQ.data ?? []
   const [newName, setNewName] = useState('')
-  const [adding, setAdding] = useState(false)
-  const [toDelete, setToDelete] = useState<{ id: string; name: string } | null>(null)
-  const [deleting, setDeleting] = useState(false)
-  const [deleteErr, setDeleteErr] = useState('')
+  const [toDelete, setToDelete] = useState<NameItem | null>(null)
 
-  async function load() {
-    setLoading(true); setError('')
-    const { data, error } = await supabase.from(table).select('*').order('name')
-    if (error) setError('Не удалось загрузить список: ' + error.message)
-    setItems(data || [])
-    setLoading(false)
-  }
+  const addA = useAction(async (name: string) => {
+    await sb(supabase.from(table).insert({ name }))
+  }, { invalidate: [table], onSuccess: () => setNewName('') })
+  const removeA = useAction(async (id: string) => {
+    await sb(supabase.from(table).delete().eq('id', id))
+  }, { invalidate: [table], onSuccess: () => setToDelete(null) })
+  const actionErr = addA.error ? 'Не удалось добавить: ' + addA.error : ''
+  const deleteErr = removeA.error ? 'Не удалось удалить: ' + removeA.error : ''
 
-  useEffect(() => { load() }, [])
-
-  async function add() {
+  function add() {
     if (!newName.trim()) return
-    setAdding(true); setActionErr('')
-    const { error } = await supabase.from(table).insert({ name: newName.trim() })
-    setAdding(false)
-    if (error) { setActionErr('Не удалось добавить: ' + error.message); return }
-    setNewName(''); load()
+    addA.mutate(newName.trim())
   }
 
-  async function remove() {
+  function remove() {
     if (!toDelete) return
-    setDeleting(true); setDeleteErr('')
-    const { error } = await supabase.from(table).delete().eq('id', toDelete.id)
-    setDeleting(false)
-    if (error) { setDeleteErr('Не удалось удалить: ' + error.message); return }
-    setToDelete(null); load()
+    removeA.mutate(toDelete.id)
   }
 
-  if (loading) return <Loading />
+  if (itemsQ.isPending) return <Loading />
+  const error = itemsQ.error ? 'Не удалось загрузить список: ' + itemsQ.error.message : ''
 
   return (
     <div style={{ maxWidth: 480, display: 'grid', gap: 12 }}>
       <div style={{ display: 'flex', gap: 8 }}>
         <Input style={{ flex: 1 }} value={newName} onChange={e => setNewName(e.target.value)}
           placeholder={placeholder} onKeyDown={e => e.key === 'Enter' && add()} autoFocus />
-        <Button kind="primary" onClick={add} disabled={adding}>Добавить</Button>
+        <Button kind="primary" onClick={add} disabled={addA.isPending}>Добавить</Button>
       </div>
       {actionErr && <Notice tone="red">{actionErr}</Notice>}
-      {error && <ErrorBox error={error} onRetry={load} />}
+      {error && <ErrorBox error={error} onRetry={() => itemsQ.refetch()} />}
 
       <Card pad={false}>
         {items.length === 0
@@ -424,13 +403,13 @@ function NameListSection({ table, placeholder, emptyText, kindLabel, mono }: { t
           : items.map((it, i) => (
             <div key={it.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', borderTop: i > 0 ? `1px solid ${C.line}` : 'none' }}>
               <div style={{ flex: 1, fontSize: 14, fontWeight: 500, fontFamily: mono ? 'monospace' : undefined }}>{it.name}</div>
-              <Button small kind="danger" onClick={() => { setDeleteErr(''); setToDelete(it) }}>Удалить</Button>
+              <Button small kind="danger" onClick={() => { removeA.reset(); setToDelete(it) }}>Удалить</Button>
             </div>
           ))
         }
       </Card>
 
-      {toDelete && <ConfirmModal text={`Удалить ${kindLabel} «${toDelete.name}»?`} busy={deleting} error={deleteErr} onCancel={() => setToDelete(null)} onConfirm={remove} />}
+      {toDelete && <ConfirmModal text={`Удалить ${kindLabel} «${toDelete.name}»?`} busy={removeA.isPending} error={deleteErr} onCancel={() => setToDelete(null)} onConfirm={remove} />}
     </div>
   )
 }

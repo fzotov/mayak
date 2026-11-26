@@ -1,12 +1,13 @@
 // Счета арендаторам. Счёт собирает начисления месяца; статус оплаты вычисляется из погашения начислений.
 // Счета создаёт «Биллинг»; вручную счёт не заводится и не правится.
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { go } from '../lib/nav'
 import { supabase } from '../lib/supabase'
+import { sb, useSb, useInvalidate, errText } from '../lib/query'
 import { apiFetch } from '../lib/api'
-import { PAY_STATUS, INVOICE_KIND, type InvoiceState, type ChargeState } from '../lib/accounting'
+import { PAY_STATUS, INVOICE_KIND, viewRows, type InvoiceState, type ChargeState } from '../lib/accounting'
 import { printInvoice } from '../lib/invoicePrint'
-import { Page, Card, Button, Badge, Stat, Stats, Table, Field, Notice, Loading, inputStyle, money, dateRu, monthRu, C } from '../components/ui'
+import { Page, Card, Button, Badge, Stat, Stats, Table, Field, Notice, Loading, ErrorBox, inputStyle, money, dateRu, monthRu, C } from '../components/ui'
 
 const goTo = (id?: string) => go('/invoices' + (id ? '/' + id : ''))
 
@@ -18,15 +19,12 @@ function InvoiceList() {
   const [month, setMonth] = useState(() => new Date().toISOString().slice(0, 7))
   const [status, setStatus] = useState('')
   const [q, setQ] = useState('')
-  const [rows, setRows] = useState<InvoiceState[] | null>(null)
-  const [error, setError] = useState('')
-
-  useEffect(() => {
-    setRows(null)
+  const listQ = useSb(['v_invoice_state', 'list', month], async () => {
     let req = supabase.from('v_invoice_state').select('*').order('number', { ascending: false })
     if (month) req = req.eq('period', month)
-    req.then(({ data, error }) => { if (error) setError(error.message); setRows((data || []) as InvoiceState[]) })
-  }, [month])
+    return viewRows<InvoiceState>(await sb(req))
+  })
+  const rows = listQ.data ?? null
 
   const shown = useMemo(() => (rows || []).filter(r =>
     (!status || (status === 'debt' ? r.pay_status !== 'paid' : r.pay_status === status)) &&
@@ -43,7 +41,7 @@ function InvoiceList() {
         </select></Field>
         <Field label="Поиск"><input style={{ ...inputStyle, width: 220 }} value={q} onChange={e => setQ(e.target.value)} placeholder="Арендатор или номер" /></Field>
       </div>
-      {error && <Notice tone="red">{error}</Notice>}
+      {listQ.error && <ErrorBox error={listQ.error.message} onRetry={() => listQ.refetch()} />}
       <Stats>
         <Stat label="Выставлено" value={money(sum('total'))} />
         <Stat label="Оплачено" value={money(sum('paid'))} tone="green" />
@@ -51,7 +49,7 @@ function InvoiceList() {
         <Stat label="Счетов" value={shown.length} />
       </Stats>
       <Card pad={false}>
-        {rows === null ? <Loading /> : (
+        {listQ.isPending ? <Loading /> : (
           <Table rows={shown} rowKey={r => r.id} onRow={r => goTo(r.id)} empty="Счетов нет. Счета появляются после проведения биллинга за месяц." cols={[
             { key: 'n', title: 'Счёт', render: r => <>№ {r.number}<div style={{ fontSize: 12, color: C.muted }}>{dateRu(r.date)}</div></> },
             { key: 't', title: 'Арендатор', render: r => r.tenant_name },
@@ -68,26 +66,25 @@ function InvoiceList() {
 }
 
 function InvoiceView({ id }: { id: string }) {
-  const [inv, setInv] = useState<InvoiceState | null>(null)
-  const [lines, setLines] = useState<ChargeState[]>([])
-  const [tenant, setTenant] = useState<any>(null)
-  const [otherDebt, setOtherDebt] = useState(0)
   const [msg, setMsg] = useState<{ tone: 'green' | 'red'; text: string } | null>(null)
   const [sending, setSending] = useState(false)
+  const invalidate = useInvalidate()
 
-  async function load() {
-    const { data: i } = await supabase.from('v_invoice_state').select('*').eq('id', id).maybeSingle()
-    setInv(i as InvoiceState)
-    if (!i) return
-    const [{ data: ch }, { data: t }, { data: all }] = await Promise.all([
-      supabase.from('v_charge_state').select('*').eq('invoice_id', id).order('created_at'),
-      supabase.from('tenants').select('id, full_name, inn, email, contact_email').eq('id', i.tenant_id).single(),
-      supabase.from('v_charge_state').select('open_amount, invoice_id, register').eq('tenant_id', i.tenant_id).gt('open_amount', 0),
-    ])
-    setLines((ch || []) as ChargeState[]); setTenant(t)
-    setOtherDebt((all || []).filter((c: any) => c.invoice_id !== id && c.register === 'receivable').reduce((s: number, c: any) => s + Number(c.open_amount), 0))
-  }
-  useEffect(() => { load() }, [id])
+  const invQ = useSb(['v_invoice_state', 'one', id], async () => {
+    const i = await sb(supabase.from('v_invoice_state').select('*').eq('id', id).maybeSingle())
+    return i ? viewRows<InvoiceState>([i])[0] : null
+  })
+  const inv = invQ.data ?? null
+  const tenantId = inv?.tenant_id
+  const linesQ = useSb(['v_charge_state', 'invoice', id], async () => viewRows<ChargeState>(await sb(
+    supabase.from('v_charge_state').select('*').eq('invoice_id', id).order('created_at'))))
+  const tenantQ = useSb(['tenants', tenantId, 'invoice'], () => sb(supabase.from('tenants').select('id, full_name, inn, email, contact_email').eq('id', tenantId!).single()), { enabled: !!tenantId })
+  const openQ = useSb(['v_charge_state', tenantId, 'open-short'], () => sb(
+    supabase.from('v_charge_state').select('open_amount, invoice_id, register').eq('tenant_id', tenantId!).gt('open_amount', 0)), { enabled: !!tenantId })
+  const lines = linesQ.data || []
+  const tenant = tenantQ.data ?? null
+  const otherDebt = (openQ.data || []).filter(c => c.invoice_id !== id && c.register === 'receivable').reduce((s, c) => s + Number(c.open_amount), 0)
+  const loadError = [invQ, linesQ, tenantQ, openQ].find(q => q.error)?.error?.message || ''
 
   async function print() {
     if (!inv || !tenant) return
@@ -107,12 +104,13 @@ function InvoiceView({ id }: { id: string }) {
       const r = await apiFetch('/api/send-invoice', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ invoiceId: id }) })
       const j = await r.json()
       if (!r.ok || !j.ok) throw new Error(j.error || 'Не отправилось')
-      setMsg({ tone: 'green', text: `Отправлено на ${j.to}. Счёт виден в кабинете арендатора.` }); load()
-    } catch (e: any) { setMsg({ tone: 'red', text: e.message }) }
+      setMsg({ tone: 'green', text: `Отправлено на ${j.to}. Счёт виден в кабинете арендатора.` }); invalidate('v_invoice_state', 'invoices')
+    } catch (e) { setMsg({ tone: 'red', text: errText(e) }) }
     setSending(false)
   }
 
-  if (!inv) return <Loading />
+  if (invQ.isPending) return <Loading />
+  if (!inv) return <Page>{invQ.error ? <ErrorBox error={invQ.error.message} onRetry={() => invQ.refetch()} /> : <Notice>Счёт не найден</Notice>}</Page>
   const ps = PAY_STATUS[inv.pay_status]
   return (
     <Page title={`Счёт № ${inv.number}`} actions={<>
@@ -122,6 +120,7 @@ function InvoiceView({ id }: { id: string }) {
       <Button kind="primary" disabled={sending} onClick={send}>{sending ? 'Отправляем…' : inv.issue_status === 'SENT' ? 'Отправить ещё раз' : 'Отправить арендатору'}</Button>
     </>}>
       {msg && <Notice tone={msg.tone}>{msg.text}</Notice>}
+      {loadError && <ErrorBox error={loadError} onRetry={() => { invQ.refetch(); linesQ.refetch(); tenantQ.refetch(); openQ.refetch() }} />}
       <Stats>
         <Stat label="Арендатор" value={<span style={{ fontSize: 15 }}>{inv.tenant_name}</span>} />
         <Stat label="Сумма" value={money(inv.total)} />

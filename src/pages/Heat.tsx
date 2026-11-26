@@ -1,13 +1,37 @@
 import { apiFetch } from '../lib/api'
 import { go } from '../lib/nav'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useRef } from 'react'
 import { supabase } from '../lib/supabase'
+import { useSb, useAction, sb } from '../lib/query'
+import type { Tables, Json } from '../lib/database.types'
 import { Page, Card, Row, Button, Badge, Stat, Stats, Table, Field, Input, Notice, Loading, ErrorBox, Muted, Sub, C, money, dateRu } from '../components/ui'
 
-interface Unit { id: string; number: string; area: number; status: string; tenant_id: string | null; tenant?: { full_name: string } }
-interface HeatBill { id: string; period: string; total_amount: number; total_gcal: number; coefficient: number; ai_extracted: boolean; items: HeatItem[]; created_at: string }
-interface HeatItem { unit_id: string; unit_number: string; tenant_name: string; tenant_id?: string | null; area: number; share: number; amount_base: number; amount_final: number }
-interface HeatSetting { coefficient: number; valid_from: string; total_area: number }
+type Unit = Pick<Tables<'units'>, 'id' | 'number' | 'area' | 'status' | 'tenant_id'> & { tenant: { full_name: string } | null }
+type HeatBill = Tables<'heat_bills'>
+// type, а не interface: так строка распределения совместима с Json при записи в heat_bills.items.
+type HeatItem = { unit_id: string; unit_number: string; tenant_name: string; tenant_id?: string | null; area: number; share: number; amount_base: number; amount_final: number }
+
+/** Ответ /api/process-heat (поля могут отсутствовать). */
+interface ProcessHeatResponse { ok?: boolean; period?: string; total_amount?: number | string | null; total_gcal?: number | string | null; supplier?: string; raw?: unknown }
+
+const isObj = (v: Json | undefined): v is { [key: string]: Json | undefined } => typeof v === 'object' && v !== null && !Array.isArray(v)
+const str = (v: Json | undefined) => (typeof v === 'string' ? v : v == null ? '' : String(v))
+const nbr = (v: Json | undefined) => Number(v) || 0
+
+/** Распределение из heat_bills.items (jsonb) — строки без unit_id отбрасываются. */
+function parseItems(j: Json | null): HeatItem[] {
+  if (!Array.isArray(j)) return []
+  return j.filter(isObj).filter(o => typeof o.unit_id === 'string').map(o => ({
+    unit_id: str(o.unit_id),
+    unit_number: str(o.unit_number),
+    tenant_name: str(o.tenant_name),
+    tenant_id: typeof o.tenant_id === 'string' ? o.tenant_id : null,
+    area: nbr(o.area),
+    share: nbr(o.share),
+    amount_base: nbr(o.amount_base),
+    amount_final: nbr(o.amount_final),
+  }))
+}
 
 const MONTHS = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь']
 
@@ -75,46 +99,40 @@ export default function HeatPage() {
   const [totalGcal, setTotalGcal] = useState('')
   const [coefficient, setCoefficient] = useState(1.2)
   const [totalBuildingArea, setTotalBuildingArea] = useState(0)
-  const [savingSettings, setSavingSettings] = useState(false)
   const [settingsMsg, setSettingsMsg] = useState<Msg | null>(null)
 
   // Состояние
-  const [loaded, setLoaded] = useState(false)
-  const [loadError, setLoadError] = useState('')
-  const [units, setUnits] = useState<Unit[]>([])
-  const [bills, setBills] = useState<HeatBill[]>([])
   const [items, setItems] = useState<HeatItem[]>([])
   const [selectedBill, setSelectedBill] = useState<HeatBill | null>(null)
+
+  const unitsQ = useSb(['units', 'heat'], () => sb(supabase.from('units').select('id, number, area, status, tenant_id, tenant:tenants(full_name)').gt('area', 0)))
+  const billsQ = useSb(['heat_bills'], () => sb(supabase.from('heat_bills').select('*').order('period', { ascending: false })))
+  const settingsQ = useSb(['heat_settings'], () => sb(supabase.from('heat_settings').select('coefficient, valid_from, total_area').order('valid_from', { ascending: false }).limit(1)))
+  const units: Unit[] = unitsQ.data ?? []
+  const bills: HeatBill[] = billsQ.data ?? []
+  const loaded = !unitsQ.isPending && !billsQ.isPending && !settingsQ.isPending
+  const loadErr = unitsQ.error || billsQ.error || settingsQ.error
+  const loadError = loadErr ? 'Не удалось загрузить данные: ' + loadErr.message : ''
+  const loadAll = () => { unitsQ.refetch(); billsQ.refetch(); settingsQ.refetch() }
+
+  // Параметры здания — редактируемые поля; из базы подставляются один раз, при первой загрузке.
+  const [settingsApplied, setSettingsApplied] = useState(false)
+  if (!settingsApplied && settingsQ.data) {
+    setSettingsApplied(true)
+    const s = settingsQ.data[0]
+    if (s) {
+      setCoefficient(Number(s.coefficient))
+      setTotalBuildingArea(Number(s.total_area) || 0)
+    }
+  }
 
   const [aiLoading, setAiLoading] = useState(false)
   const [aiMsg, setAiMsg] = useState('')
   // Данные извлечены AI (раньше признак брался из «✓» в начале сообщения).
   const [aiOk, setAiOk] = useState(false)
   const [calculated, setCalculated] = useState(false)
-  const [saving, setSaving] = useState(false)
   const [doneMsg, setDoneMsg] = useState('')
   const [formMsg, setFormMsg] = useState<Msg | null>(null)
-
-  useEffect(() => { loadAll() }, [])
-
-  async function loadAll() {
-    setLoadError('')
-    const [{ data: u, error: ue }, { data: b, error: be }, { data: hs, error: he }] = await Promise.all([
-      supabase.from('units').select('id, number, area, status, tenant_id, tenant:tenants(full_name)').gt('area', 0),
-      supabase.from('heat_bills').select('*').order('period', { ascending: false }),
-      supabase.from('heat_settings').select('coefficient, valid_from, total_area').order('valid_from', { ascending: false }).limit(1),
-    ])
-    const err = ue || be || he
-    if (err) setLoadError('Не удалось загрузить данные: ' + err.message)
-    setUnits((u || []) as unknown as Unit[])
-    setBills(b || [])
-    const s = (hs as HeatSetting[] | null)?.[0]
-    if (s) {
-      setCoefficient(Number(s.coefficient))
-      setTotalBuildingArea(Number(s.total_area) || 0)
-    }
-    setLoaded(true)
-  }
 
   // Загрузка файла → AI
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -130,7 +148,7 @@ export default function HeatPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ base64, mediaType: file.type }),
         })
-        const data = await res.json()
+        const data = (await res.json()) as ProcessHeatResponse
         if (data.ok) {
           if (data.period) setPeriod(data.period)
           if (data.total_amount != null && Number(data.total_amount) !== 0) setTotalAmount(String(data.total_amount))
@@ -155,19 +173,19 @@ export default function HeatPage() {
     e.target.value = ''
   }
 
-  async function saveSettings() {
-    setSavingSettings(true); setSettingsMsg(null)
-    const { data: existing, error: le } = await supabase.from('heat_settings').select('id').order('valid_from', { ascending: false }).limit(1)
-    let error = le
-    if (!error) {
-      if (existing?.[0]) {
-        ({ error } = await supabase.from('heat_settings').update({ coefficient, total_area: totalBuildingArea }).eq('id', existing[0].id))
-      } else {
-        ({ error } = await supabase.from('heat_settings').insert({ coefficient, total_area: totalBuildingArea, valid_from: new Date().toISOString().slice(0, 10) }))
-      }
-    }
-    setSettingsMsg(error ? { tone: 'red', text: 'Не удалось сохранить: ' + error.message } : { tone: 'green', text: 'Параметры здания сохранены.' })
-    setSavingSettings(false)
+  const settingsAction = useAction(async (v: { coefficient: number; total_area: number }) => {
+    const existing = await sb(supabase.from('heat_settings').select('id').order('valid_from', { ascending: false }).limit(1))
+    if (existing[0]) await sb(supabase.from('heat_settings').update(v).eq('id', existing[0].id))
+    else await sb(supabase.from('heat_settings').insert({ ...v, valid_from: new Date().toISOString().slice(0, 10) }))
+  }, {
+    invalidate: ['heat_settings'],
+    onSuccess: () => setSettingsMsg({ tone: 'green', text: 'Параметры здания сохранены.' }),
+  })
+  const savingSettings = settingsAction.isPending
+
+  function saveSettings() {
+    setSettingsMsg(null)
+    settingsAction.mutate({ coefficient, total_area: totalBuildingArea })
   }
 
   // Расчёт распределения
@@ -185,7 +203,7 @@ export default function HeatPage() {
       return {
         unit_id: u.id,
         unit_number: u.number,
-        tenant_name: (u.tenant as any)?.full_name ?? '—',
+        tenant_name: u.tenant?.full_name ?? '—',
         tenant_id: u.tenant_id,
         area,
         share,
@@ -200,27 +218,31 @@ export default function HeatPage() {
   }
 
   // Сохранить расчёт
-  async function saveCalculation(createInvoices = false) {
-    const amount = parseFloat(totalAmount)
-    const gcal = parseFloat(totalGcal) || 0
-    if (!amount || !items.length) return
-    setSaving(true); setFormMsg(null)
-    const { data: bill, error } = await supabase.from('heat_bills').insert({
+  const saveAction = useAction(async (v: { amount: number; gcal: number; createInvoices: boolean }) => {
+    await sb(supabase.from('heat_bills').insert({
       period: period + '-01',
-      total_amount: amount,
-      total_gcal: gcal,
+      total_amount: v.amount,
+      total_gcal: v.gcal,
       coefficient,
       ai_extracted: aiOk,
       items,
-    }).select().single()
-    if (error || !bill) { setFormMsg({ tone: 'red', text: 'Ошибка сохранения: ' + (error?.message ?? 'нет данных') }); setSaving(false); return }
+    }).select().single())
+  }, {
+    invalidate: ['heat_bills'],
+    onSuccess: (_r, v) => {
+      // Начисления за тепло создаёт биллинг по этому распределению (статья «Тепло»), отдельные счета здесь не заводятся.
+      setDoneMsg('Расчёт сохранён. Тепло войдёт в счета арендаторов при проведении биллинга за этот месяц.')
+      if (v.createInvoices) go('/billing')
+    },
+  })
+  const saving = saveAction.isPending
 
-    // Начисления за тепло создаёт биллинг по этому распределению (статья «Тепло»), отдельные счета здесь не заводятся.
-    setDoneMsg('Расчёт сохранён. Тепло войдёт в счета арендаторов при проведении биллинга за этот месяц.')
-    if (createInvoices) { setSaving(false); go('/billing'); return }
-
-    await loadAll()
-    setSaving(false)
+  function saveCalculation(createInvoices = false) {
+    const amount = parseFloat(totalAmount)
+    const gcal = parseFloat(totalGcal) || 0
+    if (!amount || !items.length) return
+    setFormMsg(null)
+    saveAction.mutate({ amount, gcal, createInvoices })
   }
 
   // Открыть сохранённый расчёт
@@ -228,9 +250,9 @@ export default function HeatPage() {
     setSelectedBill(b)
     setPeriod(b.period.slice(0, 7))
     setTotalAmount(String(b.total_amount))
-    setTotalGcal(String(b.total_gcal))
-    setCoefficient(b.coefficient)
-    setItems(b.items || [])
+    setTotalGcal(b.total_gcal == null ? '' : String(b.total_gcal))
+    setCoefficient(b.coefficient ?? 1)
+    setItems(parseItems(b.items))
     setCalculated(true)
     setDoneMsg(''); setFormMsg(null)
     setAiOk(!!b.ai_extracted)
@@ -283,6 +305,7 @@ export default function HeatPage() {
               )}
             </div>
             {settingsMsg && <Notice tone={settingsMsg.tone}>{settingsMsg.text}</Notice>}
+            {settingsAction.error && <Notice tone="red">Не удалось сохранить: {settingsAction.error}</Notice>}
           </div>
         </Card>
 
@@ -318,6 +341,7 @@ export default function HeatPage() {
             </div>
 
             {formMsg && <Notice tone={formMsg.tone}>{formMsg.text}</Notice>}
+            {saveAction.error && <Notice tone="red">Ошибка сохранения: {saveAction.error}</Notice>}
             <Row><Button kind="primary" onClick={calculate}>Рассчитать распределение</Button></Row>
           </div>
         </Card>

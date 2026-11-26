@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
+import { sb, useSb, useInvalidate } from '../../lib/query'
 import { apiFetch } from '../../lib/api'
 import { compressImage, blobToBase64 } from '../../lib/photo'
 import { T, Card, Title, Badge, Button, Loading, Empty, Note, StoredPhotos, CameraIcon, input, label, date, page } from './ui'
@@ -14,7 +15,9 @@ const STATUS: Record<string, { t: string; tone: 'ok' | 'warn' | 'bad' | 'muted' 
 }
 
 export default function TenantRepairs({ tenantId }: { tenantId: string }) {
-  const [items, setItems] = useState<any[] | null>(null)
+  const q = useSb(['repairs', tenantId, 'mine'], () => sb(supabase.from('repairs').select('id,number,category,priority,status,description,comment,created_at,completed_date,photos,photos_after').eq('tenant_id', tenantId)
+    .order('created_at', { ascending: false })))
+  const invalidate = useInvalidate()
   const [open, setOpen] = useState(false)
   const [category, setCategory] = useState(CATEGORIES[0])
   const [text, setText] = useState('')
@@ -47,15 +50,12 @@ export default function TenantRepairs({ tenantId }: { tenantId: string }) {
   const removeShot = (i: number) => setShots(prev => { URL.revokeObjectURL(prev[i].preview); return prev.filter((_, j) => j !== i) })
   const resetForm = () => { shots.forEach(x => URL.revokeObjectURL(x.preview)); setShots([]); setText(''); setUrgent(false); setErr(''); setOpen(false) }
 
-  const load = () => supabase.from('repairs').select('id,number,category,priority,status,description,comment,created_at,completed_date,photos,photos_after').eq('tenant_id', tenantId)
-    .order('created_at', { ascending: false }).then(({ data }) => setItems(data || []))
-  useEffect(() => { load() }, [tenantId])
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (text.trim().length < 5) { setErr('Опишите проблему подробнее'); return }
     setBusy(true); setErr('')
-    let d: any = { ok: false }
+    let d: { ok?: boolean; error?: string } = { ok: false }
     try {
       const photos = await Promise.all(shots.map(x => blobToBase64(x.blob)))
       const r = await apiFetch('/api/tenant-repair', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ category, description: text, urgent, photos }) })
@@ -63,10 +63,11 @@ export default function TenantRepairs({ tenantId }: { tenantId: string }) {
     } catch { /* сеть недоступна */ }
     setBusy(false)
     if (!d.ok) { setErr(d.error || 'Не удалось отправить заявку. Попробуйте ещё раз или позвоните: +7 (916) 763-02-07'); return }
-    resetForm(); load()
+    resetForm(); invalidate('repairs')
   }
 
-  if (!items) return <Loading />
+  if (q.isPending) return <Loading />
+  const items = q.data ?? []
   return (
     <div style={page}>
       {!open && <Button onClick={() => setOpen(true)} full>Новая заявка</Button>}
@@ -120,8 +121,8 @@ export default function TenantRepairs({ tenantId }: { tenantId: string }) {
       )}
       <Card>
         <Title>Мои заявки</Title>
-        {items.length === 0 ? <Empty>Заявок пока нет</Empty> : items.map(r => {
-          const s = STATUS[r.status] || { t: r.status, tone: 'muted' as const }
+        {q.error ? <Empty>Не удалось загрузить заявки. Обновите страницу.</Empty> : items.length === 0 ? <Empty>Заявок пока нет</Empty> : items.map(r => {
+          const s = (r.status && STATUS[r.status]) || { t: r.status, tone: 'muted' as const }
           return (
             <div key={r.id} style={{ padding: '13px 0', borderTop: `1px solid ${T.border}` }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginBottom: 6 }}>

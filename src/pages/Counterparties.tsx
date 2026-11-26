@@ -1,42 +1,32 @@
 // Контрагенты: категории слева, список справа, карточка в окне с вкладками.
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { Page, Card, Button, Badge, Table, Field, Input, Select, Textarea, Tabs, Modal, Notice, Loading, ErrorBox, Muted, Sub, C } from '../components/ui'
+import { sb, useSb, useAction, QueryState } from '../lib/query'
+import type { Tables } from '../lib/database.types'
+import { Page, Card, Button, Badge, Table, Field, Input, Select, Textarea, Tabs, Modal, Notice, ErrorBox, Muted, Sub, C } from '../components/ui'
 import { ask } from '../components/Dialogs'
 
-interface Category { id: string; name: string }
-interface Counterparty {
-  id: string
-  category_id: string | null
-  type: string
-  name: string
-  short_name: string
-  inn: string
-  kpp: string
-  ogrn: string
-  legal_address: string
-  actual_address: string
-  phone: string
-  email: string
-  website: string
-  contact_person: string
-  contact_position: string
-  contact_phone: string
-  bank: string
-  bik: string
-  account: string
-  corr_account: string
-  status: string
-  notes: string
-}
+type Category = Tables<'counterparty_categories'>
+type Counterparty = Tables<'counterparties'>
+/** Поля формы: пустые значения из базы (null) в форме — пустая строка. */
+type CpForm = { [K in Exclude<keyof Counterparty, 'id' | 'created_at' | 'category_id'>]: string } & { category_id: string | null }
 
-const empty: Omit<Counterparty, 'id'> = {
+const empty: CpForm = {
   category_id: null, type: 'company', name: '', short_name: '',
   inn: '', kpp: '', ogrn: '', legal_address: '', actual_address: '',
   phone: '', email: '', website: '',
   contact_person: '', contact_position: '', contact_phone: '',
   bank: '', bik: '', account: '', corr_account: '',
   status: 'active', notes: '',
+}
+
+function toForm(cp: Counterparty): CpForm {
+  const f: CpForm = { ...empty, category_id: cp.category_id }
+  for (const k of Object.keys(empty) as (keyof CpForm)[]) {
+    if (k === 'category_id') continue
+    f[k] = cp[k] ?? empty[k]
+  }
+  return f
 }
 
 const TYPE_LABELS: Record<string, string> = { company: 'Юрлицо', ip: 'ИП', person: 'Физлицо' }
@@ -61,30 +51,32 @@ function CounterpartyModal({ cp, categories, onClose, onSaved }: {
   onClose: () => void
   onSaved: () => void
 }) {
-  const [form, setForm] = useState<Omit<Counterparty, 'id'>>(cp ? { ...cp } : { ...empty })
-  const [saving, setSaving] = useState(false)
+  const [form, setForm] = useState<CpForm>(cp ? toForm(cp) : { ...empty })
   const [err, setErr] = useState('')
   const [tab, setTab] = useState<CpTab>('main')
-  const set = (k: string, v: string | null) => setForm(f => ({ ...f, [k]: v }))
+  const set = <K extends keyof CpForm>(k: K, v: CpForm[K]) => setForm(f => ({ ...f, [k]: v }))
 
-  async function save() {
+  const saveA = useAction(async (f: CpForm) => {
+    if (cp?.id) await sb(supabase.from('counterparties').update(f).eq('id', cp.id))
+    else await sb(supabase.from('counterparties').insert(f))
+  }, { invalidate: ['counterparties'], onSuccess: onSaved })
+  const removeA = useAction(async (id: string) => {
+    await sb(supabase.from('counterparties').delete().eq('id', id))
+  }, { invalidate: ['counterparties'], onSuccess: onSaved })
+  const saving = saveA.isPending
+
+  function save() {
     if (!form.name.trim()) { setTab('main'); setErr('Введите название'); return }
     setErr('')
-    setSaving(true)
-    const { error } = cp?.id
-      ? await supabase.from('counterparties').update(form).eq('id', cp.id)
-      : await supabase.from('counterparties').insert(form)
-    setSaving(false)
-    if (error) { setErr('Ошибка: ' + error.message); return }
-    onSaved()
+    saveA.mutate(form)
   }
 
   async function remove() {
     if (!cp?.id || !(await ask('Удалить контрагента?', { ok: 'Удалить', danger: true }))) return
-    const { error } = await supabase.from('counterparties').delete().eq('id', cp.id)
-    if (error) { setErr('Ошибка: ' + error.message); return }
-    onSaved()
+    setErr('')
+    removeA.mutate(cp.id)
   }
+  const actionErr = saveA.error || removeA.error
 
   return (
     <Modal title={cp ? cp.name : 'Новый контрагент'} onClose={onClose} width={600} footer={<>
@@ -158,6 +150,7 @@ function CounterpartyModal({ cp, categories, onClose, onSaved }: {
       </>}
 
       {err && <Notice tone="red">{err}</Notice>}
+      {actionErr && <Notice tone="red">Ошибка: {actionErr}</Notice>}
     </Modal>
   )
 }
@@ -184,10 +177,6 @@ function CatItem({ label, count, active, onClick, onDelete }: { label: string; c
 // ─── Страница ─────────────────────────────────────────────────────────────────
 
 export default function CounterpartiesPage() {
-  const [categories, setCategories] = useState<Category[]>([])
-  const [counterparties, setCounterparties] = useState<Counterparty[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
   const [selectedCat, setSelectedCat] = useState<string | null>(null) // null = все
   const [search, setSearch] = useState('')
   const [showModal, setShowModal] = useState(false)
@@ -195,28 +184,23 @@ export default function CounterpartiesPage() {
   const [newCatName, setNewCatName] = useState('')
   const [addingCat, setAddingCat] = useState(false)
 
-  useEffect(() => { fetchAll() }, [])
+  const catsQ = useSb(['counterparty_categories'], () => sb(supabase.from('counterparty_categories').select('*').order('name')))
+  const cpsQ = useSb(['counterparties'], () => sb(supabase.from('counterparties').select('*').order('name')))
+  const categories = catsQ.data ?? []
+  const counterparties = cpsQ.data ?? []
 
-  async function fetchAll() {
-    setLoading(true)
-    setError('')
-    const [{ data: cats, error: e1 }, { data: cps, error: e2 }] = await Promise.all([
-      supabase.from('counterparty_categories').select('*').order('name'),
-      supabase.from('counterparties').select('*').order('name'),
-    ])
-    if (e1 || e2) setError((e1 || e2)!.message)
-    setCategories(cats || [])
-    setCounterparties(cps || [])
-    setLoading(false)
-  }
+  const addCatA = useAction(async (name: string) => {
+    await sb(supabase.from('counterparty_categories').insert({ name }))
+  }, { invalidate: ['counterparty_categories'], onSuccess: () => { setNewCatName(''); setAddingCat(false) } })
+  // удаление категории переводит её контрагентов в «Без категории» — обновляем и их
+  const delCatA = useAction(async (cat: Category) => {
+    await sb(supabase.from('counterparty_categories').delete().eq('id', cat.id))
+  }, { invalidate: ['counterparty_categories', 'counterparties'], onSuccess: (_r, cat) => { if (selectedCat === cat.id) setSelectedCat(null) } })
+  const actionErr = addCatA.error || delCatA.error
 
-  async function addCategory() {
+  function addCategory() {
     if (!newCatName.trim()) return
-    const { error } = await supabase.from('counterparty_categories').insert({ name: newCatName.trim() })
-    if (error) { setError('Ошибка: ' + error.message); return }
-    setNewCatName('')
-    setAddingCat(false)
-    fetchAll()
+    addCatA.mutate(newCatName.trim())
   }
 
   async function deleteCategory(cat: Category) {
@@ -225,10 +209,7 @@ export default function CounterpartiesPage() {
       ? `Удалить категорию «${cat.name}»? ${count} контрагент(ов) перейдут в «Без категории».`
       : `Удалить категорию «${cat.name}»?`
     if (!(await ask(msg, { ok: 'Удалить', danger: true }))) return
-    const { error } = await supabase.from('counterparty_categories').delete().eq('id', cat.id)
-    if (error) { setError('Ошибка: ' + error.message); return }
-    if (selectedCat === cat.id) setSelectedCat(null)
-    fetchAll()
+    delCatA.mutate(cat)
   }
 
   const catCount = (id: string | null) =>
@@ -248,7 +229,8 @@ export default function CounterpartiesPage() {
 
   return (
     <Page>
-      {error && <ErrorBox error={error} onRetry={fetchAll} />}
+      {catsQ.error && <ErrorBox error={catsQ.error.message} onRetry={() => catsQ.refetch()} />}
+      {actionErr && <ErrorBox error={'Ошибка: ' + actionErr} />}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-start' }}>
         {/* Категории */}
         <div style={{ flex: '1 1 220px', maxWidth: 260, minWidth: 0 }}>
@@ -285,7 +267,7 @@ export default function CounterpartiesPage() {
           </div>
 
           <Card pad={false} title={selectedCat !== null ? <>{categories.find(c => c.id === selectedCat)?.name} <Muted small>{filtered.length} контрагент(ов)</Muted></> : undefined}>
-            {loading ? <Loading /> : (
+            <QueryState q={cpsQ}>{() => (
               <Table rows={filtered} rowKey={cp => cp.id} onRow={open}
                 empty={search ? 'Ничего не найдено' : 'Нет контрагентов в этой категории'}
                 cols={[
@@ -295,17 +277,17 @@ export default function CounterpartiesPage() {
                       {cp.short_name && <Sub><span style={{ display: 'block', ...ellipsis }}>{cp.short_name}</span></Sub>}
                     </div>
                   ) },
-                  { key: 't', title: 'Тип', sort: cp => TYPE_LABELS[cp.type] || cp.type, render: cp => <Muted>{TYPE_LABELS[cp.type] || cp.type}</Muted> },
+                  { key: 't', title: 'Тип', sort: cp => TYPE_LABELS[cp.type ?? ''] || cp.type, render: cp => <Muted>{TYPE_LABELS[cp.type ?? ''] || cp.type}</Muted> },
                   { key: 'i', title: 'ИНН', sort: cp => cp.inn || '', render: cp => <span style={{ fontFamily: 'monospace', color: C.muted }}>{cp.inn || '—'}</span> },
                   { key: 'p', title: 'Телефон', render: cp => <span style={{ whiteSpace: 'nowrap', color: C.muted }}>{cp.phone || '—'}</span> },
                   { key: 'e', title: 'Email', render: cp => cp.email
                     ? <a href={`mailto:${cp.email}`} onClick={e => e.stopPropagation()} style={{ color: C.accent, textDecoration: 'none', display: 'block', maxWidth: 180, ...ellipsis }}>{cp.email}</a>
                     : <Muted>—</Muted> },
                   { key: 'c', title: 'Контакт', sort: cp => cp.contact_person || '', render: cp => <span style={{ display: 'block', maxWidth: 160, color: C.muted, ...ellipsis }}>{cp.contact_person || '—'}</span> },
-                  { key: 's', title: 'Статус', sort: cp => cp.status, render: cp => { const st = STATUS_LABELS[cp.status] || STATUS_LABELS.active; return <Badge tone={st.tone}>{st.label}</Badge> } },
+                  { key: 's', title: 'Статус', sort: cp => cp.status, render: cp => { const st = STATUS_LABELS[cp.status ?? ''] || STATUS_LABELS.active; return <Badge tone={st.tone}>{st.label}</Badge> } },
                   { key: 'a', title: '', align: 'right', render: cp => <Button small onClick={e => { e.stopPropagation(); open(cp) }}>Изменить</Button> },
                 ]} />
-            )}
+            )}</QueryState>
           </Card>
         </div>
       </div>
@@ -315,7 +297,7 @@ export default function CounterpartiesPage() {
           cp={selected}
           categories={categories}
           onClose={() => setShowModal(false)}
-          onSaved={() => { setShowModal(false); fetchAll() }}
+          onSaved={() => setShowModal(false)}
         />
       )}
     </Page>

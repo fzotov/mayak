@@ -1,50 +1,62 @@
 // «Сегодня»: что требует действия. Сверху — тревоги, ниже — поступления (от кого и за что), должники,
 // заявки сайта, аварийные ремонты, задачи, счета к оплате, истекающие договоры.
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { sb, useSb } from '../lib/query'
+import { rpc } from '../lib/accounting'
 import { go } from '../lib/nav'
-import { fetchSiteLeads, type SiteLead } from '../lib/siteLeads'
+import { fetchSiteLeads } from '../lib/siteLeads'
 import { fetchHotRepairs } from './Repairs'
 import type { SaldoRow } from './Debtors'
-import { Page, Card, Button, Badge, Stat, Table, Alert, Link, Sub, Empty, money, dateRu, dateTimeRu, C } from '../components/ui'
+import { Page, Card, Button, Badge, Stat, Table, Alert, Link, Sub, Empty, ErrorBox, money, dateRu, dateTimeRu, C } from '../components/ui'
 
 const REPAIR: Record<string, [string, 'neutral' | 'blue' | 'amber' | 'green' | 'red']> = {
   new: ['Новая', 'neutral'], accepted: ['Принята', 'blue'], in_progress: ['В работе', 'amber'], completed: ['Готово', 'green'], rejected: ['Отклонена', 'red'],
 }
 
 export default function TodayPage() {
-  const [problems, setProblems] = useState(0)
-  const [unrec, setUnrec] = useState(0)
-  const [receipts, setReceipts] = useState<any[]>([])
-  const [saldo, setSaldo] = useState<SaldoRow[]>([])
-  const [leads, setLeads] = useState<SiteLead[]>([])
-  const [repairs, setRepairs] = useState<any[]>([])
-  const [openRepairs, setOpenRepairs] = useState(0)
-  const [tasks, setTasks] = useState<any[]>([])
-  const [toPay, setToPay] = useState<any[]>([])
-  const [expiring, setExpiring] = useState<any[]>([])
-  const [occupancy, setOccupancy] = useState({ total: 0, busy: 0 })
-  const [steps, setSteps] = useState<any[]>([])
+  // даты фиксируются при открытии экрана (ключи запросов не меняются на каждом рендере)
+  const [{ weekAgo, d, in30 }] = useState(() => {
+    const now = Date.now()
+    const day = (shift: number) => new Date(now + shift * 864e5).toISOString().slice(0, 10)
+    return { weekAgo: day(-7), d: day(0), in30: day(30) }
+  })
+  /** Сколько строк подходит (без самих строк). */
+  const count = async (q: PromiseLike<{ count: number | null; error: { message: string } | null }>) => {
+    const { count: n, error } = await q
+    if (error) throw new Error(error.message)
+    return n || 0
+  }
 
-  useEffect(() => {
-    const weekAgo = new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10)
-    const d = new Date().toISOString().slice(0, 10)
-    const in30 = new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10)
-    supabase.rpc('verify_ledger').then(({ data, error }) => setProblems(error ? -1 : (data || []).length))
-    supabase.from('bank_transactions').select('id', { count: 'exact', head: true }).eq('status', 'unrecognized').then(({ count }) => setUnrec(count || 0))
-    supabase.from('bank_transactions').select('id, date, amount, counterparty, description, tenant_id, tenants(full_name)')
-      .eq('direction', 'credit').eq('status', 'credited').gte('date', weekAgo).order('date', { ascending: false }).limit(10)
-      .then(({ data }) => setReceipts(data || []))
-    supabase.rpc('tenant_saldo').then(({ data }) => setSaldo((data || []) as SaldoRow[]))
-    fetchSiteLeads(50).then(({ leads }) => setLeads(leads))
-    fetchHotRepairs().then(setRepairs)
-    supabase.from('repairs').select('id', { count: 'exact', head: true }).in('status', ['new', 'accepted', 'in_progress']).then(({ count }) => setOpenRepairs(count || 0))
-    supabase.from('tasks').select('id, title, status, priority').in('status', ['todo', 'open', 'in_progress']).order('created_at', { ascending: false }).limit(6).then(({ data }) => setTasks(data || []))
-    supabase.from('incoming_invoices').select('id, supplier, amount, description, due_date').eq('status', 'APPROVED').order('due_date').then(({ data }) => setToPay(data || []))
-    supabase.from('leases').select('id, number, end_date, tenants(full_name)').eq('status', 'active').gte('end_date', d).lte('end_date', in30).order('end_date').then(({ data }) => setExpiring(data || []))
-    supabase.from('deals').select('id, number, kind, name, company, next_step, next_step_at').not('stage', 'in', '(won,lost)').lte('next_step_at', d).order('next_step_at').limit(8).then(({ data }) => setSteps(data || []))
-    supabase.from('units').select('status').then(({ data }) => setOccupancy({ total: data?.length || 0, busy: (data || []).filter((u: any) => u.status === 'occupied').length }))
-  }, [])
+  const checkQ = useSb(['rpc:verify_ledger'], () => rpc('verify_ledger'))
+  const unrecQ = useSb(['bank_transactions', 'unrecognized-count'], () => count(supabase.from('bank_transactions').select('id', { count: 'exact', head: true }).eq('status', 'unrecognized')))
+  const receiptsQ = useSb(['bank_transactions', 'receipts', weekAgo], () => sb(supabase.from('bank_transactions').select('id, date, amount, counterparty, description, tenant_id, tenants(full_name)')
+    .eq('direction', 'credit').eq('status', 'credited').gte('date', weekAgo).order('date', { ascending: false }).limit(10)))
+  const saldoQ = useSb(['rpc:tenant_saldo'], () => rpc<SaldoRow[]>('tenant_saldo'))
+  const leadsQ = useSb(['site_leads', 'today'], () => fetchSiteLeads(50))
+  const repairsQ = useSb(['repairs', 'hot'], fetchHotRepairs)
+  const openRepairsQ = useSb(['repairs', 'open-count'], () => count(supabase.from('repairs').select('id', { count: 'exact', head: true }).in('status', ['new', 'accepted', 'in_progress'])))
+  const tasksQ = useSb(['tasks', 'today'], () => sb(supabase.from('tasks').select('id, title, status, priority').in('status', ['todo', 'open', 'in_progress']).order('created_at', { ascending: false }).limit(6)))
+  const toPayQ = useSb(['incoming_invoices', 'approved'], () => sb(supabase.from('incoming_invoices').select('id, supplier, amount, description, due_date').eq('status', 'APPROVED').order('due_date')))
+  const expiringQ = useSb(['leases', 'expiring', d, in30], () => sb(supabase.from('leases').select('id, number, end_date, tenants(full_name)').eq('status', 'active').gte('end_date', d).lte('end_date', in30).order('end_date')))
+  const stepsQ = useSb(['deals', 'steps', d], () => sb(supabase.from('deals').select('id, number, kind, name, company, next_step, next_step_at').not('stage', 'in', '(won,lost)').lte('next_step_at', d).order('next_step_at').limit(8)))
+  const unitsQ = useSb(['units', 'status'], () => sb(supabase.from('units').select('status')))
+
+  // самопроверка: −1 — не выполнилась, 0 — пока считаем или расхождений нет
+  const problems = checkQ.error ? -1 : checkQ.data?.length || 0
+  const unrec = unrecQ.data || 0
+  const receipts = receiptsQ.data || []
+  const saldo = saldoQ.data || []
+  const leads = leadsQ.data?.leads || []
+  const repairs = repairsQ.data || []
+  const openRepairs = openRepairsQ.data || 0
+  const tasks = tasksQ.data || []
+  const toPay = toPayQ.data || []
+  const expiring = expiringQ.data || []
+  const steps = stepsQ.data || []
+  const units = unitsQ.data || []
+  const occupancy = { total: units.length, busy: units.filter(u => u.status === 'occupied').length }
+  const failed = [unrecQ, receiptsQ, saldoQ, leadsQ, repairsQ, openRepairsQ, tasksQ, toPayQ, expiringQ, stepsQ, unitsQ].find(q => q.error)?.error?.message
 
   const newLeads = leads.filter(l => l.status === 'new')
   const debtors = saldo.filter(s => Number(s.overdue) > 0)
@@ -55,6 +67,7 @@ export default function TodayPage() {
 
   return (
     <Page>
+      {failed && <ErrorBox error={'Часть сводки не загрузилась: ' + failed} />}
       {problems !== 0 && <Alert tone="red" onClick={() => go('/settlements?tab=check')}>{problems > 0 ? `Самопроверка расчётов нашла расхождения: ${problems}. Откройте и разберите.` : 'Самопроверка расчётов не выполнилась — откройте «Самопроверку».'}</Alert>}
       {unrec > 0 && <Alert onClick={() => go('/bank?tab=unrec')}>Не опознан плательщик: {unrec}. Укажите арендатора — деньги сразу лягут на его баланс.</Alert>}
       {emergency.length > 0 && <Alert tone="red" onClick={() => go('/repairs')}>Аварийные заявки: {emergency.length}. {emergency.map(r => r.description).filter(Boolean).slice(0, 2).join('; ')}</Alert>}
@@ -87,7 +100,7 @@ export default function TodayPage() {
           <Table rows={steps} rowKey={x => x.id} onRow={x => go('/deals/' + x.id)} dense empty="На сегодня шагов нет" cols={[
             { key: 'c', title: 'Клиент', render: x => <><div>{x.company || x.name || '№ ' + x.number}</div><Sub>{x.kind === 'renewal' ? 'продление' : 'новый клиент'}</Sub></> },
             { key: 's', title: 'Шаг', render: x => x.next_step },
-            { key: 'd', title: 'Когда', render: x => <Badge tone={x.next_step_at < new Date().toISOString().slice(0, 10) ? 'red' : 'amber'}>{dateRu(x.next_step_at)}</Badge> },
+            { key: 'd', title: 'Когда', render: x => <Badge tone={(x.next_step_at || '') < new Date().toISOString().slice(0, 10) ? 'red' : 'amber'}>{dateRu(x.next_step_at)}</Badge> },
           ]} />
         </Card>
         <Card pad={false} title="Заявки с сайта" actions={<Button small kind="ghost" onClick={() => go('/deals')}>Сделки</Button>}>
@@ -102,7 +115,7 @@ export default function TodayPage() {
         <Card pad={false} title="Срочные ремонты" actions={<Button small kind="ghost" onClick={() => go('/repairs')}>Все</Button>}>
           <Table rows={repairs} rowKey={r => r.id} dense empty="Срочных заявок нет" cols={[
             { key: 'n', title: 'Заявка', render: r => <><div>{r.description || r.category}</div><Sub>№ {r.number}{r.unit?.number ? ` · пом. ${r.unit.number}` : ''}</Sub></> },
-            { key: 's', title: 'Статус', render: r => <><Badge tone={REPAIR[r.status]?.[1]}>{REPAIR[r.status]?.[0] || r.status}</Badge>{r.priority === 'emergency' && <> <Badge tone="red">авария</Badge></>}</> },
+            { key: 's', title: 'Статус', render: r => <><Badge tone={REPAIR[r.status || '']?.[1]}>{REPAIR[r.status || '']?.[0] || r.status}</Badge>{r.priority === 'emergency' && <> <Badge tone="red">авария</Badge></>}</> },
           ]} />
         </Card>
         <Card pad={false} title="Задачи" actions={<Button small kind="ghost" onClick={() => go('/tasks')}>Все</Button>}>

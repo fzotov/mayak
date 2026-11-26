@@ -1,6 +1,8 @@
 import { apiFetch, openStoredFile } from '../lib/api'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useRef } from 'react'
 import { supabase } from '../lib/supabase'
+import { useSb, useAction, sb } from '../lib/query'
+import type { Tables, TablesInsert } from '../lib/database.types'
 import { Page, Card, Grid, Row, Button, Badge, Stat, Stats, Table, Field, Input, Select, Textarea, Modal, Notice, Loading, Empty, ErrorBox, Muted, Sub, C, money, num } from '../components/ui'
 import { Icon } from '../components/icons'
 
@@ -17,6 +19,25 @@ export const TYPES: Record<string, {label:string;icon:string;unit:string}> = {
 }
 
 type Tone = 'green' | 'amber' | 'neutral' | 'red'
+
+type Meter = Tables<'meters'>
+type Unit = Pick<Tables<'units'>, 'id' | 'number'>
+type Reading = Tables<'meter_readings'>
+
+/** Счётчик, найденный на фото сервисом /api/recognize-meter. */
+export interface RecognizedMeter { serial: string; reading: number | null }
+
+/** Разбор ответа /api/recognize-meter: { ok, meters: [{ serial, reading }] }; всё лишнее отбрасывается. */
+export function parseRecognizeMeter(data: unknown): RecognizedMeter[] {
+  if (typeof data !== 'object' || data === null) return []
+  const d = data as { ok?: unknown; meters?: unknown }
+  if (!d.ok || !Array.isArray(d.meters)) return []
+  return d.meters.flatMap((x: unknown) => {
+    if (typeof x !== 'object' || x === null) return []
+    const o = x as { serial?: unknown; reading?: unknown }
+    return [{ serial: typeof o.serial === 'string' ? o.serial : '', reading: typeof o.reading === 'number' ? o.reading : null }]
+  })
+}
 
 /** Кнопка «Назад» к списку счётчиков. */
 function BackButton({ onClick }: { onClick: () => void }) {
@@ -36,46 +57,36 @@ function ConfirmDelete({ title, text, busy, onCancel, onConfirm }: { title: stri
 }
 
 export default function MetersPage() {
-  const [meters, setMeters] = useState<any[]>([])
-  const [units, setUnits] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
-  const [loadError, setLoadError] = useState('')
-  const [selected, setSelected] = useState<any>(null)
+  const [selected, setSelected] = useState<Meter | null>(null)
   const [view, setView] = useState<'list'|'edit'|'readings'>('list')
   const [scanning, setScanning] = useState(false)
   const [scanResult, setScanResult] = useState<{ tone: Tone; text: string } | null>(null)
   const quickScanRef = useRef<HTMLInputElement>(null)
 
-  useEffect(() => { load() }, [])
-
-  async function load() {
-    setLoading(true); setLoadError('')
-    const [{data:m, error:me},{data:u, error:ue}] = await Promise.all([
-      supabase.from('meters').select('*'),
-      supabase.from('units').select('id,number,tenant_premises(tenant_id,tenants(full_name))').order('number')
-    ])
-    const err = me || ue
-    if (err) setLoadError('Не удалось загрузить счётчики: ' + err.message)
-    setMeters(m||[])
-    setUnits(u||[])
-    setLoading(false)
-  }
+  const metersQ = useSb(['meters'], () => sb(supabase.from('meters').select('*')))
+  const unitsQ = useSb(['units', 'id,number'], () => sb(supabase.from('units').select('id, number').order('number')))
+  const meters: Meter[] = metersQ.data ?? []
+  const units: Unit[] = unitsQ.data ?? []
+  const loading = metersQ.isPending || unitsQ.isPending
+  const loadErr = metersQ.error || unitsQ.error
+  const loadError = loadErr ? 'Не удалось загрузить счётчики: ' + loadErr.message : ''
+  const load = () => { metersQ.refetch(); unitsQ.refetch() }
 
   async function quickScan(file: File) {
     setScanning(true)
     setScanResult({ tone: 'neutral', text: 'Распознаю счётчик…' })
     try {
       const imageBase64 = await fileToBase64(file)
-      const meterSerials = meters.map((m: any) => m.serial).filter(Boolean)
+      const meterSerials = meters.map(m => m.serial).filter(Boolean)
       const res = await apiFetch('/api/recognize-meter', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ imageBase64, meterNumbers: meterSerials })
       })
-      const data = await res.json()
-      if (data.ok && data.meters?.length > 0) {
-        const best = data.meters[0]
-        const found = meters.find((m: any) => m.serial && best.serial && m.serial.toLowerCase().replace(/\s/g,'').includes(best.serial.toLowerCase().replace(/\s/g,'')))
+      const found0 = parseRecognizeMeter(await res.json())
+      if (found0.length > 0) {
+        const best = found0[0]
+        const found = meters.find(m => m.serial && best.serial && m.serial.toLowerCase().replace(/\s/g,'').includes(best.serial.toLowerCase().replace(/\s/g,'')))
         if (found) {
           setScanResult({ tone: 'green', text: `Счётчик ${found.serial || found.number} (${TYPES[found.type]?.label || found.type}) — показание ${best.reading}` })
           setSelected(found)
@@ -92,13 +103,13 @@ export default function MetersPage() {
 
   if (loading) return <Page><Loading /></Page>
 
-  if (view === 'edit') return <MeterForm meter={selected} units={units} onBack={() => { setView('list'); load() }} />
+  if (view === 'edit') return <MeterForm meter={selected} units={units} onBack={() => setView('list')} />
   if (view === 'readings' && selected) return <ReadingsView
     key={selected.id}
     meter={selected}
     allMeters={meters}
     onSwitchMeter={(m) => setSelected(m)}
-    onBack={() => { setView('list'); load() }}
+    onBack={() => setView('list')}
   />
 
   return (
@@ -142,7 +153,7 @@ export default function MetersPage() {
                     </Row>
                     <Button small onClick={() => { setSelected(m); setView('edit') }}>Изменить</Button>
                   </Row>
-                  {m.tariff > 0 && <Muted small>Тариф: {m.tariff} ₽/{t.unit}</Muted>}
+                  {(m.tariff ?? 0) > 0 && <Muted small>Тариф: {m.tariff} ₽/{t.unit}</Muted>}
                   <Button kind="primary" style={{ width: '100%' }} onClick={() => { setSelected(m); setView('readings') }}>Показания</Button>
                 </div>
               </Card>
@@ -154,8 +165,10 @@ export default function MetersPage() {
   )
 }
 
-function MeterForm({meter, units, onBack}: {meter:any; units:any[]; onBack:()=>void}) {
-  const [form, setForm] = useState({
+interface MeterFormState { number: string; type: string; unit_id: string; location: string; area: number; tariff: number; heat_tariff: number; notes: string }
+
+function MeterForm({meter, units, onBack}: {meter: Meter | null; units: Unit[]; onBack:()=>void}) {
+  const [form, setForm] = useState<MeterFormState>({
     number: meter?.number||meter?.serial||'',
     type: meter?.type||'electricity',
     unit_id: meter?.unit_id||'',
@@ -165,32 +178,30 @@ function MeterForm({meter, units, onBack}: {meter:any; units:any[]; onBack:()=>v
     heat_tariff: meter?.heat_tariff||0,
     notes: meter?.notes||'',
   })
-  const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState<{ tone: 'red' | 'amber'; text: string } | null>(null)
   const [askDelete, setAskDelete] = useState(false)
-  const [deleting, setDeleting] = useState(false)
-  const set = (k:string,v:any) => setForm(f=>({...f,[k]:v}))
+  const set = <K extends keyof MeterFormState>(k: K, v: MeterFormState[K]) => setForm(f=>({...f,[k]:v}))
 
-  async function save() {
+  const saveAction = useAction(async (f: MeterFormState) => {
+    const p: TablesInsert<'meters'> = {...f, serial: f.number, unit_id: f.unit_id||null}
+    if (meter) await sb(supabase.from('meters').update(p).eq('id', meter.id))
+    else await sb(supabase.from('meters').insert(p))
+  }, { invalidate: ['meters'], onSuccess: onBack })
+  const removeAction = useAction(async (id: string) => { await sb(supabase.from('meters').delete().eq('id', id)) }, {
+    invalidate: ['meters', 'meter_readings'], onSuccess: onBack,
+  })
+  const saving = saveAction.isPending
+  const deleting = removeAction.isPending
+
+  function save() {
     setMsg(null)
     if (!form.number) { setMsg({ tone: 'amber', text: 'Введите номер счётчика' }); return }
-    setSaving(true)
-    const p = {...form, serial: form.number, unit_id: form.unit_id||null}
-    const { error } = meter?.id
-      ? await supabase.from('meters').update(p).eq('id', meter.id)
-      : await supabase.from('meters').insert(p)
-    setSaving(false)
-    if (error) { setMsg({ tone: 'red', text: 'Ошибка сохранения: ' + error.message }); return }
-    onBack()
+    saveAction.mutate(form)
   }
 
-  async function remove() {
-    if (!meter?.id) return
-    setDeleting(true)
-    const { error } = await supabase.from('meters').delete().eq('id', meter.id)
-    setDeleting(false)
-    if (error) { setAskDelete(false); setMsg({ tone: 'red', text: 'Ошибка удаления: ' + error.message }); return }
-    onBack()
+  function remove() {
+    if (!meter) return
+    removeAction.mutate(meter.id, { onError: () => setAskDelete(false) })
   }
 
   const isHeat = form.type === 'heat' || form.type === 'common_heat'
@@ -234,6 +245,8 @@ function MeterForm({meter, units, onBack}: {meter:any; units:any[]; onBack:()=>v
               <Textarea style={{minHeight:60}} value={form.notes} onChange={e=>set('notes',e.target.value)}/>
             </Field>
             {msg && <Notice tone={msg.tone}>{msg.text}</Notice>}
+            {saveAction.error && <Notice tone="red">Ошибка сохранения: {saveAction.error}</Notice>}
+            {removeAction.error && <Notice tone="red">Ошибка удаления: {removeAction.error}</Notice>}
             <Row>
               <Button kind="primary" onClick={save} disabled={saving}>{saving?'Сохранение…':'Сохранить'}</Button>
               <Button onClick={onBack}>Отмена</Button>
@@ -257,33 +270,30 @@ async function fileToBase64(file: File): Promise<string> {
   })
 }
 
-function ReadingsView({meter, onBack, allMeters, onSwitchMeter}: {meter:any; onBack:()=>void; allMeters:any[]; onSwitchMeter:(m:any)=>void}) {
-  const [readings, setReadings] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
-  const [loadError, setLoadError] = useState('')
+function ReadingsView({meter, onBack, allMeters, onSwitchMeter}: {meter: Meter; onBack:()=>void; allMeters: Meter[]; onSwitchMeter:(m: Meter)=>void}) {
   const [showAdd, setShowAdd] = useState(false)
   const [form, setForm] = useState({period: new Date().toISOString().slice(0,7)+'-01', prev_value:0, curr_value:0, notes:''})
-  const [saving, setSaving] = useState(false)
   const [photoFile, setPhotoFile] = useState<File|null>(null)
   const [photoUploading, setPhotoUploading] = useState(false)
   const [recognizing, setRecognizing] = useState(false)
-  const [recognizeResult, setRecognizeResult] = useState<{serial:string; reading:number; matched:boolean; wrongMeter?:any}|null>(null)
+  const [recognizeResult, setRecognizeResult] = useState<{serial:string; reading:number | null; matched:boolean; wrongMeter?: Meter}|null>(null)
   const [recognizeFailed, setRecognizeFailed] = useState(false)
   const [msg, setMsg] = useState<{ tone: 'red' | 'amber'; text: string } | null>(null)
   const [toDelete, setToDelete] = useState<string | null>(null)
-  const [deleting, setDeleting] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
   const t = TYPES[meter.type] || {label:meter.type,icon:'',unit:''}
 
-  useEffect(() => { loadReadings() }, [])
-
-  async function loadReadings() {
-    setLoading(true); setLoadError('')
-    const {data, error} = await supabase.from('meter_readings').select('*').eq('meter_id',meter.id).order('period',{ascending:false})
-    if (error) setLoadError('Не удалось загрузить показания: ' + error.message)
-    setReadings(data||[])
-    if (data && data.length > 0) setForm(f=>({...f, prev_value: data[0].curr_value}))
-    setLoading(false)
+  const readingsQ = useSb(['meter_readings', meter.id], () => sb(supabase.from('meter_readings').select('*').eq('meter_id', meter.id).order('period', { ascending: false })))
+  const readings: Reading[] = readingsQ.data ?? []
+  const loading = readingsQ.isPending
+  const loadError = readingsQ.error ? 'Не удалось загрузить показания: ' + readingsQ.error.message : ''
+  const loadReadings = () => { readingsQ.refetch() }
+  // «Предыдущее» в форме — последнее текущее показание; обновляется после каждой загрузки списка.
+  const [seenReadings, setSeenReadings] = useState<Reading[] | undefined>(undefined)
+  if (readingsQ.data !== seenReadings) {
+    setSeenReadings(readingsQ.data)
+    const first = readingsQ.data?.[0]
+    if (first) setForm(f => ({ ...f, prev_value: Number(first.curr_value ?? 0) }))
   }
 
   const consumption = Math.max(0, form.curr_value - form.prev_value)
@@ -296,16 +306,16 @@ function ReadingsView({meter, onBack, allMeters, onSwitchMeter}: {meter:any; onB
     setRecognizeResult(null); setRecognizeFailed(false)
     try {
       const imageBase64 = await fileToBase64(file)
-      const meterSerials = allMeters.map((m: any) => m.serial).filter(Boolean)
+      const meterSerials = allMeters.map(m => m.serial).filter(Boolean)
       const res = await apiFetch('/api/recognize-meter', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ imageBase64, meterNumbers: meterSerials })
       })
-      const data = await res.json()
-      if (data.ok && data.meters?.length > 0) {
-        const best = data.meters[0]
-        const matchedMeter = allMeters.find((m: any) => m.serial && best.serial && m.serial.toLowerCase().includes(best.serial.toLowerCase().replace(/\s/g, '')))
+      const found = parseRecognizeMeter(await res.json())
+      if (found.length > 0) {
+        const best = found[0]
+        const matchedMeter = allMeters.find(m => m.serial && best.serial && m.serial.toLowerCase().includes(best.serial.toLowerCase().replace(/\s/g, '')))
         const isCurrent = matchedMeter?.id === meter.id
         setRecognizeResult({
           serial: best.serial,
@@ -313,54 +323,66 @@ function ReadingsView({meter, onBack, allMeters, onSwitchMeter}: {meter:any; onB
           matched: !!matchedMeter,
           wrongMeter: matchedMeter && !isCurrent ? matchedMeter : undefined,
         })
-        if (typeof best.reading === 'number' && !isNaN(best.reading)) {
-          setForm(f => ({ ...f, curr_value: best.reading }))
+        const reading = best.reading
+        if (reading !== null && !isNaN(reading)) {
+          setForm(f => ({ ...f, curr_value: reading }))
         }
       } else setRecognizeFailed(true)
     } catch { setRecognizeResult(null); setRecognizeFailed(true) }
     setRecognizing(false)
   }
 
-  async function save() {
-    setSaving(true); setMsg(null)
+  const saveAction = useAction(async (v: { form: typeof form; photoFile: File | null; consumption: number; amount: number }) => {
     let photo_url: string | null = null
-    if (photoFile) {
+    let photoFailed = false
+    if (v.photoFile) {
       setPhotoUploading(true)
-      const ext = photoFile.name.split('.').pop()
-      const path = `${meter.id}/${form.period.slice(0,7)}-${Date.now()}.${ext}`
-      const { error: upErr } = await supabase.storage.from('meter-photos').upload(path, photoFile, { upsert: true })
+      const ext = v.photoFile.name.split('.').pop()
+      const path = `${meter.id}/${v.form.period.slice(0,7)}-${Date.now()}.${ext}`
+      const { error: upErr } = await supabase.storage.from('meter-photos').upload(path, v.photoFile, { upsert: true })
       if (!upErr) {
         const { data: pub } = supabase.storage.from('meter-photos').getPublicUrl(path)
         photo_url = pub.publicUrl
-      }
+      } else photoFailed = true
       setPhotoUploading(false)
     }
-    const { error } = await supabase.from('meter_readings').insert({
+    await sb(supabase.from('meter_readings').insert({
       meter_id: meter.id,
-      period: form.period,
-      prev_value: form.prev_value,
-      curr_value: form.curr_value,
-      consumption,
-      amount,
-      notes: form.notes,
-      reading: form.curr_value,
-      previous_reading: form.prev_value,
+      period: v.form.period,
+      prev_value: v.form.prev_value,
+      curr_value: v.form.curr_value,
+      consumption: v.consumption,
+      amount: v.amount,
+      notes: v.form.notes,
+      reading: v.form.curr_value,
+      previous_reading: v.form.prev_value,
       reading_date: new Date().toISOString().slice(0, 10),
       ...(photo_url ? { photo_url } : {}),
-    })
-    setSaving(false)
-    if (error) { setMsg({ tone: 'red', text: 'Ошибка сохранения показания: ' + error.message }); return }
-    setPhotoFile(null)
-    setShowAdd(false)
-    loadReadings()
+    }))
+    return { photoFailed }
+  }, {
+    invalidate: ['meter_readings', 'meters'],
+    onSuccess: r => {
+      setPhotoFile(null)
+      setShowAdd(false)
+      if (r.photoFailed) setMsg({ tone: 'amber', text: 'Показание сохранено, но фото не загрузилось.' })
+    },
+  })
+  const saving = saveAction.isPending
+
+  function save() {
+    setMsg(null)
+    saveAction.mutate({ form, photoFile, consumption, amount }, { onError: () => setPhotoUploading(false) })
   }
 
-  async function del(id:string) {
-    setDeleting(true)
-    const { error } = await supabase.from('meter_readings').delete().eq('id',id)
-    setDeleting(false); setToDelete(null)
-    if (error) { setMsg({ tone: 'red', text: 'Ошибка удаления: ' + error.message }); return }
-    loadReadings()
+  const delAction = useAction(async (id: string) => { await sb(supabase.from('meter_readings').delete().eq('id', id)) }, {
+    invalidate: ['meter_readings', 'meters'],
+  })
+  const deleting = delAction.isPending
+
+  function del(id: string) {
+    setMsg(null)
+    delAction.mutate(id, { onSettled: () => setToDelete(null) })
   }
 
   const recognizeTone: 'amber' | 'green' | 'neutral' = recognizeResult?.wrongMeter ? 'amber' : recognizeResult?.matched ? 'green' : 'neutral'
@@ -377,6 +399,7 @@ function ReadingsView({meter, onBack, allMeters, onSwitchMeter}: {meter:any; onB
       </Row>
 
       {msg && !showAdd && <Notice tone={msg.tone}>{msg.text}</Notice>}
+      {delAction.error && !showAdd && <Notice tone="red">Ошибка удаления: {delAction.error}</Notice>}
 
       {!showAdd ? (
         <div><Button kind="primary" onClick={()=>setShowAdd(true)}>Внести показания</Button></div>
@@ -419,13 +442,14 @@ function ReadingsView({meter, onBack, allMeters, onSwitchMeter}: {meter:any; onB
                       : `Серийный номер ${recognizeResult.serial} не найден в базе. `}
                   {typeof recognizeResult.reading === 'number' && `Показание: ${recognizeResult.reading}`}
                   {recognizeResult.wrongMeter && (
-                    <> <Button small kind="ghost" onClick={() => onSwitchMeter(recognizeResult.wrongMeter)}>Перейти к нему</Button></>
+                    <> <Button small kind="ghost" onClick={() => { if (recognizeResult.wrongMeter) onSwitchMeter(recognizeResult.wrongMeter) }}>Перейти к нему</Button></>
                   )}
                 </Notice>
               )}
               {recognizeFailed && !recognizing && <Notice tone="amber">Не удалось распознать показание по фото — введите его вручную. Фото всё равно сохранится.</Notice>}
             </div>
             {msg && <Notice tone={msg.tone}>{msg.text}</Notice>}
+            {saveAction.error && <Notice tone="red">Ошибка сохранения показания: {saveAction.error}</Notice>}
             <Row>
               <Button kind="primary" onClick={save} disabled={saving}>{saving ? (photoUploading ? 'Загрузка фото…' : 'Сохранение…') : 'Сохранить'}</Button>
               <Button onClick={()=>setShowAdd(false)}>Отмена</Button>
@@ -438,15 +462,15 @@ function ReadingsView({meter, onBack, allMeters, onSwitchMeter}: {meter:any; onB
       <Card pad={false} title="Показания">
         {loading ? <Loading /> : (
           <Table rows={readings} rowKey={r => r.id} empty="Показаний нет" cols={[
-            { key: 'p', title: 'Период', sort: r => r.period, render: r => new Date(r.period).toLocaleDateString('ru',{month:'long',year:'numeric'}) },
+            { key: 'p', title: 'Период', sort: r => r.period, render: r => r.period ? new Date(r.period).toLocaleDateString('ru',{month:'long',year:'numeric'}) : '—' },
             { key: 'pv', title: 'Пред.', align: 'right', render: r => <Muted>{num(r.prev_value, 3)}</Muted> },
             { key: 'cv', title: 'Тек.', align: 'right', render: r => <Muted>{num(r.curr_value, 3)}</Muted> },
             { key: 'c', title: 'Расход', align: 'right', sort: r => Number(r.consumption), render: r => <span style={{ fontWeight: 500 }}>{r.consumption} {t.unit}</span> },
             { key: 'a', title: 'Сумма', align: 'right', sort: r => Number(r.amount), render: r => <span style={{ fontWeight: 600 }}>{money(r.amount)}</span> },
             { key: 'n', title: 'Заметка', render: r => <Muted small>{r.notes||'—'}</Muted> },
-            { key: 'f', title: 'Фото', render: r => r.photo_url
-              ? <Button small kind="ghost" style={{ padding: 0 }} onClick={() => openStoredFile(r.photo_url)}>Фото</Button>
-              : <span style={{ color: C.faint }}>—</span> },
+            { key: 'f', title: 'Фото', render: r => { const url = r.photo_url; return url
+              ? <Button small kind="ghost" style={{ padding: 0 }} onClick={() => openStoredFile(url)}>Фото</Button>
+              : <span style={{ color: C.faint }}>—</span> } },
             { key: 'x', title: '', align: 'right', render: r => <Button small kind="danger" onClick={() => setToDelete(r.id)}>Удалить</Button> },
           ]} />
         )}

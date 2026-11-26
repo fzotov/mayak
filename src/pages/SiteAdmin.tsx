@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { sb, useSb, useAction, useInvalidate, errText } from '../lib/query'
+import type { Tables, TablesUpdate } from '../lib/database.types'
 import { ALL_ROOMS, unitKey, unitKeys, type Room } from '../lib/floorGeometry'
 import { fetchSiteLeads, updateLeadStatus, type SiteLead } from '../lib/siteLeads'
 import { Page, Card, Row, Button, Badge, Stat, Stats, Table, Field, Input, Select, Textarea, Segmented, Tabs, Notice, Loading, ErrorBox, Sub, Muted, Link, C, type Tone } from '../components/ui'
@@ -64,58 +66,33 @@ export default function SiteAdminPage() {
 /* ─── Помещения ──────────────────────────────────────────────────────────── */
 
 function UnitsTab() {
-  const [rows, setRows] = useState<Row[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [hasSiteCols, setHasSiteCols] = useState(true)
+  // проверка, выполнена ли миграция с полями сайта (video_url, is_published)
+  const probeQ = useSb(['units', 'site-cols-probe'], async () => !(await supabase.from('units').select('id,video_url,is_published').limit(1)).error, { staleTime: Infinity })
+  const unitsQ = useSb(['units', 'all'], () => sb(supabase.from('units').select('*')))
+  const tenantsQ = useSb(['tenants', 'unit-numbers'], () => sb(supabase.from('tenants').select('full_name,unit_number').not('unit_number', 'is', null)))
+  const hasSiteCols = probeQ.data ?? true
+  const loading = probeQ.isPending || unitsQ.isPending || tenantsQ.isPending
+  const loadErr = unitsQ.error || tenantsQ.error
+  const error = loadErr ? 'Не удалось загрузить данные: ' + loadErr.message : ''
+  const load = () => { probeQ.refetch(); unitsQ.refetch(); tenantsQ.refetch() }
+  const rows = useMemo(() => buildRows(unitsQ.data ?? [], tenantsQ.data ?? [], hasSiteCols), [unitsQ.data, tenantsQ.data, hasSiteCols])
   const [floor, setFloor] = useState<'all' | 2 | 3>('all')
   const [onlyFree, setOnlyFree] = useState(false)
   const [sel, setSel] = useState<string | null>(null)
-  const [syncing, setSyncing] = useState(false)
 
-  async function load() {
-    setLoading(true)
-    setError('')
-    const probe = await supabase.from('units').select('id,video_url,is_published').limit(1)
-    const siteCols = !probe.error
-    setHasSiteCols(siteCols)
-
-    const [{ data: units, error: uErr }, { data: tenants, error: tErr }] = await Promise.all([
-      supabase.from('units').select('*'),
-      supabase.from('tenants').select('full_name,unit_number').not('unit_number', 'is', null),
-    ])
-    if (uErr || tErr) setError('Не удалось загрузить данные: ' + (uErr || tErr)!.message)
-
-    const byKey = new Map<string, any>()
-    for (const u of units || []) for (const k of unitKeys(u.number)) if (!byKey.has(k)) byKey.set(k, u)
-
-    const tenantByKey = new Map<string, string>()
-    for (const t of tenants || []) {
-      for (const part of String(t.unit_number).split(/[,\s]+/)) {
-        for (const k of unitKeys(part)) tenantByKey.set(k, t.full_name)
-      }
+  /** Проставляет статусы; ошибки собираются, чтобы не потерять ни одной. */
+  const sync = useAction(async (diff: Row[]) => {
+    const failed: string[] = []
+    for (const r of diff) {
+      const status = r.tenantName ? 'occupied' : 'free'
+      try {
+        if (r.id) await sb(supabase.from('units').update({ status }).eq('id', r.id))
+        else await sb(supabase.from('units').insert({ number: r.room.number, floor: r.floor, area: r.room.area, type: 'office', status }))
+      } catch (e) { failed.push(`№${r.room.number}: ${errText(e)}`) }
     }
-
-    setRows(ALL_ROOMS.map(({ floor, room }) => {
-      const db = unitKeys(room.number).map(x => byKey.get(x)).find(Boolean)
-      const photosRaw: string[] = Array.isArray(db?.photos) ? db.photos.filter(Boolean) : []
-      return {
-        floor, room,
-        id: db?.id ?? null,
-        status: db?.status || 'occupied',
-        rate: db?.rent_rate ?? null,
-        area: Number(db?.area) > 5 ? Number(db.area) : room.area,
-        photos: photosRaw.filter(p => !isVideoUrl(p)),
-        video: siteCols ? (db?.video_url || photosRaw.find(isVideoUrl) || null) : (photosRaw.find(isVideoUrl) || null),
-        description: db?.description || '',
-        published: db?.is_published !== false,
-        tenantName: unitKeys(room.number).map(x => tenantByKey.get(x)).find(Boolean) || null,
-      }
-    }))
-    setLoading(false)
-  }
-
-  useEffect(() => { load() }, [])
+    if (failed.length) throw new Error(`Не обновились ${failed.length} из ${diff.length}:\n${failed.join('\n')}`)
+  }, { invalidate: ['units'] })
+  const syncing = sync.isPending
 
   const shown = rows
     .filter(r => floor === 'all' || r.floor === floor)
@@ -130,14 +107,7 @@ function UnitsTab() {
     const diff = rows.filter(r => (r.tenantName ? 'occupied' : 'free') !== r.status)
     if (!diff.length) return notify('Статусы уже совпадают с карточками арендаторов')
     if (!(await ask(`Обновить статус у ${diff.length} помещений по данным арендаторов?\n\nЭто изменит то, что видно на сайте.`, { ok: 'Обновить', danger: false }))) return
-    setSyncing(true)
-    for (const r of diff) {
-      const status = r.tenantName ? 'occupied' : 'free'
-      if (r.id) await supabase.from('units').update({ status }).eq('id', r.id)
-      else await supabase.from('units').insert({ number: r.room.number, floor: r.floor, area: r.room.area, type: 'office', status })
-    }
-    setSyncing(false)
-    load()
+    sync.mutate(diff)
   }
 
   return (
@@ -149,6 +119,7 @@ function UnitsTab() {
         </Notice>
       )}
       {error && <ErrorBox error={error} onRetry={load} />}
+      {sync.error && <Notice tone="red"><span style={{ whiteSpace: 'pre-wrap' }}>{sync.error}</span></Notice>}
 
       <Stats>
         <Stat label="Помещений на плане" value={rows.length} />
@@ -206,12 +177,42 @@ function UnitsTab() {
 
         {selRow && (
           <div style={{ flex: '1 1 320px', maxWidth: 420, minWidth: 0, position: 'sticky', top: 0 }}>
-            <UnitEditor row={selRow} hasSiteCols={hasSiteCols} onSaved={load} onClose={() => setSel(null)} />
+            <UnitEditor row={selRow} hasSiteCols={hasSiteCols} onSaved={() => {}} onClose={() => setSel(null)} />
           </div>
         )}
       </div>
     </div>
   )
+}
+
+/** Строки витрины: помещения с плана этажей + данные из units и арендаторы по номеру помещения. */
+function buildRows(units: Tables<'units'>[], tenants: Pick<Tables<'tenants'>, 'full_name' | 'unit_number'>[], siteCols: boolean): Row[] {
+  const byKey = new Map<string, Tables<'units'>>()
+  for (const u of units) for (const k of unitKeys(u.number)) if (!byKey.has(k)) byKey.set(k, u)
+
+  const tenantByKey = new Map<string, string>()
+  for (const t of tenants) {
+    for (const part of String(t.unit_number).split(/[,\s]+/)) {
+      for (const k of unitKeys(part)) tenantByKey.set(k, t.full_name)
+    }
+  }
+
+  return ALL_ROOMS.map(({ floor, room }) => {
+    const db = unitKeys(room.number).map(x => byKey.get(x)).find(Boolean)
+    const photosRaw: string[] = Array.isArray(db?.photos) ? db.photos.filter(Boolean) : []
+    return {
+      floor, room,
+      id: db?.id ?? null,
+      status: db?.status || 'occupied',
+      rate: db?.rent_rate ?? null,
+      area: db && Number(db.area) > 5 ? Number(db.area) : room.area,
+      photos: photosRaw.filter(p => !isVideoUrl(p)),
+      video: siteCols ? (db?.video_url || photosRaw.find(isVideoUrl) || null) : (photosRaw.find(isVideoUrl) || null),
+      description: db?.description || '',
+      published: db?.is_published !== false,
+      tenantName: unitKeys(room.number).map(x => tenantByKey.get(x)).find(Boolean) || null,
+    }
+  })
 }
 
 /* ─── Карточка помещения: фото, видео, статус, цена ──────────────────────── */
@@ -224,8 +225,12 @@ function UnitEditor({ row, hasSiteCols, onSaved, onClose }: { row: Row; hasSiteC
   const [published, setPublished] = useState(row.published)
   const [photos, setPhotos] = useState<string[]>(row.photos)
   const [busy, setBusy] = useState('')
+  const invalidate = useInvalidate()
+  const saveA = useAction(({ id, payload }: { id: string; payload: TablesUpdate<'units'> }) => sb(supabase.from('units').update(payload).eq('id', id)), { invalidate: ['units'], onSuccess: () => onSaved() })
   const fileRef = useRef<HTMLInputElement>(null)
   const key = unitKey(row.room.number)
+  // строка units, созданная здесь при загрузке файла: повторное сохранение не должно создать вторую
+  const createdId = useRef<{ key: string; id: string } | null>(null)
 
   useEffect(() => {
     setStatus(row.status); setRate(row.rate ?? ''); setDescription(row.description)
@@ -235,10 +240,13 @@ function UnitEditor({ row, hasSiteCols, onSaved, onClose }: { row: Row; hasSiteC
   /** Возвращает id строки units, создавая её при необходимости. */
   async function ensureUnitId(): Promise<string | null> {
     if (row.id) return row.id
+    if (createdId.current?.key === key) return createdId.current.id
     const { data, error } = await supabase.from('units')
       .insert({ number: row.room.number, floor: row.floor, area: row.room.area, type: 'office', status })
       .select('id').single()
     if (error) { notify('Не удалось создать помещение: ' + error.message, 'red'); return null }
+    createdId.current = { key, id: data.id }
+    invalidate('units')
     return data.id
   }
 
@@ -249,7 +257,7 @@ function UnitEditor({ row, hasSiteCols, onSaved, onClose }: { row: Row; hasSiteC
     let newVideo = video
     for (const file of Array.from(files)) {
       setBusy(`Загружаем ${file.name}…`)
-      const path = `${id}/${Date.now()}-${file.name.replace(/[^\w.\-]/g, '_')}`
+      const path = `${id}/${Date.now()}-${file.name.replace(/[^\w.-]/g, '_')}`
       const { error } = await supabase.storage.from(BUCKET).upload(path, file, { upsert: true, contentType: file.type })
       if (error) {
         setBusy('')
@@ -277,17 +285,14 @@ function UnitEditor({ row, hasSiteCols, onSaved, onClose }: { row: Row; hasSiteC
     const id = await ensureUnitId()
     if (!id) return
     setBusy('Сохраняем…')
-    const payload: Record<string, any> = {
+    const payload: TablesUpdate<'units'> = {
       status,
       rent_rate: rate === '' ? null : Number(rate),
       description: description || null,
       photos: hasSiteCols ? photos : [...photos, ...(video ? [video] : [])],
     }
     if (hasSiteCols) { payload.video_url = video || null; payload.is_published = published }
-    const { error } = await supabase.from('units').update(payload).eq('id', id)
-    setBusy('')
-    if (error) { notify('Ошибка сохранения: ' + error.message, 'red'); return }
-    onSaved()
+    try { await saveA.mutateAsync({ id, payload }) } catch (e) { notify('Ошибка сохранения: ' + errText(e), 'red') } finally { setBusy('') }
   }
 
   const overlayBtn: React.CSSProperties = { flex: 1, border: 0, background: 'transparent', color: C.onAccent, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', padding: '2px 0' }
@@ -367,42 +372,36 @@ function UnitEditor({ row, hasSiteCols, onSaved, onClose }: { row: Row; hasSiteC
 const DEAL_STAGE: Record<string, string> = { new: 'новая', contacted: 'связались', viewing: 'показ', offer: 'предложение', contract: 'договор', won: 'заселён', lost: 'отказ' }
 
 function LeadsTab() {
-  const [leads, setLeads] = useState<Lead[]>([])
-  const [loading, setLoading] = useState(true)
-  const [missing, setMissing] = useState(false)
   const [filter, setFilter] = useState<'all' | 'new' | 'in_work' | 'done'>('all')
-  const [saveError, setSaveError] = useState('')
+  // статус меняется на экране сразу, до ответа базы; при ошибке — откат
+  const [pending, setPending] = useState<Record<string, string>>({})
 
-  const [deals, setDeals] = useState<Record<string, { id: string; number: number; stage: string }>>({})
+  const dealsQ = useSb(['deals', 'by-lead'], () => sb(supabase.from('deals').select('id, number, stage, lead_id').not('lead_id', 'is', null)))
+  const leadsQ = useSb(['site_leads', 'list'], () => fetchSiteLeads())
+  const deals = useMemo(() => Object.fromEntries((dealsQ.data ?? []).flatMap(x => (x.lead_id ? [[x.lead_id, x] as const] : []))), [dealsQ.data])
+  const missing = leadsQ.data?.fallback ?? false
+  const leads = useMemo(() => (leadsQ.data?.leads ?? []).map(l => (pending[l.id] ? { ...l, status: pending[l.id] } : l)), [leadsQ.data, pending])
+  const loading = leadsQ.isPending || dealsQ.isPending
+  const refreshing = leadsQ.isFetching || dealsQ.isFetching
+  const load = () => { dealsQ.refetch(); leadsQ.refetch() }
+  const loadError = leadsQ.error?.message || dealsQ.error?.message || ''
 
-  async function load() {
-    setLoading(true)
-    const { data: d } = await supabase.from('deals').select('id, number, stage, lead_id').not('lead_id', 'is', null)
-    setDeals(Object.fromEntries((d || []).map((x: any) => [x.lead_id, x])))
-    const { leads, fallback } = await fetchSiteLeads()
-    setMissing(fallback)
-    setLeads(leads)
-    setLoading(false)
+  const dropPending = (id: string) => setPending(p => { const n = { ...p }; delete n[id]; return n })
+  const statusA = useAction(({ id, status }: { id: string; status: string }) => updateLeadStatus(id, status, missing), {
+    invalidate: ['site_leads', 'tasks'], onSuccess: (_r, a) => dropPending(a.id),
+  })
+  function setStatus(id: string, status: string) {
+    setPending(p => ({ ...p, [id]: status }))
+    statusA.mutate({ id, status }, { onError: () => dropPending(id) })
   }
-  useEffect(() => { load() }, [])
 
-  async function setStatus(id: string, status: string) {
-    const prev = leads
-    setSaveError('')
-    setLeads(l => l.map(x => x.id === id ? { ...x, status } : x))
-    try { await updateLeadStatus(id, status, missing) } catch (e: any) { setLeads(prev); setSaveError(e.message) }
-  }
-
-  async function makeDeal(l: Lead) {
-    setSaveError('')
-    const { data, error } = await supabase.from('deals').insert({
-      kind: 'new', stage: 'new', name: l.name || null, phone: l.phone || null, email: l.email || null, source: 'site',
-      source_detail: l.source || null, lead_id: l.id, area_wanted: l.area_wanted ? Number(l.area_wanted) || null : null, notes: l.message || null,
-      next_step: 'Связаться с клиентом', next_step_at: new Date().toISOString().slice(0, 10),
-    }).select('id').single()
-    if (error) { setSaveError(error.message); return }
-    go('/deals/' + data.id)
-  }
+  const dealA = useAction((l: Lead) => sb(supabase.from('deals').insert({
+    kind: 'new', stage: 'new', name: l.name || null, phone: l.phone || null, email: l.email || null, source: 'site',
+    source_detail: l.source || null, lead_id: l.id, area_wanted: l.area_wanted ? Number(l.area_wanted) || null : null, notes: l.message || null,
+    next_step: 'Связаться с клиентом', next_step_at: new Date().toISOString().slice(0, 10),
+  }).select('id').single()), { invalidate: ['deals', 'deal_units', 'deal_events'], onSuccess: d => go('/deals/' + d.id) })
+  const makeDeal = (l: Lead) => dealA.mutate(l)
+  const saveError = loadError || statusA.error || dealA.error
 
   const shown = useMemo(() => leads.filter(l => filter === 'all' || l.status === filter), [leads, filter])
   const newCount = leads.filter(l => l.status === 'new').length
@@ -420,7 +419,7 @@ function LeadsTab() {
       <Row gap={10}>
         <Segmented<'all' | 'new' | 'in_work' | 'done'> value={filter} onChange={setFilter}
           options={[['all', 'Все'], ['new', `Новые${newCount ? ` (${newCount})` : ''}`], ['in_work', 'В работе'], ['done', 'Закрытые']]} />
-        <div style={{ marginLeft: 'auto' }}><Button onClick={load} disabled={loading}>Обновить</Button></div>
+        <div style={{ marginLeft: 'auto' }}><Button onClick={load} disabled={refreshing}>Обновить</Button></div>
       </Row>
 
       <Card pad={false}>
@@ -449,7 +448,7 @@ function LeadsTab() {
             { key: 'st', title: 'Статус', sort: l => l.status, render: l => {
               const dl = deals[l.id]
               if (dl) return <Link to={'/deals/' + dl.id}>Сделка № {dl.number} · {DEAL_STAGE[dl.stage] || dl.stage}</Link>
-              if (!missing && l.status !== 'done') return <Button small onClick={() => makeDeal(l)}>Создать сделку</Button>
+              if (!missing && l.status !== 'done') return <Button small disabled={dealA.isPending} onClick={() => makeDeal(l)}>Создать сделку</Button>
               const st = LEAD_STATUS[l.status] || LEAD_STATUS.new
               return (
                 <Select value={l.status} onChange={e => setStatus(l.id, e.target.value)}

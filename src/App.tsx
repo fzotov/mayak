@@ -2,6 +2,7 @@
 // У каждого экрана свой адрес (/tenants/<id>, /invoices/<id>): работают «Назад», обновление и ссылки.
 import { useEffect, useState, type ReactNode, type CSSProperties } from 'react'
 import { createBrowserRouter, RouterProvider, Outlet, NavLink, useLocation, useNavigate, useParams, Navigate } from 'react-router'
+import type { User } from '@supabase/supabase-js'
 import { supabase } from './lib/supabase'
 import { setNavigator, legacyHashPath, go } from './lib/nav'
 import { AuthPage } from './pages/Auth'
@@ -166,7 +167,7 @@ function useTheme(): [Theme, (t: Theme) => void] {
 function Shell() {
   const navigate = useNavigate()
   const location = useLocation()
-  const [user, setUser] = useState<any>(null)
+  const [user, setUser] = useState<User | null>(null)
   const [profile, setProfile] = useState<{ full_name: string; role: string } | null | undefined>(undefined)
   const [loading, setLoading] = useState(true)
   const [showSettings, setShowSettings] = useState(false)

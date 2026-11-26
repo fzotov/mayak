@@ -1,26 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { sb, sbRpc, useSb, useAction, useInvalidate } from '../lib/query'
+import type { Tables } from '../lib/database.types'
 import { Page, Card, Row, Button, Badge, Stat, Stats, Table, Tabs, Loading, Empty, ErrorBox, Link, Muted, Sub, C, money, dateRu } from '../components/ui'
 
-interface BankTx {
-  id: string
-  date: string
-  amount: number
-  direction: 'credit' | 'debit'
-  counterparty: string | null
-  description: string | null
-  matched_type: string | null
-  matched_id: string | null
-}
-
-interface IncomingInvoice {
-  id: string
-  supplier: string
-  amount: number
-  status: string
-  description: string | null
-  due_date: string | null
-}
+type BankTx = Tables<'bank_transactions'>
+type IncomingInvoice = Pick<Tables<'incoming_invoices'>, 'id' | 'supplier' | 'amount' | 'status' | 'description' | 'due_date'>
 
 interface Tenant {
   id: string
@@ -29,8 +14,14 @@ interface Tenant {
   monthlyRent: number | null
 }
 
+/** Всё, что меняют банковские функции базы при сверке. */
+const BANK_TABLES = ['bank_transactions', 'payments', 'charges', 'allocations', 'ledger_postings', 'incoming_invoices', 'rpc:tenant_saldo']
+
+/** bank_mark_expense(p_tx, null) — «расход без счёта» (пропущено). */
+const markExpense = (tx: string, invoice: string | null) => sbRpc('bank_mark_expense', { p_tx: tx, p_invoice: invoice })
+
 function normalize(s: string) {
-  return s.toLowerCase().replace(/["«»""'',.\-]/g, '').replace(/\s+/g, ' ').trim()
+  return s.toLowerCase().replace(/["«»""'',.-]/g, '').replace(/\s+/g, ' ').trim()
 }
 
 function matchInvoiceScore(tx: BankTx, inv: IncomingInvoice): number {
@@ -79,31 +70,19 @@ function SuggestionRow({ tx, right, busy, onConfirm, onSkip }: { tx: BankTx; rig
 }
 
 export default function ReconcilePage() {
-  const [txs, setTxs] = useState<BankTx[]>([])
-  const [invoices, setInvoices] = useState<IncomingInvoice[]>([])
-  const [tenants, setTenants] = useState<Tenant[]>([])
-  const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState<string | null>(null)
   const [tab, setTab] = useState<'debit' | 'credit'>('debit')
-  const [error, setError] = useState('')
-  const [loadError, setLoadError] = useState('')
+  const invalidate = useInvalidate()
 
-  useEffect(() => { load() }, [])
-
-  async function load() {
-    setLoading(true); setLoadError('')
-    const [{ data: txData, error: e1 }, { data: invData, error: e2 }, { data: tenantData, error: e3 }] = await Promise.all([
-      supabase.from('bank_transactions').select('*').order('date', { ascending: false }),
-      supabase.from('incoming_invoices').select('id,supplier,amount,status,description,due_date').in('status', ['APPROVED', 'NEW', 'PENDING_APPROVAL']),
-      supabase.from('tenants').select('id,fullName:full_name,inn,monthlyRent:monthly_rent'),
-    ])
-    const err = e1 || e2 || e3
-    if (err) setLoadError('Не удалось загрузить данные: ' + err.message)
-    setTxs(txData || [])
-    setInvoices(invData || [])
-    setTenants((tenantData || []) as Tenant[])
-    setLoading(false)
-  }
+  const txQ = useSb(['bank_transactions'], () => sb(supabase.from('bank_transactions').select('*').order('date', { ascending: false })))
+  const invQ = useSb(['incoming_invoices', 'open'], () => sb(supabase.from('incoming_invoices').select('id,supplier,amount,status,description,due_date').in('status', ['APPROVED', 'NEW', 'PENDING_APPROVAL'])))
+  const tenantsQ = useSb(['tenants', 'reconcile'], () => sb(supabase.from('tenants').select('id,fullName:full_name,inn,monthlyRent:monthly_rent')))
+  const txs: BankTx[] = txQ.data ?? []
+  const invoices: IncomingInvoice[] = invQ.data ?? []
+  const tenants: Tenant[] = tenantsQ.data ?? []
+  const loading = txQ.isPending || invQ.isPending || tenantsQ.isPending
+  const loadErr = txQ.error || invQ.error || tenantsQ.error
+  const loadError = loadErr ? 'Не удалось загрузить данные: ' + loadErr.message : ''
+  const load = () => { txQ.refetch(); invQ.refetch(); tenantsQ.refetch() }
 
   const debitTxs = txs.filter(t => t.direction === 'debit')
   const creditTxs = txs.filter(t => t.direction === 'credit')
@@ -133,34 +112,31 @@ export default function ReconcilePage() {
   }
 
   // Операции банка меняются только функциями базы: зачисление идёт в расчёты арендатора, расход отмечается сверенным.
-  async function run(txId: string, fn: () => PromiseLike<{ error: any }>) {
-    setSaving(txId); setError('')
-    const { error } = await fn()
-    if (error) setError(error.message)
-    await load()
-    setSaving(null)
-  }
+  const act = useAction((v: { txId: string; op: () => Promise<unknown> }) => v.op(), { invalidate: BANK_TABLES })
+  const saving = act.isPending ? act.variables?.txId ?? null : null
+  const error = act.error
+  // при ошибке часть изменений могла пройти (например, списание сверено, а счёт не отмечен) — обновляем экран и тогда
+  const run = (txId: string, op: () => Promise<unknown>) => act.mutate({ txId, op }, { onError: () => { invalidate(...BANK_TABLES) } })
 
-  async function confirmDebitMatch(tx: BankTx, inv: IncomingInvoice) {
-    await run(tx.id, async () => {
-      const r = await supabase.rpc('bank_mark_expense', { p_tx: tx.id, p_invoice: inv.id })
-      if (r.error) return r
+  function confirmDebitMatch(tx: BankTx, inv: IncomingInvoice) {
+    run(tx.id, async () => {
+      await markExpense(tx.id, inv.id)
       // расход сверен; счёт поставщика отмечаем оплаченным — если не получилось, говорим об этом
-      const u = await supabase.from('incoming_invoices').update({ status: 'PAID' }).eq('id', inv.id)
-      return u.error ? { error: { message: 'Списание сверено, но счёт поставщика не отмечен оплаченным: ' + u.error.message } } : r
+      try { await sb(supabase.from('incoming_invoices').update({ status: 'PAID' }).eq('id', inv.id)) }
+      catch (e) { throw new Error('Списание сверено, но счёт поставщика не отмечен оплаченным: ' + (e instanceof Error ? e.message : String(e))) }
     })
   }
 
-  async function confirmCreditMatch(tx: BankTx, tenant: Tenant) {
+  function confirmCreditMatch(tx: BankTx, tenant: Tenant) {
     // плательщик запоминается: следующие его платежи зачислятся этому арендатору сами
-    await run(tx.id, () => supabase.rpc('bank_assign', { p_tx: tx.id, p_tenant: tenant.id, p_remember: true }))
+    run(tx.id, () => sbRpc('bank_assign', { p_tx: tx.id, p_tenant: tenant.id, p_remember: true }))
   }
 
-  async function ignore(txId: string) {
+  function ignore(txId: string) {
     const tx = txs.find(t => t.id === txId)
-    await run(txId, () => tx?.direction === 'debit'
-      ? supabase.rpc('bank_mark_expense', { p_tx: txId, p_invoice: null })
-      : supabase.rpc('bank_ignore', { p_tx: txId, p_note: 'отмечено в сверке' }))
+    run(txId, () => tx?.direction === 'debit'
+      ? markExpense(txId, null)
+      : sbRpc('bank_ignore', { p_tx: txId, p_note: 'отмечено в сверке' }))
   }
 
   if (loading && txs.length === 0) return <Page><Loading /></Page>

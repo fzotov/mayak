@@ -2,14 +2,15 @@
 // входящие остатки с разбивкой по статьям, сверка «Маяк = 1С» до копейки и проведение остатков на дату перехода.
 // Вся логика — в базе (supabase/migrations/20261201_onec.sql); экран только показывает и вызывает функции.
 import { ask, notify } from '../components/Dialogs'
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useMemo, useRef, useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router'
 import { supabase } from '../lib/supabase'
 import { apiFetch } from '../lib/api'
-import { rpc, loadArticles, type Article } from '../lib/accounting'
+import { loadArticles, type Article } from '../lib/accounting'
+import { sb, sbRpc, useSb, useAction, useInvalidate } from '../lib/query'
+import type { Json, Tables } from '../lib/database.types'
 import { printAct } from './Settlements'
-// Тот же разборщик, что и на сервере (api/onec-load.js): файл разбирается прямо в браузере.
-// @ts-ignore — модуль на JavaScript без описания типов
+// Тот же разборщик, что и на сервере (api/onec-load.js): файл разбирается прямо в браузере. Типы — src/types/onecXml.d.ts.
 import { parseDebtsXml, toStagePayload } from '../../api/_lib/onecXml.js'
 import {
   Page, Card, Row, Button, Badge, Stat, Stats, Table, Field, Input, Select, Search, Segmented, Tabs, Modal, Notice, Loading, Empty,
@@ -17,36 +18,33 @@ import {
 } from '../components/ui'
 
 // ── Типы строк из базы ──────────────────────────────────────────────────────
-interface Imp {
-  id: string; created_at: string; source: 'http' | 'file' | 'test'; as_of: string | null; meta: any; totals: any
-  status: 'staged' | 'posted' | 'reversed'; transition_date: string | null; posted_at: string | null; post_result: any
-}
-interface Cp {
-  cp_id: string; name: string | null; inn: string | null; kpp: string | null; debt: number; advance: number; deposit: number
-  tenant_id: string | null; match_by: 'id_1c' | 'inn' | 'manual' | 'inn_ambiguous' | null; tenants: { full_name: string; inn: string | null } | null
-}
-interface Ct {
-  cp_id: string; contract_id: string; name: string | null; number: string | null; date: string | null; kind: string | null
-  debt: number; advance: number; deposit: number; lease_id: string | null; lease_match: 'number' | 'manual' | 'created' | null
-}
+// status, source, match_by, kind в базе — текст с проверками; на экране сравниваются со строками.
+type Imp = Tables<'onec_imports'>
+type Cp = Tables<'onec_counterparties'> & { tenants: { full_name: string; inn: string | null } | null }
+type Ct = Tables<'onec_contracts'>
+// Функции базы возвращают строки, где часть полей бывает пустой (несопоставленный контрагент) — описываем это явно.
 interface Line {
   cp_id: string; cp_name: string | null; tenant_id: string | null; tenant_name: string | null; contract_id: string; contract_name: string | null
-  lease_id: string | null; doc_id: string; doc_label: string; kind: 'charge' | 'advance' | 'deposit'; article_code: string | null
+  lease_id: string | null; doc_id: string; doc_label: string; kind: string; article_code: string | null
   article_name: string | null; amount: number; rule: string | null
 }
 interface Rec {
   tenant_id: string | null; tenant_name: string | null; cp_names: string | null; inn: string | null; onec_balance: number; onec_deposit: number
-  mayak_balance: number; mayak_deposit: number; diff: number; diff_deposit: number; status: 'совпадает' | 'расхождение' | 'нет в Маяке' | 'нет в 1С'
+  mayak_balance: number; mayak_deposit: number; diff: number; diff_deposit: number; status: string
 }
-interface Rule { id: number; priority: number; field: 'item' | 'contract' | 'doc_type' | 'account'; pattern: string; article_code: string; note: string | null }
-interface Tenant { id: string; full_name: string; inn: string | null; id_1c: string | null; status: string | null }
-interface Lease { id: string; tenant_id: string; number: string | null; start_date: string | null; status: string | null }
+type Rule = Tables<'onec_article_rules'>
+type Tenant = Pick<Tables<'tenants'>, 'id' | 'full_name' | 'inn' | 'id_1c' | 'status'>
+type Lease = Pick<Tables<'leases'>, 'id' | 'tenant_id' | 'number' | 'start_date' | 'status'>
 interface Missing { tenant_id: string; full_name: string; inn: string | null; id_1c: string | null; status: string | null; leases: number }
+interface Skipped { cp: string; doc: string; amount: number; why: string }
+interface PostResult { lines: number | null; skipped: Skipped[] }
 
 type Tab = 'tenants' | 'contracts' | 'opening' | 'reconcile' | 'post'
 const TABS: Tab[] = ['tenants', 'contracts', 'opening', 'reconcile', 'post']
+type LineKind = 'charge' | 'advance' | 'deposit'
+type RuleField = 'item' | 'contract' | 'doc_type' | 'account'
 
-const STATUS: Record<Imp['status'], [string, Tone]> = {
+const STATUS: Record<string, [string, Tone]> = {
   staged: ['Загружено, не проведено', 'blue'], posted: ['Остатки проведены', 'green'], reversed: ['Отменено сторно', 'neutral'],
 }
 const SOURCE: Record<string, string> = { http: 'из 1С', file: 'файл', test: 'тест' }
@@ -55,24 +53,45 @@ const MATCH: Record<string, [string, Tone]> = {
 }
 const LEASE_MATCH: Record<string, [string, Tone]> = { number: ['по номеру', 'green'], manual: ['вручную', 'blue'], created: ['создан из 1С', 'violet'] }
 const KIND: Record<string, string> = { rent: 'Аренда', ad: 'Реклама', deposit: 'Обеспечение', service: 'Услуги', other: 'Прочее' }
-const LINE_KIND: Record<Line['kind'], string> = { charge: 'Долг', advance: 'Переплата', deposit: 'Депозит' }
-const RULE_FIELD: Record<Rule['field'], string> = { item: 'Номенклатура строки', contract: 'Наименование договора', doc_type: 'Вид документа', account: 'Счёт учёта' }
-const REC_TONE: Record<Rec['status'], Tone> = { 'совпадает': 'green', 'расхождение': 'red', 'нет в Маяке': 'amber', 'нет в 1С': 'amber' }
+const LINE_KIND: Record<string, string> = { charge: 'Долг', advance: 'Переплата', deposit: 'Депозит' }
+const RULE_FIELD: Record<string, string> = { item: 'Номенклатура строки', contract: 'Наименование договора', doc_type: 'Вид документа', account: 'Счёт учёта' }
+const REC_TONE: Record<string, Tone> = { 'совпадает': 'green', 'расхождение': 'red', 'нет в Маяке': 'amber', 'нет в 1С': 'amber' }
 
-const errText = (e: any) => String(e?.message || e).replace(/^.*?ERROR:\s*/, '')
-const n = (v: any) => Number(v || 0)
+// Что обновить после записи (ключи запросов — см. src/lib/query.tsx).
+const ONEC = ['onec_imports', 'onec_counterparties', 'onec_contracts', 'rpc:onec_opening_lines', 'rpc:onec_reconcile', 'rpc:onec_tenants_missing']
+/** После проведения или сторно остатков меняется учёт: начисления, оплаты, проводки, депозиты и сальдо. */
+const POSTED = [...ONEC, 'charges', 'payments', 'ledger_postings', 'allocations', 'deposit_operations', 'v_charge_state', 'v_payment_state', 'v_invoice_state', 'v_deposits', 'rpc:tenant_saldo', 'rpc:ledger_turnover']
+
+const errText = (e: unknown) => String(e instanceof Error ? e.message : typeof e === 'object' && e && 'message' in e ? String(e.message) : e).replace(/^.*?ERROR:\s*/, '')
+const n = (v: number | string | null | undefined) => Number(v || 0)
 const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 const nextMonthStart = () => { const d = new Date(); return iso(new Date(d.getFullYear(), d.getMonth() + 1, 1)) }
 const signed = (v: number) => (v > 0 ? '+' : v < 0 ? '−' : '') + money(Math.abs(v))
 const cpTitle = (c: Pick<Cp, 'name' | 'inn' | 'kpp'>) => (c.name || '—')
 
+const isObj = (j: Json | null | undefined): j is { [key: string]: Json | undefined } => !!j && typeof j === 'object' && !Array.isArray(j)
+const str = (j: Json | undefined) => (typeof j === 'string' ? j : j == null ? '' : String(j))
+/** Версия выгрузки из meta загрузки ('2' — со строками номенклатуры). */
+const metaVersion = (imp: Imp) => (isObj(imp.meta) && typeof imp.meta.version === 'string' ? imp.meta.version : undefined)
+/** Итог проведения из onec_opening_post / onec_imports.post_result. */
+function asPostResult(j: Json | null | undefined): PostResult {
+  if (!isObj(j)) return { lines: null, skipped: [] }
+  const sk = Array.isArray(j.skipped) ? j.skipped : []
+  return {
+    lines: typeof j.lines === 'number' ? j.lines : null,
+    skipped: sk.filter(isObj).map(x => ({ cp: str(x.cp), doc: str(x.doc), amount: Number(x.amount) || 0, why: str(x.why) })),
+  }
+}
+
+
+type Paged<T> = { range(from: number, to: number): PromiseLike<{ data: T[] | null; error: { message: string } | null }> }
 /** Все строки запроса страницами по 1000 (столько отдаёт база за раз). */
-async function fetchAll<T>(make: () => any): Promise<T[]> {
+async function fetchAll<T>(make: () => Paged<T>): Promise<T[]> {
   const out: T[] = []
   for (let from = 0; ; from += 1000) {
     const { data, error } = await make().range(from, from + 999)
     if (error) throw new Error(errText(error))
-    out.push(...((data || []) as T[]))
+    out.push(...(data || []))
     if (!data || data.length < 1000) return out
   }
 }
@@ -86,6 +105,9 @@ async function readXmlText(file: File): Promise<string> {
   catch { return new TextDecoder('windows-1251').decode(buf) }
 }
 
+/** Ответ /api/onec-load. */
+interface OnecLoadReply { ok?: boolean; error?: string; importId?: string; totals?: { counterparties?: number; matched?: number } }
+
 export default function OnecTransferPage() {
   const [params, setParams] = useSearchParams()
   const tab: Tab = TABS.includes(params.get('tab') as Tab) ? params.get('tab') as Tab : 'tenants'
@@ -95,87 +117,63 @@ export default function OnecTransferPage() {
     return q
   }, { replace: true })
 
-  const [imports, setImports] = useState<Imp[] | null>(null)
-  const [isOwner, setIsOwner] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const invalidate = useInvalidate()
   const [msg, setMsg] = useState<{ tone: 'green' | 'red' | 'amber'; text: ReactNode } | null>(null)
   const [busy, setBusy] = useState<'http' | 'file' | null>(null)
   const [asOf, setAsOf] = useState('')
+  // дата сверки выбирается для конкретной загрузки; по умолчанию — дата перехода или дата выгрузки
+  const [recPick, setRecPick] = useState<{ imp: string; date: string } | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
-  // данные выбранной загрузки
-  const [cps, setCps] = useState<Cp[]>([])
-  const [cts, setCts] = useState<Ct[]>([])
-  const [lines, setLines] = useState<Line[] | null>(null)
-  const [linesErr, setLinesErr] = useState<string | null>(null)
-  const [tenants, setTenants] = useState<Tenant[]>([])
-  const [leases, setLeases] = useState<Lease[]>([])
-  const [articles, setArticles] = useState<Article[]>([])
-  const [rec, setRec] = useState<Rec[] | null>(null)
-  const [recErr, setRecErr] = useState<string | null>(null)
-  const [recDate, setRecDate] = useState('')
-  const [loadingImp, setLoadingImp] = useState(false)
+  const importsQ = useSb(['onec_imports', 'list'], () => sb(supabase.from('onec_imports').select('*').order('created_at', { ascending: false }).limit(100)))
+  const articlesQ = useSb(['accounting_articles', 'onec'], loadArticles)
+  const ownerQ = useSb(['profiles', 'me', 'is-owner'], async () => {
+    const { data } = await supabase.auth.getUser()
+    if (!data.user) return false
+    const p = await sb(supabase.from('profiles').select('role').eq('user_id', data.user.id).maybeSingle())
+    return (p as { role: string } | null)?.role === 'owner'
+  })
+  const imports = importsQ.data ?? (importsQ.error ? [] : null)
+  const articles = articlesQ.data ?? []
+  const isOwner = ownerQ.data ?? false
 
   const impId = params.get('import') || imports?.[0]?.id || ''
   const imp = imports?.find(i => i.id === impId) || null
+  const curId = imp?.id || ''
 
-  async function loadImports() {
-    const { data, error } = await supabase.from('onec_imports').select('*').order('created_at', { ascending: false }).limit(100)
-    if (error) { setError(errText(error)); setImports([]); return }
-    setImports((data || []) as Imp[])
-  }
+  // данные выбранной загрузки
+  const cpsQ = useSb(['onec_counterparties', curId], () => fetchAll<Cp>(() => supabase.from('onec_counterparties').select('*, tenants(full_name, inn)').eq('import_id', curId).order('name').order('cp_id')), { enabled: !!curId })
+  const ctsQ = useSb(['onec_contracts', curId], () => fetchAll<Ct>(() => supabase.from('onec_contracts').select('*').eq('import_id', curId).order('cp_id').order('contract_id')), { enabled: !!curId })
+  const tenantsQ = useSb(['tenants', 'onec-list'], () => fetchAll<Tenant>(() => supabase.from('tenants').select('id, full_name, inn, id_1c, status').order('full_name').order('id')), { enabled: !!curId })
+  const cps = useMemo(() => cpsQ.data ?? [], [cpsQ.data])
+  const cts = useMemo(() => ctsQ.data ?? [], [ctsQ.data])
+  const tenants = useMemo(() => tenantsQ.data ?? [], [tenantsQ.data])
+  const tenantIds = useMemo(() => [...new Set(cps.flatMap(c => (c.tenant_id ? [c.tenant_id] : [])))].sort(), [cps])
+  const leasesQ = useSb(['leases', 'onec', tenantIds.join(',')], async () => {
+    const ls: Lease[] = []
+    for (let i = 0; i < tenantIds.length; i += 200) {
+      const part = tenantIds.slice(i, i + 200)
+      ls.push(...await fetchAll<Lease>(() => supabase.from('leases').select('id, tenant_id, number, start_date, status').in('tenant_id', part).order('start_date').order('id')))
+    }
+    return ls
+  }, { enabled: cpsQ.isSuccess })
+  const leases = leasesQ.data ?? []
+  const loadingImp = !!curId && (cpsQ.isPending || ctsQ.isPending || tenantsQ.isPending || (cpsQ.isSuccess && leasesQ.isPending))
 
-  useEffect(() => {
-    loadImports()
-    loadArticles().then(setArticles).catch(e => setError(errText(e)))
-    supabase.auth.getUser().then(async ({ data }) => {
-      if (!data.user) return
-      const { data: p } = await supabase.from('profiles').select('role').eq('user_id', data.user.id).maybeSingle()
-      setIsOwner(p?.role === 'owner')
-    })
-  }, [])
+  const linesQ = useSb(['rpc:onec_opening_lines', curId], () => fetchAll<Line>(() => supabase.rpc('onec_opening_lines', { p_import: curId })), { enabled: !!curId })
+  const lines: Line[] | null = linesQ.error ? [] : linesQ.data ?? null
+  const linesErr = linesQ.error ? errText(linesQ.error) : null
 
-  async function loadImportData(id: string) {
-    setLoadingImp(true); setError(null)
-    try {
-      const [a, b, t] = await Promise.all([
-        fetchAll<Cp>(() => supabase.from('onec_counterparties').select('*, tenants(full_name, inn)').eq('import_id', id).order('name').order('cp_id')),
-        fetchAll<Ct>(() => supabase.from('onec_contracts').select('*').eq('import_id', id).order('cp_id').order('contract_id')),
-        fetchAll<Tenant>(() => supabase.from('tenants').select('id, full_name, inn, id_1c, status').order('full_name').order('id')),
-      ])
-      setCps(a); setCts(b); setTenants(t)
-      const ids = [...new Set(a.map(c => c.tenant_id).filter(Boolean))] as string[]
-      const ls: Lease[] = []
-      for (let i = 0; i < ids.length; i += 200) {
-        const part = ids.slice(i, i + 200)
-        ls.push(...await fetchAll<Lease>(() => supabase.from('leases').select('id, tenant_id, number, start_date, status').in('tenant_id', part).order('start_date').order('id')))
-      }
-      setLeases(ls)
-    } catch (e) { setError(errText(e)) }
-    setLoadingImp(false)
-  }
-  async function loadLines(id: string) {
-    setLinesErr(null)
-    try { setLines(await fetchAll<Line>(() => supabase.rpc('onec_opening_lines', { p_import: id }))) }
-    catch (e) { setLinesErr(errText(e)); setLines([]) }
-  }
-  async function loadRec(id: string, date: string) {
-    setRecErr(null); setRec(null)
-    try { setRec(await fetchAll<Rec>(() => supabase.rpc('onec_reconcile', { p_import: id, p_date: date }))) }
-    catch (e) { setRecErr(errText(e)); setRec([]) }
-  }
+  const recDate = recPick && recPick.imp === curId ? recPick.date : imp ? imp.transition_date || imp.as_of || today() : ''
+  const setRecDate = (date: string) => setRecPick({ imp: curId, date })
+  const recQ = useSb(['rpc:onec_reconcile', curId, recDate], () => fetchAll<Rec>(() => supabase.rpc('onec_reconcile', { p_import: curId, p_date: recDate })),
+    { enabled: !!curId && !!recDate, placeholderData: prev => prev })
+  // пока считается сальдо на новую дату — «Считаем сальдо…», как раньше
+  const rec: Rec[] | null = recQ.error ? [] : (recQ.isPlaceholderData && recQ.isFetching) || (!recQ.data && !!recDate) ? null : recQ.data ?? null
+  const recErr = recQ.error ? errText(recQ.error) : null
 
-  useEffect(() => {
-    if (!imp) return
-    const d = imp.transition_date || imp.as_of || today()
-    setRecDate(d); setLines(null)
-    loadImportData(imp.id); loadLines(imp.id); loadRec(imp.id, d)
-  }, [imp?.id])
-
-  async function reloadAll() {
-    await loadImports()
-    if (imp) { await loadImportData(imp.id); loadLines(imp.id); loadRec(imp.id, recDate || today()) }
-  }
+  const loadErr = importsQ.error || articlesQ.error || cpsQ.error || ctsQ.error || tenantsQ.error || leasesQ.error
+  const error = loadErr ? errText(loadErr) : null
 
   // ── Загрузка выгрузки ──
   async function loadFrom1c() {
@@ -183,8 +181,8 @@ export default function OnecTransferPage() {
     try {
       const r = await apiFetch('/api/onec-load', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(asOf ? { asOf } : {}) })
       const raw = await r.text()
-      let j: any = null
-      try { j = JSON.parse(raw) } catch { /* сервер ответил не JSON (например, таймаут шлюза) */ }
+      let j: OnecLoadReply | null = null
+      try { j = JSON.parse(raw) as OnecLoadReply } catch { /* сервер ответил не JSON (например, таймаут шлюза) */ }
       if (!r.ok || !j?.ok) {
         const timeout = r.status === 504 || /таймаут|timeout|504/i.test(j?.error || raw)
         throw new Error(timeout
@@ -192,7 +190,7 @@ export default function OnecTransferPage() {
           : (j?.error || `Сервер ответил ${r.status}`))
       }
       setMsg({ tone: 'green', text: <>Выгрузка из 1С загружена: контрагентов {j.totals?.counterparties ?? '—'}, сопоставлено {j.totals?.matched ?? '—'}.</> })
-      await loadImports(); setQuery({ import: j.importId, tab: 'tenants' })
+      await invalidate(...ONEC); setQuery({ import: j.importId || null, tab: 'tenants' })
     } catch (e) { setMsg({ tone: 'red', text: errText(e) }) }
     setBusy(null)
   }
@@ -202,11 +200,11 @@ export default function OnecTransferPage() {
       const text = await readXmlText(file)
       const parsed = parseDebtsXml(text)
       if (!parsed.counterparties.length) throw new Error('В файле нет ни одного контрагента')
-      const id = await rpc<string>('onec_stage', { p: toStagePayload(parsed, 'file') })
+      const id = await sbRpc('onec_stage', { p: toStagePayload(parsed, 'file') })
       const v2 = parsed.meta?.version === '2'
       setMsg({ tone: v2 ? 'green' : 'amber', text: <>Файл {file.name} загружен: контрагентов {parsed.counterparties.length}, выгрузка на {dateRu(parsed.meta?.asOf)}.
         {!v2 && ' Это выгрузка старого формата (без номенклатуры строк) — долги по договорам аренды не разобьются по статьям.'}</> })
-      await loadImports(); setQuery({ import: id, tab: 'tenants' })
+      await invalidate(...ONEC); setQuery({ import: id, tab: 'tenants' })
     } catch (e) { setMsg({ tone: 'red', text: errText(e) }) }
     setBusy(null)
     if (fileRef.current) fileRef.current.value = ''
@@ -261,24 +259,24 @@ export default function OnecTransferPage() {
       ) : (
         <>
           <Row gap={6}>
-            <Badge tone={STATUS[imp.status][1]}>{STATUS[imp.status][0]}{imp.transition_date ? ` на ${dateRu(imp.transition_date)}` : ''}</Badge>
+            <Badge tone={STATUS[imp.status]?.[1] || 'neutral'}>{STATUS[imp.status]?.[0] || imp.status}{imp.transition_date ? ` на ${dateRu(imp.transition_date)}` : ''}</Badge>
             {chip(`Арендаторы: сопоставлено ${matched} из ${cps.length}`, matched === cps.length && cps.length ? 'green' : 'amber', 'tenants')}
             {chip(`Договоры: с парой ${ctsLinked} из ${ctsMatchable.length}`, ctsLinked === ctsMatchable.length ? 'green' : 'amber', 'contracts')}
             {chip(lines === null ? 'Без разбивки: …' : `Без разбивки: ${money(openingSum)}`, openingSum > 0 ? 'amber' : 'green', 'opening')}
             {chip(rec === null ? 'Сверка: …' : `Расхождений: ${recBad}`, recBad ? 'red' : 'green', 'reconcile')}
-            {imp.meta?.version !== '2' && <Badge tone="neutral">выгрузка v{imp.meta?.version || '1'}</Badge>}
+            {metaVersion(imp) !== '2' && <Badge tone="neutral">выгрузка v{metaVersion(imp) || '1'}</Badge>}
           </Row>
           <Tabs<Tab> value={tab} onChange={t => setQuery({ tab: t })} tabs={[
             ['tenants', 'Арендаторы'], ['contracts', 'Договоры'], ['opening', 'Остатки'], ['reconcile', 'Сверка'], ...(isOwner ? [['post', 'Проведение'] as [Tab, string]] : []),
           ]} />
           {loadingImp && <Loading />}
-          {!loadingImp && tab === 'tenants' && <TenantsTab imp={imp} cps={cps} tenants={tenants} onChanged={reloadAll} />}
-          {!loadingImp && tab === 'contracts' && <ContractsTab imp={imp} rows={ctsWithTenant} leases={leases} isOwner={isOwner} onChanged={reloadAll} />}
-          {tab === 'opening' && <OpeningTab lines={lines} error={linesErr} articles={articles} isOwner={isOwner} onRulesChanged={() => loadLines(imp.id)} />}
+          {!loadingImp && tab === 'tenants' && <TenantsTab imp={imp} cps={cps} tenants={tenants} />}
+          {!loadingImp && tab === 'contracts' && <ContractsTab imp={imp} rows={ctsWithTenant} leases={leases} isOwner={isOwner} />}
+          {tab === 'opening' && <OpeningTab lines={lines} error={linesErr} articles={articles} isOwner={isOwner} />}
           {tab === 'reconcile' && <ReconcileTab rows={rec} error={recErr} date={recDate} articles={articles} tenants={tenants}
-            onDate={d => { setRecDate(d); if (d) loadRec(imp.id, d) }} />}
+            onDate={setRecDate} />}
           {tab === 'post' && (isOwner
-            ? <PostTab imp={imp} lines={lines} onDone={reloadAll} />
+            ? <PostTab imp={imp} lines={lines} />
             : <Notice tone="amber">Проведение остатков доступно только владельцу.</Notice>)}
         </>
       )}
@@ -287,27 +285,22 @@ export default function OnecTransferPage() {
 }
 
 // ── 1. Арендаторы ───────────────────────────────────────────────────────────
-function TenantsTab({ imp, cps, tenants, onChanged }: { imp: Imp; cps: Cp[]; tenants: Tenant[]; onChanged: () => Promise<void> }) {
+function TenantsTab({ imp, cps, tenants }: { imp: Imp; cps: Cp[]; tenants: Tenant[] }) {
   const [filter, setFilter] = useState<'all' | 'unmatched'>(() => cps.some(c => !c.tenant_id) ? 'unmatched' : 'all')
   const [q, setQ] = useState('')
   const [pick, setPick] = useState<Cp | null>(null)
-  const [err, setErr] = useState<string | null>(null)
-  const [missing, setMissing] = useState<Missing[] | null>(null)
-  const [missingErr, setMissingErr] = useState<string | null>(null)
-
-  useEffect(() => {
-    setMissing(null)
-    fetchAll<Missing>(() => supabase.rpc('onec_tenants_missing', { p_import: imp.id })).then(setMissing).catch(e => { setMissingErr(errText(e)); setMissing([]) })
-  }, [imp.id, cps])
+  const missingQ = useSb(['rpc:onec_tenants_missing', imp.id], () => fetchAll<Missing>(() => supabase.rpc('onec_tenants_missing', { p_import: imp.id })))
+  const missing: Missing[] | null = missingQ.error ? [] : missingQ.data ?? null
+  const missingErr = missingQ.error ? errText(missingQ.error) : null
+  // привязка пишет код 1С в карточку арендатора
+  const linkA = useAction((a: { cp: Cp; tenantId: string | null }) => sbRpc('onec_link_tenant', { p_import: imp.id, p_cp: a.cp.cp_id, p_tenant: a.tenantId }),
+    { invalidate: [...ONEC, 'tenants'], onSuccess: () => setPick(null) })
+  const err = linkA.error ? errText(linkA.error) : null
 
   const rows = cps.filter(c => (filter === 'all' || !c.tenant_id || c.match_by === 'inn_ambiguous')
     && (!q || `${c.name} ${c.inn} ${c.tenants?.full_name}`.toLowerCase().includes(q.toLowerCase())))
 
-  async function link(cp: Cp, tenantId: string | null) {
-    setErr(null)
-    try { await rpc('onec_link_tenant', { p_import: imp.id, p_cp: cp.cp_id, p_tenant: tenantId }); setPick(null); await onChanged() }
-    catch (e) { setErr(errText(e)) }
-  }
+  const link = (cp: Cp, tenantId: string | null) => linkA.mutate({ cp, tenantId })
 
   const cols: Col<Cp>[] = [
     { key: 'n', title: 'Контрагент 1С', sort: c => c.name || '', render: c => <><div>{cpTitle(c)}</div><div style={{ fontSize: 12, color: C.faint }}>{c.inn ? 'ИНН ' + c.inn : 'без ИНН'}{c.kpp ? ' · КПП ' + c.kpp : ''}</div></> },
@@ -385,30 +378,29 @@ const Muted = ({ children }: { children: ReactNode }) => <div style={{ fontSize:
 
 // ── 2. Договоры ─────────────────────────────────────────────────────────────
 type CtRow = Ct & { cp: Cp | null }
-function ContractsTab({ imp, rows, leases, isOwner, onChanged }: { imp: Imp; rows: CtRow[]; leases: Lease[]; isOwner: boolean; onChanged: () => Promise<void> }) {
+function ContractsTab({ imp, rows, leases, isOwner }: { imp: Imp; rows: CtRow[]; leases: Lease[]; isOwner: boolean }) {
   const [filter, setFilter] = useState<'all' | 'unlinked'>('all')
   const [q, setQ] = useState('')
-  const [err, setErr] = useState<string | null>(null)
   const [confirm, setConfirm] = useState(false)
   const [result, setResult] = useState<{ updated: number; created: number } | null>(null)
-  const [working, setWorking] = useState(false)
+  const linkA = useAction((a: { c: CtRow; leaseId: string }) => sbRpc('onec_link_contract', { p_import: imp.id, p_cp: a.c.cp_id, p_contract: a.c.contract_id, p_lease: a.leaseId || null }),
+    { invalidate: ONEC })
+  // перенос номеров и дат меняет и создаёт договоры Маяка
+  const applyA = useAction(async () => {
+    const r = await sbRpc('onec_apply_contracts', { p_import: imp.id })
+    return isObj(r) ? { updated: Number(r.updated) || 0, created: Number(r.created) || 0 } : { updated: 0, created: 0 }
+  }, { invalidate: [...ONEC, 'leases'], onSuccess: r => { setResult(r); setConfirm(false) } })
+  const working = applyA.isPending
+  const errRaw = applyA.error || linkA.error
+  const err = errRaw ? errText(errRaw) : null
   const editable = imp.status === 'staged'
 
   const list = rows.filter(c => (filter === 'all' || (c.cp?.tenant_id && !c.lease_id))
     && (!q || `${c.name} ${c.number} ${c.cp?.name} ${c.cp?.tenants?.full_name}`.toLowerCase().includes(q.toLowerCase())))
   const unlinkedNew = rows.filter(c => c.cp?.tenant_id && !c.lease_id && c.number && ['rent', 'ad', 'other'].includes(c.kind || '')).length
 
-  async function linkLease(c: CtRow, leaseId: string) {
-    setErr(null)
-    try { await rpc('onec_link_contract', { p_import: imp.id, p_cp: c.cp_id, p_contract: c.contract_id, p_lease: leaseId || null }); await onChanged() }
-    catch (e) { setErr(errText(e)) }
-  }
-  async function apply() {
-    setWorking(true); setErr(null)
-    try { const r = await rpc<{ updated: number; created: number }>('onec_apply_contracts', { p_import: imp.id }); setResult(r); setConfirm(false); await onChanged() }
-    catch (e) { setErr(errText(e)); setConfirm(false) }
-    setWorking(false)
-  }
+  const linkLease = (c: CtRow, leaseId: string) => { applyA.reset(); linkA.mutate({ c, leaseId }) }
+  const apply = () => { linkA.reset(); applyA.mutate(undefined, { onError: () => setConfirm(false) }) }
 
   const leaseLabel = (l: Lease) => `№ ${l.number || 'без номера'}${l.start_date ? ' от ' + dateRu(l.start_date) : ''}${l.status && l.status !== 'active' ? ' (' + l.status + ')' : ''}`
   const cols: Col<CtRow>[] = [
@@ -431,7 +423,7 @@ function ContractsTab({ imp, rows, leases, isOwner, onChanged }: { imp: Imp; row
                 <option value="">— нет пары —</option>
                 {own.map(l => <option key={l.id} value={l.id}>{leaseLabel(l)}</option>)}
               </Select>
-            : <span>{c.lease_id ? leaseLabel(own.find(l => l.id === c.lease_id) || { id: '', tenant_id: '', number: null, start_date: null, status: null }) : '—'}</span>}
+            : <span>{c.lease_id ? leaseLabel(own.find(l => l.id === c.lease_id) || { id: '', tenant_id: null, number: null, start_date: null, status: null }) : '—'}</span>}
           <div>{c.lease_match && LEASE_MATCH[c.lease_match]
             ? <Badge tone={LEASE_MATCH[c.lease_match][1]}>{LEASE_MATCH[c.lease_match][0]}</Badge>
             : <Badge tone="amber">{own.length ? 'не сопоставлен' : 'у арендатора нет договоров'}</Badge>}</div>
@@ -468,14 +460,14 @@ function ContractsTab({ imp, rows, leases, isOwner, onChanged }: { imp: Imp; row
 }
 
 // ── 3. Остатки ──────────────────────────────────────────────────────────────
-function OpeningTab({ lines, error, articles, isOwner, onRulesChanged }: { lines: Line[] | null; error: string | null; articles: Article[]; isOwner: boolean; onRulesChanged: () => void }) {
-  const [kind, setKind] = useState<'all' | Line['kind']>('all')
+function OpeningTab({ lines, error, articles, isOwner }: { lines: Line[] | null; error: string | null; articles: Article[]; isOwner: boolean }) {
+  const [kind, setKind] = useState<'all' | LineKind>('all')
   const [art, setArt] = useState('')
   const [q, setQ] = useState('')
   const [onlyMatched, setOnlyMatched] = useState(false)
 
   const summary = useMemo(() => {
-    const m = new Map<string, { key: string; label: string; kind: Line['kind']; code: string | null; sum: number; count: number }>()
+    const m = new Map<string, { key: string; label: string; kind: string; code: string | null; sum: number; count: number }>()
     for (const l of lines || []) {
       const key = l.kind === 'charge' ? 'c:' + l.article_code : l.kind
       const label = l.kind === 'charge' ? (l.article_name || l.article_code || '—') : l.kind === 'advance' ? 'Переплата (аванс)' : 'Депозит, полученный по договору'
@@ -505,7 +497,7 @@ function OpeningTab({ lines, error, articles, isOwner, onRulesChanged }: { lines
           { key: 'k', title: 'Вид', render: s => <Badge tone={s.kind === 'charge' ? (s.code === 'OPENING' ? 'amber' : 'neutral') : s.kind === 'advance' ? 'green' : 'violet'}>{LINE_KIND[s.kind]}</Badge> },
           { key: 'c', title: 'Строк', align: 'right', render: s => s.count },
           { key: 's', title: 'Сумма', align: 'right', render: s => <span style={s.code === 'OPENING' ? { color: C.amber, fontWeight: 600 } : undefined}>{money(s.sum)}</span> },
-          { key: 'f', title: '', render: s => <Button small kind="ghost" onClick={() => { setKind(s.kind); setArt(s.code || '') }}>Показать</Button> },
+          { key: 'f', title: '', render: s => <Button small kind="ghost" onClick={() => { setKind(s.kind as LineKind); setArt(s.code || '') }}>Показать</Button> },
         ]} />
       </Card>
       <Card pad={false} title={`Строки остатков · ${filtered.length}`} actions={<Row gap={8}>
@@ -528,34 +520,33 @@ function OpeningTab({ lines, error, articles, isOwner, onRulesChanged }: { lines
         ]} />
         {filtered.length > shown.length && <div style={{ padding: 12, fontSize: 12, color: C.faint }}>Показаны первые {shown.length} строк — уточните фильтр.</div>}
       </Card>
-      <RulesCard articles={articles} isOwner={isOwner} onChanged={onRulesChanged} />
+      <RulesCard articles={articles} isOwner={isOwner} />
     </>
   )
 }
 
-function RulesCard({ articles, isOwner, onChanged }: { articles: Article[]; isOwner: boolean; onChanged: () => void }) {
-  const [rules, setRules] = useState<Rule[] | null>(null)
-  const [err, setErr] = useState<string | null>(null)
-  const [form, setForm] = useState<{ field: Rule['field']; pattern: string; article_code: string; priority: string; note: string } | null>(null)
-  async function load() {
-    const { data, error } = await supabase.from('onec_article_rules').select('*').order('priority').order('id')
-    if (error) { setErr(errText(error)); setRules([]) } else setRules((data || []) as Rule[])
-  }
-  useEffect(() => { load() }, [])
-  async function save() {
+// правила меняют разбивку остатков (а через неё — и сверку)
+const RULE_TABLES = ['onec_article_rules', 'rpc:onec_opening_lines', 'rpc:onec_reconcile']
+function RulesCard({ articles, isOwner }: { articles: Article[]; isOwner: boolean }) {
+  const rulesQ = useSb(['onec_article_rules'], () => sb(supabase.from('onec_article_rules').select('*').order('priority').order('id')))
+  const rules: Rule[] | null = rulesQ.error ? [] : rulesQ.data ?? null
+  const [localErr, setLocalErr] = useState<string | null>(null)
+  const [form, setForm] = useState<{ field: RuleField; pattern: string; article_code: string; priority: string; note: string } | null>(null)
+  const addA = useAction((f: NonNullable<typeof form>) => sb(supabase.from('onec_article_rules').insert({ field: f.field, pattern: f.pattern.trim(), article_code: f.article_code, priority: Number(f.priority) || 100, note: f.note || null })),
+    { invalidate: RULE_TABLES, onSuccess: () => setForm(null) })
+  const delA = useAction((id: number) => sb(supabase.from('onec_article_rules').delete().eq('id', id)), { invalidate: RULE_TABLES })
+  const actErr = addA.error || delA.error
+  const err = localErr || (actErr ? errText(actErr) : null) || (rulesQ.error ? errText(rulesQ.error) : null)
+  function save() {
     if (!form) return
-    setErr(null)
-    try { new RegExp(form.pattern, 'i') } catch { setErr('Шаблон — не регулярное выражение'); return }
-    const { error } = await supabase.from('onec_article_rules').insert({ field: form.field, pattern: form.pattern.trim(), article_code: form.article_code, priority: Number(form.priority) || 100, note: form.note || null })
-    if (error) { setErr(errText(error)); return }
-    setForm(null); await load(); onChanged()
+    setLocalErr(null); delA.reset()
+    try { new RegExp(form.pattern, 'i') } catch { setLocalErr('Шаблон — не регулярное выражение'); return }
+    addA.mutate(form)
   }
   async function remove(r: Rule) {
     if (!(await ask(`Удалить правило «${r.pattern}» → ${articles.find(a => a.code === r.article_code)?.name || r.article_code}?`, { ok: 'Удалить', danger: true }))) return
-    setErr(null)
-    const { error } = await supabase.from('onec_article_rules').delete().eq('id', r.id)
-    if (error) { setErr(errText(error)); return }
-    await load(); onChanged()
+    setLocalErr(null); addA.reset()
+    delA.mutate(r.id)
   }
   return (
     <Card pad={false} title="Правила разбивки по статьям" actions={isOwner && <Button small onClick={() => setForm({ field: 'item', pattern: '', article_code: articles[0]?.code || '', priority: '100', note: '' })}>Добавить правило</Button>}>
@@ -574,10 +565,10 @@ function RulesCard({ articles, isOwner, onChanged }: { articles: Article[]; isOw
       {form && (
         <Modal title="Новое правило разбивки" onClose={() => setForm(null)} footer={<>
           <Button onClick={() => setForm(null)}>Отмена</Button>
-          <Button kind="primary" disabled={!form.pattern.trim() || !form.article_code} onClick={save}>Сохранить</Button>
+          <Button kind="primary" disabled={!form.pattern.trim() || !form.article_code || addA.isPending} onClick={save}>Сохранить</Button>
         </>}>
           {err && <Notice tone="red">{err}</Notice>}
-          <Field label="Поле"><Select value={form.field} onChange={e => setForm({ ...form, field: e.target.value as Rule['field'] })}>
+          <Field label="Поле"><Select value={form.field} onChange={e => setForm({ ...form, field: e.target.value as RuleField })}>
             {Object.entries(RULE_FIELD).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</Select></Field>
           <Field label="Шаблон" hint="Например: охран|видеонаблюд"><Input value={form.pattern} onChange={e => setForm({ ...form, pattern: e.target.value })} /></Field>
           <Field label="Статья"><Select value={form.article_code} onChange={e => setForm({ ...form, article_code: e.target.value })}>
@@ -604,7 +595,8 @@ function ReconcileTab({ rows, error, date, articles, tenants, onDate }: {
 
   function act(r: Rec) {
     const t = tenants.find(x => x.id === r.tenant_id)
-    printAct({ id: r.tenant_id, full_name: t?.full_name || r.tenant_name, inn: t?.inn || r.inn }, yearStart, date, '', articles)
+    if (!r.tenant_id) return
+    printAct({ id: r.tenant_id, full_name: t?.full_name || r.tenant_name || '', inn: t?.inn || r.inn }, yearStart, date, '', articles)
   }
 
   const diffCell = (v: number) => <span style={{ color: Math.abs(n(v)) >= 0.005 ? C.red : C.faint, fontWeight: Math.abs(n(v)) >= 0.005 ? 600 : undefined }}>{Math.abs(n(v)) >= 0.005 ? signed(n(v)) : '0'}</span>
@@ -645,15 +637,22 @@ function ReconcileTab({ rows, error, date, articles, tenants, onDate }: {
 }
 
 // ── 5. Проведение ───────────────────────────────────────────────────────────
-function PostTab({ imp, lines, onDone }: { imp: Imp; lines: Line[] | null; onDone: () => Promise<void> }) {
+function PostTab({ imp, lines }: { imp: Imp; lines: Line[] | null }) {
   const [date, setDate] = useState(nextMonthStart())
   const [confirm, setConfirm] = useState(false)
   const [typed, setTyped] = useState('')
-  const [working, setWorking] = useState(false)
-  const [err, setErr] = useState<string | null>(null)
-  const [result, setResult] = useState<{ lines: number; skipped: any[] } | null>(null)
+  const [result, setResult] = useState<PostResult | null>(null)
   const [storno, setStorno] = useState(false)
   const [reason, setReason] = useState('')
+  const postA = useAction(async (d: string) => asPostResult(await sbRpc('onec_opening_post', { p_import: imp.id, p_date: d })),
+    { invalidate: POSTED, onSuccess: r => { setResult(r); setConfirm(false); setTyped('') } })
+  const stornoA = useAction((why: string) => sbRpc('onec_opening_storno', { p_import: imp.id, p_reason: why }), {
+    invalidate: POSTED,
+    onSuccess: k => { setStorno(false); setReason(''); setResult(null); notify(`Остатки отменены сторно: документов ${k}.`, 'green') },
+  })
+  const working = postA.isPending || stornoA.isPending
+  const errRaw = postA.error || stornoA.error
+  const err = errRaw ? errText(errRaw) : null
 
   const preview = useMemo(() => {
     const ls = lines || []
@@ -674,36 +673,24 @@ function PostTab({ imp, lines, onDone }: { imp: Imp; lines: Line[] | null; onDon
   }, [lines])
 
   const dateText = dateRu(date)
-  async function post() {
-    setWorking(true); setErr(null)
-    try {
-      const r = await rpc<{ lines: number; skipped: any[] }>('onec_opening_post', { p_import: imp.id, p_date: date })
-      setResult(r); setConfirm(false); setTyped(''); await onDone()
-    } catch (e) { setErr(errText(e)); setConfirm(false) }
-    setWorking(false)
-  }
-  async function doStorno() {
-    setWorking(true); setErr(null)
-    try { const k = await rpc<number>('onec_opening_storno', { p_import: imp.id, p_reason: reason.trim() }); setStorno(false); setReason(''); setResult(null); await onDone(); setErr(null); notify(`Остатки отменены сторно: документов ${k}.`, 'green') }
-    catch (e) { setErr(errText(e)); setStorno(false) }
-    setWorking(false)
-  }
+  function post() { stornoA.reset(); postA.mutate(date, { onError: () => setConfirm(false) }) }
+  function doStorno() { postA.reset(); stornoA.mutate(reason.trim(), { onError: () => setStorno(false) }) }
 
-  const skippedList = (s: any[]) => s?.length ? (
+  const skippedList = (s: Skipped[]) => s.length ? (
     <Table rows={s} rowKey={x => JSON.stringify(x) + s.indexOf(x)} dense cols={[
-      { key: 'c', title: 'Контрагент', render: (x: any) => x.cp }, { key: 'd', title: 'Документ', render: (x: any) => x.doc },
-      { key: 'a', title: 'Сумма', align: 'right', render: (x: any) => money(x.amount) }, { key: 'w', title: 'Почему', render: (x: any) => x.why },
+      { key: 'c', title: 'Контрагент', render: x => x.cp }, { key: 'd', title: 'Документ', render: x => x.doc },
+      { key: 'a', title: 'Сумма', align: 'right', render: x => money(x.amount) }, { key: 'w', title: 'Почему', render: x => x.why },
     ]} />
   ) : <Empty>Пропущенных строк нет</Empty>
 
   if (imp.status === 'posted') {
-    const pr = result || imp.post_result || {}
+    const pr = result || asPostResult(imp.post_result)
     return (
       <>
         {err && <Notice tone="red">{err}</Notice>}
-        <Notice tone="green">Остатки проведены на {dateRu(imp.transition_date)} ({dateTimeRu(imp.posted_at)}): строк {pr.lines ?? '—'}, пропущено {pr.skipped?.length ?? 0}.
+        <Notice tone="green">Остатки проведены на {dateRu(imp.transition_date)} ({dateTimeRu(imp.posted_at)}): строк {pr.lines ?? '—'}, пропущено {pr.skipped.length}.
           Проверьте вкладку «Сверка» на дату перехода.</Notice>
-        <Card pad={false} title="Пропущено при проведении">{skippedList(pr.skipped || [])}</Card>
+        <Card pad={false} title="Пропущено при проведении">{skippedList(pr.skipped)}</Card>
         <Card title="Отменить проведённые остатки">
           <div style={{ display: 'grid', gap: 12 }}>
             <div style={{ fontSize: 13 }}>Все начисления и оплаты этой загрузки будут отменены сторно (в истории останутся). После этого можно провести другую загрузку.</div>
@@ -729,7 +716,7 @@ function PostTab({ imp, lines, onDone }: { imp: Imp; lines: Line[] | null; onDon
   return (
     <>
       {err && <Notice tone="red">{err}</Notice>}
-      {result && <Notice tone="green">Проведено строк: {result.lines}. Пропущено: {result.skipped?.length || 0}.</Notice>}
+      {result && <Notice tone="green">Проведено строк: {result.lines}. Пропущено: {result.skipped.length}.</Notice>}
       <Row gap={12} align="end">
         <Field label="Дата перехода" hint="Обычно первое число месяца"><Input type="date" value={date} onChange={e => setDate(e.target.value)} style={{ width: 170 }} /></Field>
       </Row>

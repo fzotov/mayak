@@ -1,7 +1,8 @@
 // Журнал обращений арендатора: звонки, визиты, письма, заметки и события сделок (в том числе продлений).
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { Card, Row, Button, Badge, Field, Select, Textarea, Notice, Loading, Empty, Link, Sub, C } from './ui'
+import { sb, useSb, useAction } from '../lib/query'
+import { Card, Row, Button, Badge, Field, Select, Textarea, Notice, Loading, Empty, ErrorBox, Link, Sub, C } from './ui'
 
 export const EVENT_KINDS: Record<string, string> = {
   call: 'Звонок', visit: 'Визит', viewing: 'Показ', email: 'Письмо', message: 'Сообщение', meeting: 'Встреча', note: 'Заметка', stage: 'Этап', system: 'Система',
@@ -9,35 +10,32 @@ export const EVENT_KINDS: Record<string, string> = {
 const STAGES: Record<string, string> = { new: 'Новая', contacted: 'Связались', viewing: 'Показ', offer: 'Предложение', contract: 'Договор', won: 'Заселён', lost: 'Отказ' }
 
 export function TenantJournal({ tenantId }: { tenantId: string }) {
-  const [events, setEvents] = useState<any[] | null>(null)
-  const [deals, setDeals] = useState<any[]>([])
   const [kind, setKind] = useState('call')
   const [text, setText] = useState('')
-  const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
 
-  const load = async () => {
-    const [e, d] = await Promise.all([
-      supabase.from('deal_events').select('id, deal_id, kind, text, created_by_name, created_at').eq('tenant_id', tenantId).order('created_at', { ascending: false }).limit(200),
-      supabase.from('deals').select('id, number, kind, stage, next_step, next_step_at').eq('tenant_id', tenantId).order('created_at', { ascending: false }),
-    ])
-    if (e.error || d.error) setErr((e.error || d.error)!.message)
-    setEvents(e.data || []); setDeals(d.data || [])
-  }
-  useEffect(() => { load() }, [tenantId])
+  const eventsQ = useSb(['deal_events', 'tenant', tenantId], () => sb(supabase.from('deal_events').select('id, deal_id, kind, text, created_by_name, created_at')
+    .eq('tenant_id', tenantId).order('created_at', { ascending: false }).limit(200)))
+  const dealsQ = useSb(['deals', 'tenant', tenantId], () => sb(supabase.from('deals').select('id, number, kind, stage, next_step, next_step_at')
+    .eq('tenant_id', tenantId).order('created_at', { ascending: false })))
+  const addA = useAction((t: string) => sb(supabase.from('deal_events').insert({ tenant_id: tenantId, kind, text: t })), {
+    invalidate: ['deal_events'], onSuccess: () => setText(''),
+  })
+  const busy = addA.isPending
 
-  const add = async () => {
+  const add = () => {
     if (!text.trim()) { setErr('Опишите обращение'); return }
-    setBusy(true); setErr('')
-    const { error } = await supabase.from('deal_events').insert({ tenant_id: tenantId, kind, text: text.trim() })
-    setBusy(false)
-    if (error) { setErr(error.message); return }
-    setText(''); load()
+    setErr('')
+    addA.mutate(text.trim())
   }
 
-  if (!events) return <Loading />
+  const loadError = eventsQ.error?.message || dealsQ.error?.message
+  if (eventsQ.isPending) return <Loading />
+  const events = eventsQ.data || []
+  const deals = dealsQ.data || []
   return (
     <>
+      {loadError && <ErrorBox error={loadError} onRetry={() => { eventsQ.refetch(); dealsQ.refetch() }} />}
       {deals.length > 0 && (
         <Card title="Сделки">
           <div style={{ display: 'grid', gap: 8 }}>
@@ -58,7 +56,7 @@ export function TenantJournal({ tenantId }: { tenantId: string }) {
             </Select>
           </Field>
           <Field label="Что обсудили"><Textarea value={text} onChange={e => setText(e.target.value)} placeholder="Например: просит снизить ставку при продлении на 2 года" /></Field>
-          {err && <Notice tone="red">{err}</Notice>}
+          {(err || addA.error) && <Notice tone="red">{err || addA.error}</Notice>}
           <Row justify="flex-end"><Button kind="primary" onClick={add} disabled={busy}>{busy ? 'Сохранение…' : 'Добавить в журнал'}</Button></Row>
         </div>
       </Card>

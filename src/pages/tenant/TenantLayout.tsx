@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
+import { useSb } from '../../lib/query'
+import { useTenant } from './useTenant'
 
 interface TenantLayoutProps {
   children: React.ReactNode
@@ -123,33 +125,27 @@ function initials(email: string) {
 export default function TenantLayout({ children, activePage, onNavigate }: TenantLayoutProps) {
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768)
   const [drawerOpen, setDrawerOpen] = useState(false)
-  const [unreadCount, setUnreadCount] = useState(0)
-  const [hasDebt, setHasDebt] = useState(false)
-  const [tenantName, setTenantName] = useState('')
-  const [unitNumber, setUnitNumber] = useState('')
 
   const session = getSession()
   const email = session?.email ?? ''
   const tenantId = session?.tenantId
+  // те же запросы, что на экранах кабинета: «Прочитать все» и новые данные сразу обновляют шапку
+  const { tenant, balance } = useTenant(tenantId ?? '', !!tenantId)
+  const unreadQ = useSb(['tenant_notifications', tenantId, 'unread'], async () => {
+    const { count, error } = await supabase.from('tenant_notifications').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId ?? '').eq('is_read', false)
+    if (error) throw new Error(error.message)
+    return count ?? 0
+  }, { enabled: !!tenantId })
+  const unreadCount = unreadQ.data ?? 0
+  const hasDebt = !!balance && balance.debt - balance.advance > 0
+  const tenantName = tenant?.full_name ?? ''
+  const unitNumber = tenant?.unit_number ? `Помещение № ${tenant.unit_number}` : ''
 
   useEffect(() => {
     const handler = () => setIsMobile(window.innerWidth <= 768)
     window.addEventListener('resize', handler)
     return () => window.removeEventListener('resize', handler)
   }, [])
-
-  useEffect(() => {
-    if (!tenantId) return
-    supabase.from('tenant_notifications').select('id', { count: 'exact' })
-      .eq('tenant_id', tenantId).eq('is_read', false)
-      .then(({ count }) => setUnreadCount(count ?? 0))
-
-    supabase.from('tenant_balances').select('debt, advance').eq('tenant_id', tenantId).maybeSingle()
-      .then(({ data }) => setHasDebt(!!data && Number(data.debt) - Number(data.advance) > 0))
-
-    supabase.from('tenants').select('full_name, unit_number').eq('id', tenantId).maybeSingle()
-      .then(({ data }) => { setTenantName(data?.full_name ?? ''); setUnitNumber(data?.unit_number ? `Помещение № ${data.unit_number}` : '') })
-  }, [tenantId])
 
   function logout() {
     onNavigate('logout')

@@ -1,6 +1,8 @@
 import { apiFetch } from '../lib/api'
 import { useState, useRef } from 'react'
 import { supabase } from '../lib/supabase'
+import { useAction, sb } from '../lib/query'
+import type { TablesInsert } from '../lib/database.types'
 import { Page, Card, Row, Button, Badge, Table, Input, Notice, Muted, C } from '../components/ui'
 
 interface TenantRow {
@@ -20,13 +22,14 @@ interface TenantRow {
   _exists?: boolean
 }
 
+/** Ответ /api/import-tenants. */
+interface ImportResponse { ok: boolean; error?: string; raw?: string; tenants?: TenantRow[] }
+
 const TYPE_LABEL: Record<string, string> = { COMPANY: 'Юрлицо', IP: 'ИП', INDIVIDUAL: 'Физлицо' }
-const FMT = (n: number) => Number(n).toLocaleString('ru-RU', { minimumFractionDigits: 0 })
 
 export default function ImportTenantsPage({ onDone }: { onDone?: () => void }) {
   const [step, setStep] = useState<'upload' | 'preview' | 'done'>('upload')
   const [uploading, setUploading] = useState(false)
-  const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [rows, setRows] = useState<TenantRow[]>([])
   const [savedCount, setSavedCount] = useState(0)
@@ -48,18 +51,19 @@ export default function ImportTenantsPage({ onDone }: { onDone?: () => void }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ fileBase64: b64, mimeType: file.type, fileName: file.name }),
       })
-      const data = await resp.json()
+      const data: ImportResponse = await resp.json()
       if (!data.ok) {
         setError(data.error + (data.raw ? '\n\n' + data.raw : ''))
         return
       }
+      const tenants = data.tenants || []
 
-      // Check which INNs already exist
-      const inns = (data.tenants as TenantRow[]).map(t => t.inn).filter(Boolean)
-      const { data: existing } = await supabase.from('tenants').select('inn').in('inn', inns as string[])
-      const existingInns = new Set((existing || []).map((t: any) => t.inn))
+      // Check which INNs already exist (ошибка проверки — стоп, иначе все строки сочлись бы новыми и задвоились)
+      const inns = tenants.map(t => t.inn).filter((v): v is string => !!v)
+      const existing = await sb(supabase.from('tenants').select('inn').in('inn', inns))
+      const existingInns = new Set(existing.map(t => t.inn))
 
-      const parsed: TenantRow[] = (data.tenants as TenantRow[]).map(t => ({
+      const parsed: TenantRow[] = tenants.map(t => ({
         ...t,
         _selected: !existingInns.has(t.inn || ''),
         _exists: existingInns.has(t.inn || ''),
@@ -68,7 +72,7 @@ export default function ImportTenantsPage({ onDone }: { onDone?: () => void }) {
       setRows(parsed)
       setStep('preview')
     } catch (e) {
-      setError(String(e))
+      setError(e instanceof Error ? e.message : String(e))
     } finally {
       setUploading(false)
     }
@@ -87,22 +91,19 @@ export default function ImportTenantsPage({ onDone }: { onDone?: () => void }) {
     setRows(r => r.map((row, idx) => idx === i ? { ...row, [k]: v } : row))
   }
 
-  async function save() {
+  const insert = useAction((toInsert: TablesInsert<'tenants'>[]) => sb(supabase.from('tenants').insert(toInsert)),
+    { invalidate: ['tenants', 'rpc:tenant_saldo'], onSuccess: (_r, toInsert) => { setSavedCount(toInsert.length); setStep('done') } })
+  const saving = insert.isPending
+
+  function save() {
     const toInsert = rows.filter(r => r._selected && !r._exists).map(({ _selected, _exists, ...r }) => ({
       ...r,
       status: 'ACTIVE',
       monthly_rent: r.monthly_rent ? Number(r.monthly_rent) : null,
     }))
     if (toInsert.length === 0) { setError('Нет выбранных записей'); return }
-
-    setSaving(true)
     setError('')
-    const { error: err } = await supabase.from('tenants').insert(toInsert)
-    if (err) { setError(err.message); setSaving(false); return }
-
-    setSavedCount(toInsert.length)
-    setStep('done')
-    setSaving(false)
+    insert.mutate(toInsert, { onError: e => setError(e.message) })
   }
 
   // ─── Upload step ───────────────────────────────────────────────────────────

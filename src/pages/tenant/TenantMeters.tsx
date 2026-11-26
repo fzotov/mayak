@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
+import { sb, useSb, useInvalidate } from '../../lib/query'
 import { apiFetch } from '../../lib/api'
 import { compressImage, blobToBase64 } from '../../lib/photo'
 import { T, Card, Title, Button, Loading, Empty, Note, CameraIcon, input, label, date, page } from './ui'
@@ -11,9 +12,18 @@ const TYPES: Record<string, { name: string; unit: string }> = {
 
 /** Фото счётчика: сжатый снимок, превью и что распознал сервер. */
 type Shot = { base64: string; preview: string; recognized: number | null; busy: boolean; error: string }
+/** Ответ /api/tenant-recognize-meter и /api/tenant-meter-reading. */
+type ApiReply = { ok?: boolean; error?: string; reading?: unknown; consumption?: number | string }
+
+async function loadMeters(tenantId: string) {
+  const data = await sb(supabase.from('meters').select('id,type,number,serial,location,meter_readings(reading,reading_date,created_at)').eq('tenant_id', tenantId))
+  return data.map(m => ({ ...m, readings: [...(m.meter_readings || [])].sort((a, b) => String(b.created_at).localeCompare(String(a.created_at))) }))
+}
+type MeterView = Awaited<ReturnType<typeof loadMeters>>[number]
 
 export default function TenantMeters({ tenantId }: { tenantId: string }) {
-  const [meters, setMeters] = useState<any[] | null>(null)
+  const q = useSb(['meters', tenantId, 'readings'], () => loadMeters(tenantId))
+  const invalidate = useInvalidate()
   const [values, setValues] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState<string | null>(null)
   const [msg, setMsg] = useState<Record<string, { ok: boolean; text: string }>>({})
@@ -23,16 +33,11 @@ export default function TenantMeters({ tenantId }: { tenantId: string }) {
   const shotsRef = useRef(shots); shotsRef.current = shots
   useEffect(() => () => Object.values(shotsRef.current).forEach(x => x && URL.revokeObjectURL(x.preview)), [])
 
-  const load = async () => {
-    const { data } = await supabase.from('meters').select('id,type,number,serial,location,meter_readings(reading,reading_date,created_at)').eq('tenant_id', tenantId)
-    setMeters((data || []).map((m: any) => ({ ...m, readings: (m.meter_readings || []).sort((a: any, b: any) => String(b.created_at).localeCompare(String(a.created_at))) })))
-  }
-  useEffect(() => { load() }, [tenantId])
 
   const patchShot = (id: string, p: Partial<Shot>) => setShots(prev => (prev[id] ? { ...prev, [id]: { ...prev[id]!, ...p } } : prev))
   const dropShot = (id: string) => setShots(prev => { if (prev[id]) URL.revokeObjectURL(prev[id]!.preview); return { ...prev, [id]: undefined } })
 
-  const takePhoto = async (m: any, file: File | undefined) => {
+  const takePhoto = async (m: MeterView, file: File | undefined) => {
     if (fileRefs.current[m.id]) fileRefs.current[m.id]!.value = ''
     if (!file) return
     setMsg(prev => { const n = { ...prev }; delete n[m.id]; return n })
@@ -41,43 +46,46 @@ export default function TenantMeters({ tenantId }: { tenantId: string }) {
       setMsg(prev => ({ ...prev, [m.id]: { ok: false, text: 'Не удалось прочитать фото, попробуйте ещё раз' } })); return
     }
     setShots(prev => { if (prev[m.id]) URL.revokeObjectURL(prev[m.id]!.preview); return { ...prev, [m.id]: { base64, preview: URL.createObjectURL(blob), recognized: null, busy: true, error: '' } } })
-    let d: any
+    let d: ApiReply
     try {
       const r = await apiFetch('/api/tenant-recognize-meter', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ meterId: m.id, imageBase64: base64 }) })
       d = await r.json().catch(() => ({ ok: false }))
     } catch { d = { ok: false } }
-    if (d.ok && typeof d.reading === 'number') {
-      patchShot(m.id, { busy: false, recognized: d.reading })
-      setValues(prev => ({ ...prev, [m.id]: String(d.reading).replace('.', ',') }))
+    const reading = d.reading
+    if (d.ok && typeof reading === 'number') {
+      patchShot(m.id, { busy: false, recognized: reading })
+      setValues(prev => ({ ...prev, [m.id]: String(reading).replace('.', ',') }))
     } else {
       patchShot(m.id, { busy: false, error: d.ok ? 'Показание на фото не найдено, введите его вручную. Фото будет приложено.' : (d.error || 'Не удалось распознать, введите показание вручную. Фото будет приложено.') })
     }
   }
 
-  const submit = async (m: any) => {
+  const submit = async (m: MeterView) => {
     const reading = parseFloat((values[m.id] || '').replace(/\s/g, '').replace(',', '.'))
     if (!Number.isFinite(reading)) { setMsg({ ...msg, [m.id]: { ok: false, text: 'Введите показание числом' } }); return }
     const shot = shots[m.id]
     setBusy(m.id)
     const body: Record<string, unknown> = { meterId: m.id, reading }
     if (shot) { body.photo = shot.base64; body.recognized = shot.recognized !== null && shot.recognized === reading }
-    let d: any
+    let d: ApiReply
     try {
       const r = await apiFetch('/api/tenant-meter-reading', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       d = await r.json().catch(() => ({ ok: false, error: 'Сервер не ответил' }))
     } catch { d = { ok: false, error: 'Нет связи с сервером, попробуйте ещё раз' } }
     setBusy(null)
-    if (d.ok) { setMsg(prev => ({ ...prev, [m.id]: { ok: true, text: `Показание принято. Расход: ${d.consumption}` } })); setValues(prev => ({ ...prev, [m.id]: '' })); dropShot(m.id); load() }
+    if (d.ok) { setMsg(prev => ({ ...prev, [m.id]: { ok: true, text: `Показание принято. Расход: ${d.consumption}` } })); setValues(prev => ({ ...prev, [m.id]: '' })); dropShot(m.id); invalidate('meters', 'meter_readings') }
     else setMsg(prev => ({ ...prev, [m.id]: { ok: false, text: d.error || 'Не удалось передать показание' } }))
   }
 
-  if (!meters) return <Loading />
+  if (q.isPending) return <Loading />
+  if (q.error) return <div style={page}><Card><Empty>Не удалось загрузить счётчики. Обновите страницу.</Empty></Card></div>
+  const meters = q.data
   if (!meters.length) return <div style={page}><Card><Empty>За вашим помещением счётчики не закреплены.<br />Если это ошибка, сообщите в администрацию.</Empty></Card></div>
 
   return (
     <div style={page}>
       {meters.map(m => {
-        const t = TYPES[m.type] || { name: 'Счётчик', unit: '' }
+        const t = (m.type && TYPES[m.type]) || { name: 'Счётчик', unit: '' }
         const last = m.readings[0]
         const shot = shots[m.id]
         return (

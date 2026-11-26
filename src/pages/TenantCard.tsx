@@ -1,12 +1,14 @@
-import { apiFetch, openStoredFile } from '../lib/api'
+import { openStoredFile } from '../lib/api'
 import { go } from '../lib/nav'
 import { PAY_STATUS } from '../lib/accounting'
 import { TenantJournal } from '../components/TenantJournal'
 import { Page, Card, Row, Button, Badge, Field, Input, Select, Tabs, Table, Modal, Notice, Loading, Empty, ErrorBox, Muted, Sub, money, dateRu, telHref, useNarrow, C } from '../components/ui'
 import { Icon } from '../components/icons'
 import { TenantPortalAccess } from '../components/TenantPortalAccess'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
+import { useSb, useAction, sb } from '../lib/query'
+import type { Tables, TablesUpdate } from '../lib/database.types'
 import { ask } from '../components/Dialogs'
 
 // Tabs: Онбординг | Общие | Помещения | Счётчики | Счета | Документы | Договоры
@@ -72,6 +74,44 @@ const emptyForm = {
   contactName: '', contactPhone: '', contactEmail: '',
   contractNumber: '', contractStartDate: '', contractEndDate: '',
   rent: 0, onboardingStatus: 'not_started',
+}
+
+type PremiseRent = Tables<'premise_rents'>
+type Premise = Tables<'tenant_premises'> & { rents: PremiseRent[] }
+/** Документ из вкладки «Договоры» в окне правки. */
+type ContractDraft = { id?: string; type: string; number: string; date: string; startDate: string; endDate: string; notes: string }
+const byValidFromDesc = (a: PremiseRent, b: PremiseRent) => (b.valid_from || '').localeCompare(a.valid_from || '')
+
+function toForm(data: Tables<'tenants'>): typeof emptyForm {
+  return {
+    fullName: data.full_name || '',
+    type: data.type || 'COMPANY',
+    inn: data.inn || '',
+    kpp: data.kpp || '',
+    ogrn: data.ogrn || '',
+    email: data.email || '',
+    phone: data.phone || '',
+    legalAddress: data.legal_address || '',
+    bankAccount: data.bank_account || '',
+    correspondentAccount: data.correspondent_account || '',
+    bik: data.bik || '',
+    bank: data.bank_name || '',
+    directorName: data.director_name || '',
+    directorPosition: data.director_position || 'Директор',
+    directorBasis: data.director_basis || 'Устав',
+    passportSeries: data.passport_series || '',
+    passportNumber: data.passport_number || '',
+    passportIssuedBy: data.passport_issued_by || '',
+    passportIssuedDate: data.passport_issued_date || '',
+    contactName: data.contact_name || '',
+    contactPhone: data.contact_phone || '',
+    contactEmail: data.contact_email || '',
+    contractNumber: data.contract_number || '',
+    contractStartDate: data.contract_start_date || '',
+    contractEndDate: data.contract_end_date || '',
+    rent: data.monthly_rent || 0,
+    onboardingStatus: data.onboarding_status || 'not_started',
+  }
 }
 
 function Value({ children }: { children: React.ReactNode }) {
@@ -152,11 +192,11 @@ function printOPD(tenant: typeof emptyForm) {
   if (w) { w.document.write(html); w.document.close(); setTimeout(() => w.print(), 400) }
 }
 
-function printContract(type: string, tenant: typeof emptyForm, contractNumber: string, startDate: string, endDate: string, premises: any[]) {
+function printContract(type: string, tenant: typeof emptyForm, contractNumber: string, startDate: string, endDate: string, premises: Premise[]) {
   const typeLabel = CONTRACT_TYPES.find(c => c.key === type)?.label || type
   const premisesText = premises.map(p => `офис ${p.unit_number} (${p.area_actual || '—'} м²)`).join(', ')
   const totalRent = premises.reduce((sum, p) => {
-    const active = p.rents?.find((r: any) => !r.valid_to || r.valid_to >= new Date().toISOString().slice(0,10))
+    const active = p.rents.find(r => !r.valid_to || r.valid_to >= new Date().toISOString().slice(0,10))
     return sum + (active?.monthly_rent || 0)
   }, 0)
 
@@ -228,173 +268,102 @@ function printContract(type: string, tenant: typeof emptyForm, contractNumber: s
   if (w) { w.document.write(html); w.document.close(); setTimeout(() => w.print(), 500) }
 }
 
-export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId?: string | null; onBack: () => void; onCreateInvoice?: () => void }) {
+export function TenantCardPage({ tenantId, onBack }: { tenantId?: string | null; onBack: () => void; onCreateInvoice?: () => void }) {
   const [tab, setTab] = useState(0)
   const narrow = useNarrow()
   const [editing, setEditing] = useState(false)
   const [showSuccess, setShowSuccess] = useState(false)
   const [form, setForm] = useState(emptyForm)
-  const [saved, setSaved] = useState(emptyForm)
-  const [dbId, setDbId] = useState<string | null>(null)
-  const [loadingTenant, setLoadingTenant] = useState(!!tenantId)
-  const [rawData, setRawData] = useState<any>(null)
-  const [loadError, setLoadError] = useState('')
   const [saveError, setSaveError] = useState('')
   const [actionError, setActionError] = useState('')
   const [meterError, setMeterError] = useState('')
 
   // Premises
-  type PremiseRent = { id: string; monthly_rent: number | null; cleaning_fee: number | null; valid_from: string | null; valid_to: string | null; notes: string | null }
-  type Premise = { id: string; unit_number: string; area_actual: number | null; area_bti: number | null; floor: number | null; rents: PremiseRent[] }
-  const [premisesList, setPremisesList] = useState<Premise[]>([])
-  const [premisesLoaded, setPremisesLoaded] = useState(false)
   const [premiseModal, setPremiseModal] = useState<Partial<Premise> | null>(null)
   const [rentModal, setRentModal] = useState<{ premiseId: string; rent: Partial<PremiseRent> } | null>(null)
-  const [savingPremise, setSavingPremise] = useState(false)
-
-  // Documents
-  const [documents, setDocuments] = useState<any[]>([])
-  const [docsLoaded, setDocsLoaded] = useState(false)
-  const [uploadingDoc, setUploadingDoc] = useState<string | null>(null)
 
   // Contracts
-  const [contracts, setContracts] = useState<any[]>([])
-  const [contractsLoaded, setContractsLoaded] = useState(false)
-  const [contractModal, setContractModal] = useState<any | null>(null)
-  const [savingContract, setSavingContract] = useState(false)
+  const [contractModal, setContractModal] = useState<ContractDraft | null>(null)
 
-  // Invoice
-  const [showInvoiceForm, setShowInvoiceForm] = useState(false)
-  const [invoiceMonth, setInvoiceMonth] = useState(new Date().getMonth() + 1)
-  const [invoiceYear, setInvoiceYear] = useState(new Date().getFullYear())
-  const [creating, setCreating] = useState(false)
-  const [invoiceCreated, setInvoiceCreated] = useState(false)
-  const MONTHS = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь']
-  const [meters, setMeters] = useState<any[]>([])
-  const [metersLoaded, setMetersLoaded] = useState(false)
   const [meterReadings, setMeterReadings] = useState<Record<string, string>>({})
-  const [savingMeter, setSavingMeter] = useState<string | null>(null)
-  const [tenantInvoices, setTenantInvoices] = useState<any[]>([])
-  const [invoicesLoaded, setInvoicesLoaded] = useState(false)
 
-  useEffect(() => {
-    if (!tenantId) return
-    setLoadingTenant(true)
-    Promise.resolve(supabase.from('tenants').select('*').eq('id', tenantId).single())
-      .then(({ data, error }) => {
-        if (error || !data) { setLoadError(error ? 'Не удалось загрузить арендатора: ' + error.message : 'Арендатор не найден'); return }
-        setRawData(data)
-        const mapped = {
-          fullName: data.full_name || '',
-          type: data.type || 'COMPANY',
-          inn: data.inn || '',
-          kpp: data.kpp || '',
-          ogrn: data.ogrn || '',
-          email: data.email || '',
-          phone: data.phone || '',
-          legalAddress: data.legal_address || '',
-          bankAccount: data.bank_account || '',
-          correspondentAccount: data.correspondent_account || '',
-          bik: data.bik || '',
-          bank: data.bank_name || '',
-          directorName: data.director_name || '',
-          directorPosition: data.director_position || 'Директор',
-          directorBasis: data.director_basis || 'Устав',
-          passportSeries: data.passport_series || '',
-          passportNumber: data.passport_number || '',
-          passportIssuedBy: data.passport_issued_by || '',
-          passportIssuedDate: data.passport_issued_date || '',
-          contactName: data.contact_name || '',
-          contactPhone: data.contact_phone || '',
-          contactEmail: data.contact_email || '',
-          contractNumber: data.contract_number || '',
-          contractStartDate: data.contract_start_date || '',
-          contractEndDate: data.contract_end_date || '',
-          rent: data.monthly_rent || 0,
-          onboardingStatus: data.onboarding_status || 'not_started',
-        }
-        setForm(mapped)
-        setSaved(mapped)
-        setDbId(tenantId)
-        // Load premises
-        supabase.from('tenant_premises').select('*, premise_rents(*)').eq('tenant_id', tenantId).order('unit_number')
-          .then(({ data: pd }) => {
-            setPremisesList((pd || []).map((p: any) => ({ ...p, rents: (p.premise_rents || []).sort((a: any, b: any) => (b.valid_from || '').localeCompare(a.valid_from || '')) })))
-            setPremisesLoaded(true)
-          })
-        // Load documents
-        Promise.resolve(supabase.from('tenant_documents').select('*').eq('tenant_id', tenantId).order('uploaded_at', { ascending: false }))
-          .then(({ data: docs }) => { setDocuments(docs || []); setDocsLoaded(true) })
-          .catch(() => { setDocuments([]); setDocsLoaded(true) })
-        // Load contracts
-        Promise.resolve(supabase.from('tenant_contracts').select('*').eq('tenant_id', tenantId).order('created_at', { ascending: false }))
-          .then(({ data: cts }) => { setContracts(cts || []); setContractsLoaded(true) })
-          .catch(() => { setContracts([]); setContractsLoaded(true) })
-        // Load invoices
-        Promise.resolve(supabase.from('v_invoice_state').select('id,number,period,total,open_amount,pay_status').eq('tenant_id', tenantId).order('date', { ascending: false }))
-          .then(({ data: invs }) => { setTenantInvoices(invs || []); setInvoicesLoaded(true) })
-          .catch(() => { setTenantInvoices([]); setInvoicesLoaded(true) })
-        // Load meters via premises units
-        Promise.resolve(supabase.from('tenant_premises').select('unit_number').eq('tenant_id', tenantId))
-          .then(async ({ data: prems }) => {
-            const unitNums = (prems || []).map((p: any) => p.unit_number).filter(Boolean)
-            if (!unitNums.length) { setMeters([]); setMetersLoaded(true); return }
-            const { data: units } = await supabase.from('units').select('id').in('number', unitNums)
-            const unitIds = (units || []).map((u: any) => u.id)
-            if (!unitIds.length) { setMeters([]); setMetersLoaded(true); return }
-            const { data: ms } = await supabase.from('meters').select('id,number,serial,type,tariff,heat_tariff,location,meter_readings(period,curr_value,created_at)').in('unit_id', unitIds)
-            setMeters(ms || [])
-            setMetersLoaded(true)
-          })
-          .catch(() => { setMeters([]); setMetersLoaded(true) })
-      }).finally(() => setLoadingTenant(false))
-  }, [tenantId])
+  // ─── Загрузка ───
+  const id = tenantId ?? ''
+  const on = { enabled: !!tenantId }
+  const tenantQ = useSb(['tenants', id], () => sb(supabase.from('tenants').select('*').eq('id', id).single()), on)
+  const premisesQ = useSb(['tenant_premises', id], async (): Promise<Premise[]> => {
+    const rows = await sb(supabase.from('tenant_premises').select('*, premise_rents(*)').eq('tenant_id', id).order('unit_number'))
+    return rows.map(({ premise_rents, ...p }) => ({ ...p, rents: [...premise_rents].sort(byValidFromDesc) }))
+  }, on)
+  const docsQ = useSb(['tenant_documents', id], () => sb(supabase.from('tenant_documents').select('*').eq('tenant_id', id).order('uploaded_at', { ascending: false })), on)
+  const contractsQ = useSb(['tenant_contracts', id], () => sb(supabase.from('tenant_contracts').select('*').eq('tenant_id', id).order('created_at', { ascending: false })), on)
+  const invoicesQ = useSb(['v_invoice_state', id], () => sb(supabase.from('v_invoice_state').select('id,number,period,total,open_amount,pay_status').eq('tenant_id', id).order('date', { ascending: false })), on)
+  // Счётчики — через помещения арендатора: номера офисов → помещения → приборы с показаниями.
+  const metersQ = useSb(['meters', id], async () => {
+    const prems = await sb(supabase.from('tenant_premises').select('unit_number').eq('tenant_id', id))
+    const unitNums = prems.map(p => p.unit_number).filter(Boolean)
+    if (!unitNums.length) return []
+    const units = await sb(supabase.from('units').select('id').in('number', unitNums))
+    const unitIds = units.map(u => u.id)
+    if (!unitIds.length) return []
+    return sb(supabase.from('meters').select('id,number,serial,type,tariff,heat_tariff,location,meter_readings(period,curr_value,created_at)').in('unit_id', unitIds))
+  }, on)
 
-  const f = (k: keyof typeof form, val?: string) => {
-    if (val !== undefined) return setForm(p => ({ ...p, [k]: val }))
-    return (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm(p => ({ ...p, [k]: e.target.value }))
-  }
+  const premisesList = premisesQ.data ?? []
+  const documents = docsQ.data ?? []
+  const contracts = contractsQ.data ?? []
+  const dbId = tenantQ.data ? id : null
+  const saved = useMemo(() => tenantQ.data ? toForm(tenantQ.data) : emptyForm, [tenantQ.data])
+  // Вне редактирования форма повторяет сохранённые данные; во время правки — своя.
+  useEffect(() => { if (!editing) setForm(saved) }, [saved]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleSave = async () => {
-    if (!dbId) return
-    const update: any = {
-      full_name: form.fullName,
-      type: form.type,
-      inn: form.inn || null, kpp: form.kpp || null, ogrn: form.ogrn || null,
-      email: form.email || null, phone: form.phone || null,
-      legal_address: form.legalAddress || null,
-      bank_account: form.bankAccount || null, bik: form.bik || null, bank_name: form.bank || null,
-      monthly_rent: form.rent || null,
-      // New fields — saved only if columns exist (Supabase ignores unknown cols gracefully)
-      correspondent_account: form.correspondentAccount || null,
-      director_name: form.directorName || null,
-      director_position: form.directorPosition || null,
-      director_basis: form.directorBasis || null,
-      passport_series: form.passportSeries || null,
-      passport_number: form.passportNumber || null,
-      passport_issued_by: form.passportIssuedBy || null,
-      passport_issued_date: form.passportIssuedDate || null,
-      contact_name: form.contactName || null,
-      contact_phone: form.contactPhone || null,
-      contact_email: form.contactEmail || null,
-      contract_number: form.contractNumber || null,
-      contract_start_date: form.contractStartDate || null,
-      contract_end_date: form.contractEndDate || null,
+  const f = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm(p => ({ ...p, [k]: e.target.value }))
+
+  // ─── Запись ───
+  const saveTenant = useAction((fm: typeof emptyForm) => {
+    const update: TablesUpdate<'tenants'> = {
+      full_name: fm.fullName,
+      type: fm.type,
+      inn: fm.inn || null, kpp: fm.kpp || null, ogrn: fm.ogrn || null,
+      email: fm.email || null, phone: fm.phone || null,
+      legal_address: fm.legalAddress || null,
+      bank_account: fm.bankAccount || null, bik: fm.bik || null, bank_name: fm.bank || null,
+      monthly_rent: fm.rent || null,
+      correspondent_account: fm.correspondentAccount || null,
+      director_name: fm.directorName || null,
+      director_position: fm.directorPosition || null,
+      director_basis: fm.directorBasis || null,
+      passport_series: fm.passportSeries || null,
+      passport_number: fm.passportNumber || null,
+      passport_issued_by: fm.passportIssuedBy || null,
+      passport_issued_date: fm.passportIssuedDate || null,
+      contact_name: fm.contactName || null,
+      contact_phone: fm.contactPhone || null,
+      contact_email: fm.contactEmail || null,
+      contract_number: fm.contractNumber || null,
+      contract_start_date: fm.contractStartDate || null,
+      contract_end_date: fm.contractEndDate || null,
     }
+    return sb(supabase.from('tenants').update(update).eq('id', id))
+  }, { invalidate: ['tenants', 'rpc:tenant_saldo', 'v_invoice_state'] })
+  const handleSave = () => {
+    if (!dbId) return
     setSaveError('')
-    const { error } = await supabase.from('tenants').update(update).eq('id', dbId)
-    if (error) { setSaveError('Не удалось сохранить: ' + error.message); return }
-    setSaved(form)
-    setEditing(false)
-    setShowSuccess(true)
-    setTimeout(() => setShowSuccess(false), 3000)
+    saveTenant.mutate(form, {
+      onSuccess: () => {
+        setEditing(false)
+        setShowSuccess(true)
+        setTimeout(() => setShowSuccess(false), 3000)
+      },
+      onError: e => setSaveError('Не удалось сохранить: ' + e.message),
+    })
   }
   const handleCancel = () => { setForm(saved); setEditing(false); setSaveError('') }
 
   // Onboarding step checks — зависят от типа арендатора
   const docTypes = getDocTypes(saved.type)
   const requiredDocKeys = docTypes.filter(d => d.required).map(d => d.key)
-  const uploadedDocKeys = new Set(documents.map((d: any) => d.doc_type))
+  const uploadedDocKeys = new Set(documents.map(d => d.doc_type))
   const allRequiredDocsUploaded = requiredDocKeys.every(k => uploadedDocKeys.has(k))
   const uploadedRequiredCount = requiredDocKeys.filter(k => uploadedDocKeys.has(k)).length
 
@@ -454,63 +423,90 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
   ]
   const stepsComplete = onboardingSteps.filter(s => s.done).length
 
-  async function updateOnboardingStatus(status: string) {
+  const fail = (e: Error) => setActionError(e.message)
+
+  const onboarding = useAction((status: string) => sb(supabase.from('tenants').update({ onboarding_status: status }).eq('id', id)), { invalidate: ['tenants'] })
+  function updateOnboardingStatus(status: string) {
     if (!dbId) return
-    const { error } = await supabase.from('tenants').update({ onboarding_status: status }).eq('id', dbId)
-    if (error) { setActionError(error.message); return }
-    setSaved(p => ({ ...p, onboardingStatus: status }))
-    setForm(p => ({ ...p, onboardingStatus: status }))
+    onboarding.mutate(status, { onError: fail })
   }
 
-  async function saveContract() {
+  const writeContract = useAction(async (m: ContractDraft) => {
+    const body = { tenant_id: id, contract_type: m.type, contract_number: m.number, signed_date: m.date || null, valid_from: m.startDate || null, valid_to: m.endDate || null, notes: m.notes || null }
+    if (m.id) await sb(supabase.from('tenant_contracts').update(body).eq('id', m.id))
+    else await sb(supabase.from('tenant_contracts').insert(body))
+  }, { invalidate: ['tenant_contracts'] })
+  const savingContract = writeContract.isPending
+  function saveContract() {
     if (!contractModal || !dbId) return
-    setSavingContract(true); setActionError('')
-    const body = { tenant_id: dbId, contract_type: contractModal.type, contract_number: contractModal.number, signed_date: contractModal.date || null, valid_from: contractModal.startDate || null, valid_to: contractModal.endDate || null, notes: contractModal.notes || null }
-    if (contractModal.id) {
-      const { error } = await supabase.from('tenant_contracts').update(body).eq('id', contractModal.id)
-      if (error) { setActionError(error.message); setSavingContract(false); return }
-      setContracts(cs => cs.map(c => c.id === contractModal.id ? { ...c, ...body } : c))
-    } else {
-      const { data, error } = await supabase.from('tenant_contracts').insert(body).select('*').single()
-      if (error) { setActionError(error.message); setSavingContract(false); return }
-      if (data) setContracts(cs => [data, ...cs])
-    }
-    setContractModal(null)
-    setSavingContract(false)
+    setActionError('')
+    writeContract.mutate(contractModal, { onSuccess: () => setContractModal(null), onError: fail })
   }
 
-  async function deleteContract(id: string) {
+  const removeContract = useAction((cid: string) => sb(supabase.from('tenant_contracts').delete().eq('id', cid)), { invalidate: ['tenant_contracts'] })
+  async function deleteContract(cid: string) {
     if (!(await ask('Удалить документ?', { ok: 'Удалить', danger: true }))) return
-    const { error } = await supabase.from('tenant_contracts').delete().eq('id', id)
-    if (error) { setActionError(error.message); return }
-    setContracts(cs => cs.filter(c => c.id !== id))
+    removeContract.mutate(cid, { onError: fail })
   }
 
-  async function handleDocUpload(docType: string, file: File) {
-    if (!dbId) return
-    setUploadingDoc(docType)
+  const uploadDoc = useAction(async ({ docType, file }: { docType: string; file: File }) => {
     // Try Supabase Storage upload; fallback to metadata only
-    const path = `tenant-docs/${dbId}/${docType}/${file.name}`
+    const path = `tenant-docs/${id}/${docType}/${file.name}`
     let fileUrl = ''
     const { data: uploaded } = await supabase.storage.from('tenant-documents').upload(path, file, { upsert: true }).catch(() => ({ data: null }))
     if (uploaded) {
       const { data: pub } = supabase.storage.from('tenant-documents').getPublicUrl(path)
       fileUrl = pub?.publicUrl || ''
     }
-    const docBody = { tenant_id: dbId, doc_type: docType, file_name: file.name, file_url: fileUrl, notes: null }
+    const { error } = await supabase.from('tenant_documents').insert({ tenant_id: id, doc_type: docType, file_name: file.name, file_url: fileUrl, notes: null })
+    if (error) throw new Error('Не удалось сохранить документ: ' + error.message)
+  }, { invalidate: ['tenant_documents'] })
+  const uploadingDoc = uploadDoc.isPending ? uploadDoc.variables?.docType ?? null : null
+  function handleDocUpload(docType: string, file: File) {
+    if (!dbId) return
     setActionError('')
-    const { data: doc, error: docErr } = await supabase.from('tenant_documents').insert(docBody).select('*').single()
-    if (docErr) setActionError('Не удалось сохранить документ: ' + docErr.message)
-    if (doc) setDocuments(ds => [doc, ...ds])
-    setUploadingDoc(null)
+    uploadDoc.mutate({ docType, file }, { onError: fail })
   }
 
-  async function deleteDoc(id: string) {
+  const removeDoc = useAction((did: string) => sb(supabase.from('tenant_documents').delete().eq('id', did)), { invalidate: ['tenant_documents'] })
+  async function deleteDoc(did: string) {
     if (!(await ask('Удалить документ?', { ok: 'Удалить', danger: true }))) return
-    const { error } = await supabase.from('tenant_documents').delete().eq('id', id)
-    if (error) { setActionError(error.message); return }
-    setDocuments(ds => ds.filter(d => d.id !== id))
+    removeDoc.mutate(did, { onError: fail })
   }
+
+  // Помещения и ставки: от них зависят и счётчики (приборы ищутся по номерам офисов).
+  const PREMISE_TABLES = ['tenant_premises', 'premise_rents', 'meters']
+  const writePremise = useAction(async (pm: Partial<Premise>) => {
+    if (pm.id) await sb(supabase.from('tenant_premises').update({ unit_number: pm.unit_number, area_actual: pm.area_actual, area_bti: pm.area_bti, floor: pm.floor }).eq('id', pm.id))
+    else await sb(supabase.from('tenant_premises').insert({ tenant_id: id, unit_number: pm.unit_number || '', area_actual: pm.area_actual || null, area_bti: pm.area_bti || null, floor: pm.floor || null }))
+  }, { invalidate: PREMISE_TABLES })
+  const removePremise = useAction((pid: string) => sb(supabase.from('tenant_premises').delete().eq('id', pid)), { invalidate: PREMISE_TABLES })
+  const writeRent = useAction(async ({ premiseId, rent }: { premiseId: string; rent: Partial<PremiseRent> }) => {
+    if (rent.id) await sb(supabase.from('premise_rents').update({ monthly_rent: rent.monthly_rent, cleaning_fee: rent.cleaning_fee, valid_from: rent.valid_from || null, valid_to: rent.valid_to || null, notes: rent.notes || null }).eq('id', rent.id))
+    else await sb(supabase.from('premise_rents').insert({ premise_id: premiseId, monthly_rent: rent.monthly_rent || null, cleaning_fee: rent.cleaning_fee || null, valid_from: rent.valid_from || null, valid_to: rent.valid_to || null, notes: rent.notes || null }))
+  }, { invalidate: PREMISE_TABLES })
+  const removeRent = useAction((rid: string) => sb(supabase.from('premise_rents').delete().eq('id', rid)), { invalidate: PREMISE_TABLES })
+  const savingPremise = writePremise.isPending || writeRent.isPending
+
+  function savePremise() {
+    if (!premiseModal || !dbId) return
+    setActionError('')
+    writePremise.mutate(premiseModal, { onSuccess: () => setPremiseModal(null), onError: fail })
+  }
+  function deletePremise(pid: string) { removePremise.mutate(pid, { onError: fail }) }
+  function saveRent() {
+    if (!rentModal) return
+    setActionError('')
+    writeRent.mutate(rentModal, { onSuccess: () => setRentModal(null), onError: fail })
+  }
+  function deleteRent(rid: string) { removeRent.mutate(rid, { onError: fail }) }
+
+  const addReading = useAction(async ({ meterId, curr, prev, amount }: { meterId: string; curr: number; prev: number; amount: number }) => {
+    const period = new Date().toISOString().slice(0, 7)
+    const consumption = Math.max(0, curr - prev)
+    await sb(supabase.from('meter_readings').insert({ meter_id: meterId, period, prev_value: prev, curr_value: curr, consumption, amount, reading: curr, previous_reading: prev, reading_date: new Date().toISOString().slice(0, 10) }))
+  }, { invalidate: ['meters', 'meter_readings'] })
+  const savingMeter = addReading.isPending ? addReading.variables?.meterId ?? null : null
 
   const g3: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px 20px' }
   const g4: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px 20px' }
@@ -521,7 +517,7 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
   const field = (label: string, k: keyof typeof form, type = 'text', wide = false) => (
     <Field key={k} label={label} wide={wide}>
       {editing
-        ? <Input type={type} value={String(form[k])} onChange={f(k) as any} />
+        ? <Input type={type} value={String(form[k])} onChange={f(k)} />
         : <Value>{type === 'tel' && telHref(String(saved[k]))
             ? <a href={telHref(String(saved[k]))} style={{ color: C.accent, textDecoration: 'none' }}>{String(saved[k])}</a>
             : type === 'email' && saved[k]
@@ -530,8 +526,8 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
     </Field>
   )
 
-  if (loadingTenant) return <Loading />
-  if (loadError) return <Page><ErrorBox error={loadError} /><div><Button onClick={onBack}>Назад</Button></div></Page>
+  if (tenantId && tenantQ.isPending) return <Loading />
+  if (tenantQ.error) return <Page><ErrorBox error={'Не удалось загрузить арендатора: ' + tenantQ.error.message} onRetry={() => tenantQ.refetch()} /><div><Button onClick={onBack}>Назад</Button></div></Page>
 
   const allDone = stepsComplete === onboardingSteps.length
   const callTo = telHref(saved.contactPhone) || telHref(saved.phone)
@@ -544,7 +540,6 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
 
   return (
     <div style={{ maxWidth: 900 }}>
-      {invoiceCreated && <Toast>Счёт создан</Toast>}
       {showSuccess && <SuccessToast />}
 
       {narrow && !editing && (
@@ -573,11 +568,11 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
         actions={editing ? (
           <>
             <Button onClick={handleCancel}>Отмена</Button>
-            <Button kind="primary" onClick={handleSave}>Сохранить</Button>
+            <Button kind="primary" onClick={handleSave} disabled={saveTenant.isPending}>Сохранить</Button>
           </>
         ) : (
           <>
-            <Button onClick={() => setEditing(true)}>Редактировать</Button>
+            <Button onClick={() => { setForm(saved); setEditing(true) }}>Редактировать</Button>
             {!narrow && <Button kind="primary" onClick={() => { go('/settlements/' + tenantId) }}>Расчёты</Button>}
           </>
         )}>
@@ -642,7 +637,7 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
                 {field('Полное наименование', 'fullName', 'text', true)}
                 <Field label="Тип">
                   {editing
-                    ? <Select value={form.type} onChange={f('type') as any}>
+                    ? <Select value={form.type} onChange={f('type')}>
                         <option value="COMPANY">Юрлицо (ООО, АО)</option>
                         <option value="IP">ИП</option>
                         <option value="INDIVIDUAL">Физлицо</option>
@@ -721,49 +716,9 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
         {/* ─── Помещения ─── */}
         {tab === 2 && (() => {
           const today = new Date().toISOString().slice(0, 10)
-          const isActive = (r: any) => !r.valid_to || r.valid_to >= today
+          const isActive = (r: PremiseRent) => !r.valid_to || r.valid_to >= today
           const fmtDate = (d: string | null) => d ? dateRu(d) : 'бессрочно'
           const fmtMoney = (n: number | null) => n != null ? n.toLocaleString('ru') + ' ₽' : '—'
-
-          async function savePremise() {
-            if (!premiseModal || !dbId) return
-            setSavingPremise(true); setActionError('')
-            if (premiseModal.id) {
-              const { error } = await supabase.from('tenant_premises').update({ unit_number: premiseModal.unit_number, area_actual: premiseModal.area_actual, area_bti: premiseModal.area_bti, floor: premiseModal.floor }).eq('id', premiseModal.id)
-              if (error) { setActionError(error.message); setSavingPremise(false); return }
-              setPremisesList(list => list.map(p => p.id === premiseModal.id ? { ...p, ...premiseModal } as any : p))
-            } else {
-              const { data, error } = await supabase.from('tenant_premises').insert({ tenant_id: dbId, unit_number: premiseModal.unit_number || '', area_actual: premiseModal.area_actual || null, area_bti: premiseModal.area_bti || null, floor: premiseModal.floor || null }).select('*').single()
-              if (error) { setActionError(error.message); setSavingPremise(false); return }
-              if (data) setPremisesList(list => [...list, { ...data, rents: [] }])
-            }
-            setPremiseModal(null); setSavingPremise(false)
-          }
-          async function deletePremise(id: string) {
-            const { error } = await supabase.from('tenant_premises').delete().eq('id', id)
-            if (error) { setActionError(error.message); return }
-            setPremisesList(list => list.filter(p => p.id !== id))
-          }
-          async function saveRent() {
-            if (!rentModal) return
-            setSavingPremise(true); setActionError('')
-            const { premiseId, rent } = rentModal
-            if (rent.id) {
-              const { error } = await supabase.from('premise_rents').update({ monthly_rent: rent.monthly_rent, cleaning_fee: rent.cleaning_fee, valid_from: rent.valid_from || null, valid_to: rent.valid_to || null, notes: rent.notes || null }).eq('id', rent.id)
-              if (error) { setActionError(error.message); setSavingPremise(false); return }
-              setPremisesList(list => list.map(p => p.id === premiseId ? { ...p, rents: p.rents.map(r => r.id === rent.id ? { ...r, ...rent } as any : r).sort((a, b) => (b.valid_from || '').localeCompare(a.valid_from || '')) } : p))
-            } else {
-              const { data, error } = await supabase.from('premise_rents').insert({ premise_id: premiseId, monthly_rent: rent.monthly_rent || null, cleaning_fee: rent.cleaning_fee || null, valid_from: rent.valid_from || null, valid_to: rent.valid_to || null, notes: rent.notes || null }).select('*').single()
-              if (error) { setActionError(error.message); setSavingPremise(false); return }
-              if (data) setPremisesList(list => list.map(p => p.id === premiseId ? { ...p, rents: [data, ...p.rents].sort((a, b) => (b.valid_from || '').localeCompare(a.valid_from || '')) } : p))
-            }
-            setRentModal(null); setSavingPremise(false)
-          }
-          async function deleteRent(premiseId: string, rentId: string) {
-            const { error } = await supabase.from('premise_rents').delete().eq('id', rentId)
-            if (error) { setActionError(error.message); return }
-            setPremisesList(list => list.map(p => p.id === premiseId ? { ...p, rents: p.rents.filter(r => r.id !== rentId) } : p))
-          }
 
           return (
             <>
@@ -772,7 +727,8 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
                 <Button kind="primary" small onClick={() => setPremiseModal({ unit_number: '', area_actual: null, area_bti: null, floor: null })}>Добавить помещение</Button>
               </Row>
               {actionError && !premiseModal && !rentModal && <Notice tone="red">{actionError}</Notice>}
-              {!premisesLoaded ? <Loading />
+              {premisesQ.error ? <ErrorBox error={premisesQ.error.message} onRetry={() => premisesQ.refetch()} />
+                : premisesQ.isPending ? <Loading />
                 : premisesList.length === 0 ? <Card><Empty>Помещения не добавлены.</Empty></Card>
                 : (
                   <div style={{ display: 'grid', gap: 12 }}>
@@ -806,7 +762,7 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
                               { key: 'st', title: 'Статус', render: r => isActive(r) ? <Badge tone="green">Текущая</Badge> : <Badge>Архив</Badge> },
                               { key: 'act', title: '', align: 'right', render: r => <Row gap={4} wrap={false} justify="flex-end">
                                 <Button small onClick={() => setRentModal({ premiseId: p.id, rent: { ...r } })}>Изменить</Button>
-                                <Button small kind="danger" onClick={() => deleteRent(p.id, r.id)}>Удалить</Button>
+                                <Button small kind="danger" onClick={() => deleteRent(r.id)}>Удалить</Button>
                               </Row> },
                             ]} />
                           )}
@@ -875,14 +831,16 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
         {tab === 3 && (
           <Card title="Приборы учёта">
             {meterError && <div style={{ marginBottom: 10 }}><Notice tone="red">{meterError}</Notice></div>}
-            {!metersLoaded ? (
+            {metersQ.error ? (
+              <ErrorBox error={metersQ.error.message} onRetry={() => metersQ.refetch()} />
+            ) : metersQ.isPending ? (
               <Loading />
-            ) : meters.length === 0 ? (
+            ) : metersQ.data.length === 0 ? (
               <Empty>Счётчики не найдены для помещений арендатора</Empty>
             ) : (
               <div style={{ display: 'grid', gap: 10 }}>
-                {meters.map((m: any) => {
-                  const readings = (m.meter_readings || []).sort((a: any, b: any) => (b.created_at || '').localeCompare(a.created_at || ''))
+                {metersQ.data.map(m => {
+                  const readings = [...m.meter_readings].sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
                   const last = readings[0]
                   const tariff = m.heat_tariff || m.tariff
                   return (
@@ -912,21 +870,16 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
                         <Button
                           kind="primary"
                           disabled={!meterReadings[m.id] || savingMeter === m.id}
-                          onClick={async () => {
+                          onClick={() => {
                             const curr = parseFloat(meterReadings[m.id])
                             if (isNaN(curr)) return
-                            setSavingMeter(m.id); setMeterError('')
-                            const period = new Date().toISOString().slice(0, 7)
+                            setMeterError('')
                             const prev = last?.curr_value ?? 0
-                            const consumption = Math.max(0, curr - prev)
-                            const amount = tariff ? consumption * tariff : 0
-                            const { error } = await supabase.from('meter_readings').insert({ meter_id: m.id, period, prev_value: prev, curr_value: curr, consumption, amount, reading: curr, previous_reading: prev, reading_date: new Date().toISOString().slice(0, 10) })
-                            if (error) { setMeterError(error.message); setSavingMeter(null); return }
-                            setMeterReadings(r => ({ ...r, [m.id]: '' }))
-                            // Refresh meters
-                            const { data: fresh } = await supabase.from('meter_readings').select('period,curr_value,created_at').eq('meter_id', m.id).order('created_at', { ascending: false }).limit(1)
-                            setMeters(prev => prev.map(x => x.id === m.id ? { ...x, meter_readings: [...(fresh || []), ...(x.meter_readings || [])] } : x))
-                            setSavingMeter(null)
+                            const amount = tariff ? Math.max(0, curr - prev) * tariff : 0
+                            addReading.mutate({ meterId: m.id, curr, prev, amount }, {
+                              onSuccess: () => setMeterReadings(r => ({ ...r, [m.id]: '' })),
+                              onError: e => setMeterError(e.message),
+                            })
                           }}>
                           {savingMeter === m.id ? 'Сохранение…' : 'Сохранить'}
                         </Button>
@@ -942,13 +895,13 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
         {/* ─── Счета ─── */}
         {tab === 4 && (
           <Card title="История счетов" pad={false}>
-            {!invoicesLoaded ? <Loading /> : (
-              <Table<any> rows={tenantInvoices} rowKey={inv => inv.id} onRow={inv => go('/invoices/' + inv.id)} empty="Счетов не найдено" cols={[
+            {invoicesQ.error ? <ErrorBox error={invoicesQ.error.message} onRetry={() => invoicesQ.refetch()} /> : invoicesQ.isPending ? <Loading /> : (
+              <Table rows={invoicesQ.data} rowKey={inv => inv.id ?? ''} onRow={inv => go('/invoices/' + inv.id)} empty="Счетов не найдено" cols={[
                 { key: 'n', title: 'Номер', render: inv => <b>№ {inv.number}</b>, sort: inv => inv.number },
                 { key: 'p', title: 'Период', render: inv => <Muted>{inv.period || '—'}</Muted>, sort: inv => inv.period },
                 { key: 't', title: 'Итого', align: 'right', render: inv => <b>{money(inv.total)}</b>, sort: inv => Number(inv.total || 0) },
                 { key: 'o', title: 'Остаток', align: 'right', render: inv => <span style={{ color: Number(inv.open_amount) > 0 ? C.red : C.muted }}>{money(inv.open_amount)}</span>, sort: inv => Number(inv.open_amount || 0) },
-                { key: 's', title: 'Статус', render: inv => { const st = PAY_STATUS[inv.pay_status]; return <Badge tone={st?.tone}>{st?.label || inv.pay_status}</Badge> } },
+                { key: 's', title: 'Статус', render: inv => { const st = inv.pay_status ? PAY_STATUS[inv.pay_status] : undefined; return <Badge tone={st?.tone}>{st?.label || inv.pay_status}</Badge> } },
               ]} />
             )}
           </Card>
@@ -969,10 +922,10 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
                 <Progress value={uploadedReqCount} total={requiredCount} width={100} />
               </Row>
               {actionError && <Notice tone="red">{actionError}</Notice>}
-              {!docsLoaded ? <Loading /> : (
+              {docsQ.error ? <ErrorBox error={docsQ.error.message} onRetry={() => docsQ.refetch()} /> : docsQ.isPending ? <Loading /> : (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12 }}>
                   {currentDocTypes.map(dt => {
-                    const existing = documents.filter((d: any) => d.doc_type === dt.key)
+                    const existing = documents.filter(d => d.doc_type === dt.key)
                     const isDone = existing.length > 0
                     return (
                       <div key={dt.key} style={{ background: C.card, border: `1px solid ${isDone ? C.green : dt.required ? C.amberLine : C.line}`, borderRadius: C.radius, padding: 14, display: 'grid', gap: 10, alignContent: 'start' }}>
@@ -985,11 +938,11 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
                           </div>
                           {isDone ? <Badge tone="green">есть</Badge> : dt.required ? <Badge tone="amber">обязательно</Badge> : null}
                         </div>
-                        {existing.map((doc: any) => (
+                        {existing.map(doc => (
                           <div key={doc.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, padding: '4px 8px', background: C.card2, borderRadius: C.radiusSm, fontSize: 13 }}>
                             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{doc.file_name}</span>
                             <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
-                              {doc.file_url && <Button small kind="ghost" onClick={() => openStoredFile(doc.file_url)}>Открыть</Button>}
+                              {doc.file_url && <Button small kind="ghost" onClick={() => doc.file_url && openStoredFile(doc.file_url)}>Открыть</Button>}
                               <Button small kind="ghost" style={{ color: C.red }} onClick={() => deleteDoc(doc.id)}>Удалить</Button>
                             </div>
                           </div>
@@ -1026,7 +979,8 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
             </Row>
             {actionError && !contractModal && <Notice tone="red">{actionError}</Notice>}
 
-            {!contractsLoaded ? <Loading />
+            {contractsQ.error ? <ErrorBox error={contractsQ.error.message} onRetry={() => contractsQ.refetch()} />
+              : contractsQ.isPending ? <Loading />
               : contracts.length === 0 ? (
                 <Card><Empty>Договоры не созданы. Нажмите кнопку выше, чтобы создать первый документ.</Empty></Card>
               ) : (
@@ -1049,7 +1003,7 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
                         </div>
                         <Row gap={6} wrap={false}>
                           <Button small onClick={() => printContract(c.contract_type, saved, c.contract_number || '', c.valid_from || '', c.valid_to || '', premisesList)}>Печать</Button>
-                          <Button small onClick={() => setContractModal({ ...c, type: c.contract_type, startDate: c.valid_from, endDate: c.valid_to })}>Изменить</Button>
+                          <Button small onClick={() => setContractModal({ id: c.id, type: c.contract_type, number: c.contract_number || '', date: c.signed_date || '', startDate: c.valid_from || '', endDate: c.valid_to || '', notes: c.notes || '' })}>Изменить</Button>
                           <Button small kind="danger" onClick={() => deleteContract(c.id)}>Удалить</Button>
                         </Row>
                       </div>
@@ -1067,19 +1021,19 @@ export function TenantCardPage({ tenantId, onBack, onCreateInvoice }: { tenantId
                 </>}>
                 <div style={g2}>
                   <Field label="Номер">
-                    <Input value={contractModal.number || ''} onChange={e => setContractModal((m: any) => ({ ...m, number: e.target.value }))} placeholder="2025-001" />
+                    <Input value={contractModal.number || ''} onChange={e => setContractModal(m => m && ({ ...m, number: e.target.value }))} placeholder="2025-001" />
                   </Field>
                   <Field label="Дата подписания">
-                    <Input type="date" value={contractModal.date || ''} onChange={e => setContractModal((m: any) => ({ ...m, date: e.target.value }))} />
+                    <Input type="date" value={contractModal.date || ''} onChange={e => setContractModal(m => m && ({ ...m, date: e.target.value }))} />
                   </Field>
                   <Field label="Действует с">
-                    <Input type="date" value={contractModal.startDate || ''} onChange={e => setContractModal((m: any) => ({ ...m, startDate: e.target.value }))} />
+                    <Input type="date" value={contractModal.startDate || ''} onChange={e => setContractModal(m => m && ({ ...m, startDate: e.target.value }))} />
                   </Field>
                   <Field label="Действует по">
-                    <Input type="date" value={contractModal.endDate || ''} onChange={e => setContractModal((m: any) => ({ ...m, endDate: e.target.value }))} />
+                    <Input type="date" value={contractModal.endDate || ''} onChange={e => setContractModal(m => m && ({ ...m, endDate: e.target.value }))} />
                   </Field>
                   <Field label="Примечание" wide>
-                    <Input value={contractModal.notes || ''} onChange={e => setContractModal((m: any) => ({ ...m, notes: e.target.value }))} />
+                    <Input value={contractModal.notes || ''} onChange={e => setContractModal(m => m && ({ ...m, notes: e.target.value }))} />
                   </Field>
                 </div>
                 {actionError && <Notice tone="red">{actionError}</Notice>}

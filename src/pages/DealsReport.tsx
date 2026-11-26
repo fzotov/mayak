@@ -1,6 +1,6 @@
 // Отчёт по сделкам: воронка по источникам за период (заявки → показы → договоры → заселения), срок сделки, простой помещений.
-import { useEffect, useMemo, useState } from 'react'
-import { supabase } from '../lib/supabase'
+import { useMemo, useState } from 'react'
+import { sbRpc, useSb } from '../lib/query'
 import { go } from '../lib/nav'
 import { Page, Card, Row, Button, Stat, Stats, Table, Input, Select, Segmented, Loading, ErrorBox, Link, Sub, Muted, C, dateRu, num, monthRu } from '../components/ui'
 import { sourceLabel, localDate } from '../components/crm'
@@ -28,25 +28,18 @@ export default function DealsReportPage() {
   const [quarter, setQuarter] = useState(Math.floor(now.getMonth() / 3) + 1)
   const [from, setFrom] = useState(localDate().slice(0, 8) + '01')
   const [to, setTo] = useState(localDate())
-  const [funnel, setFunnel] = useState<FunnelRow[] | null>(null)
-  const [vacancy, setVacancy] = useState<VacancyRow[] | null>(null)
-  const [error, setError] = useState('')
   const [p1, p2] = range(period, month, year, quarter, from, to)
+  const validRange = !!p1 && !!p2 && p1 <= p2
 
-  async function loadFunnel() {
-    if (!p1 || !p2 || p1 > p2) { setFunnel([]); return }
-    setFunnel(null); setError('')
-    const { data, error } = await supabase.rpc('crm_funnel', { p_from: p1, p_to: p2 })
-    if (error) { setError(error.message); setFunnel([]); return }
-    setFunnel((data || []) as FunnelRow[])
-  }
-  async function loadVacancy() {
-    const { data, error } = await supabase.rpc('crm_vacancy')
-    if (error) { setError(error.message); setVacancy([]); return }
-    setVacancy(((data || []) as VacancyRow[]).sort((a, b) => (b.days_free ?? -1) - (a.days_free ?? -1)))
-  }
-  useEffect(() => { loadFunnel() }, [p1, p2])
-  useEffect(() => { loadVacancy() }, [])
+  const funnelQ = useSb(['rpc:crm_funnel', p1, p2], async (): Promise<FunnelRow[]> => (await sbRpc('crm_funnel', { p_from: p1, p_to: p2 })) ?? [], { enabled: validRange })
+  const vacancyQ = useSb(['rpc:crm_vacancy'], async (): Promise<VacancyRow[]> =>
+    [...((await sbRpc('crm_vacancy')) ?? [])].sort((a, b) => (b.days_free ?? -1) - (a.days_free ?? -1)))
+  // при ошибке — пустые таблицы и плашка с повтором, как раньше
+  const funnel: FunnelRow[] | null = useMemo(() => (!validRange ? [] : funnelQ.data ?? (funnelQ.isPending ? null : [])), [validRange, funnelQ.data, funnelQ.isPending])
+  const vacancy: VacancyRow[] | null = useMemo(() => vacancyQ.data ?? (vacancyQ.isPending ? null : []), [vacancyQ.data, vacancyQ.isPending])
+  const error = (validRange ? funnelQ.error?.message : '') || vacancyQ.error?.message || ''
+  const loadFunnel = () => { if (validRange) funnelQ.refetch() }
+  const loadVacancy = () => { vacancyQ.refetch() }
 
   const tot = useMemo(() => {
     const r = funnel || []

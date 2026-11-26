@@ -23,7 +23,7 @@ export default function DeviceCard() {
 
   const run = async (f: () => Promise<unknown>, ok: string) => {
     setBusy(true); setMsg(null)
-    try { await f(); setMsg({ tone: 'green', text: ok }) } catch (e: any) { setMsg({ tone: 'red', text: e?.message || 'Не получилось' }) }
+    try { await f(); setMsg({ tone: 'green', text: ok }) } catch (e) { setMsg({ tone: 'red', text: e instanceof Error && e.message ? e.message : typeof e === 'string' && e ? e : 'Не получилось' }) }
     setBusy(false); refresh()
   }
 

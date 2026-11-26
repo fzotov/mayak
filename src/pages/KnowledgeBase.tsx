@@ -1,10 +1,12 @@
 // База знаний: статьи (регламенты, договоры, инструкции, тарифы), которыми пользуется AI-ассистент.
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { Page, Card, Row, Button, Badge, Table, Field, Input, Select, Textarea, Search, Notice, Loading, ErrorBox, dateRu, C } from '../components/ui'
+import { sb, useSb, useAction, QueryState } from '../lib/query'
+import type { Tables } from '../lib/database.types'
+import { Page, Card, Row, Button, Badge, Table, Field, Input, Select, Textarea, Search, Notice, dateRu, C } from '../components/ui'
 import { ask } from '../components/Dialogs'
 
-interface Article { id: string; title: string; content: string; category: string; created_at: string }
+type Article = Tables<'kb_articles'>
 
 const CATEGORIES = ['Регламенты', 'Договоры', 'Инструкции', 'Тарифы', 'Прочее']
 
@@ -19,55 +21,42 @@ export function KnowledgeBasePage() {
   const [title, setTitle] = useState('')
   const [content, setContent] = useState('')
   const [category, setCategory] = useState('Регламенты')
-  const [loading, setLoading] = useState(false)
   const [msg, setMsg] = useState<{ tone: 'green' | 'red'; text: string } | null>(null)
-  const [articles, setArticles] = useState<Article[]>([])
-  const [articlesLoading, setArticlesLoading] = useState(true)
-  const [loadError, setLoadError] = useState('')
   const [search, setSearch] = useState('')
   const [filterCat, setFilterCat] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
 
-  useEffect(() => { fetchArticles() }, [])
+  const articlesQ = useSb(['kb_articles'], () => sb(supabase.from('kb_articles').select('*').order('created_at', { ascending: false })))
+  const articles = articlesQ.data ?? []
 
-  async function fetchArticles() {
-    setArticlesLoading(true)
-    setLoadError('')
-    const { data, error } = await supabase.from('kb_articles').select('*').order('created_at', { ascending: false })
-    if (error) setLoadError(error.message)
-    setArticles(data || [])
-    setArticlesLoading(false)
-  }
+  const saveA = useAction(async (v: { id: string | null; title: string; content: string; category: string }) => {
+    const row = { title: v.title, content: v.content, category: v.category }
+    if (v.id) await sb(supabase.from('kb_articles').update(row).eq('id', v.id))
+    else await sb(supabase.from('kb_articles').insert(row))
+  }, { invalidate: ['kb_articles'] })
+  const loading = saveA.isPending
 
-  async function save() {
+  const deleteA = useAction(async (id: string) => {
+    await sb(supabase.from('kb_articles').delete().eq('id', id))
+  }, { invalidate: ['kb_articles'] })
+
+  function save() {
     if (!title.trim() || !content.trim()) return
-    setLoading(true)
-    try {
-      if (editingId) {
-        const { error } = await supabase.from('kb_articles').update({ title: title.trim(), content: content.trim(), category }).eq('id', editingId)
-        if (error) { setMsg({ tone: 'red', text: 'Ошибка: ' + error.message }); return }
-        setMsg({ tone: 'green', text: 'Статья обновлена' })
-        setEditingId(null)
-      } else {
-        const { error } = await supabase.from('kb_articles').insert({ title: title.trim(), content: content.trim(), category })
-        if (error) { setMsg({ tone: 'red', text: 'Ошибка: ' + error.message }); return }
-        setMsg({ tone: 'green', text: 'Статья добавлена в базу знаний' })
-      }
-      setTitle(''); setContent(''); setCategory('Регламенты')
-      setTimeout(() => setMsg(null), 3000)
-      fetchArticles()
-    } catch {
-      setMsg({ tone: 'red', text: 'Ошибка соединения' })
-    } finally {
-      setLoading(false)
-    }
+    const wasEditing = !!editingId
+    saveA.mutate({ id: editingId, title: title.trim(), content: content.trim(), category }, {
+      onSuccess: () => {
+        setMsg({ tone: 'green', text: wasEditing ? 'Статья обновлена' : 'Статья добавлена в базу знаний' })
+        if (wasEditing) setEditingId(null)
+        setTitle(''); setContent(''); setCategory('Регламенты')
+        setTimeout(() => setMsg(null), 3000)
+      },
+      onError: e => setMsg({ tone: 'red', text: 'Ошибка: ' + e.message }),
+    })
   }
 
   async function deleteArticle(id: string) {
     if (!(await ask('Удалить статью?', { ok: 'Удалить', danger: true }))) return
-    const { error } = await supabase.from('kb_articles').delete().eq('id', id)
-    if (error) { setMsg({ tone: 'red', text: 'Статья не удалена: ' + error.message }); return }
-    setArticles(prev => prev.filter(a => a.id !== id))
+    deleteA.mutate(id, { onError: e => setMsg({ tone: 'red', text: 'Статья не удалена: ' + e.message }) })
   }
 
   function startEdit(a: Article) {
@@ -131,8 +120,6 @@ export function KnowledgeBasePage() {
         </Card>
       </div>
 
-      {loadError && <ErrorBox error={loadError} onRetry={fetchArticles} />}
-
       <Card pad={false} title={`Статьи в базе знаний (${articles.length})`} actions={
         <Row gap={8}>
           <Search value={search} onChange={setSearch} placeholder="Поиск" width={180} />
@@ -142,7 +129,7 @@ export function KnowledgeBasePage() {
           </Select>
         </Row>
       }>
-        {articlesLoading ? <Loading /> : (
+        <QueryState q={articlesQ}>{() => (
           <Table rows={filtered} rowKey={a => a.id}
             empty={articles.length === 0 ? 'Статей нет. Добавьте первую.' : 'Ничего не найдено'} cols={[
               { key: 't', title: 'Заголовок', sort: a => a.title, render: a => <div style={{ fontWeight: 500, maxWidth: 240 }}>{a.title}</div> },
@@ -158,7 +145,7 @@ export function KnowledgeBasePage() {
                 </Row>
               ) },
             ]} />
-        )}
+        )}</QueryState>
       </Card>
     </Page>
   )

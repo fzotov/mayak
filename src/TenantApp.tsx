@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from './lib/supabase';
+import { queryClient } from './lib/query';
 import { loadTenantSession, tenantSignOut, type TenantSession } from './lib/tenantSession';
 import TenantLogin from './pages/tenant/TenantLogin';
 import TenantActivatePage from './pages/TenantActivate';
@@ -33,7 +34,8 @@ export default function TenantApp() {
   useEffect(() => {
     loadTenantSession().then(setSession);
     const { data: sub } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'SIGNED_OUT') setSession(null);
+      // данные прошлого входа не должны остаться в кеше на общем устройстве
+      if (event === 'SIGNED_OUT') { queryClient.clear(); setSession(null); }
     });
     return () => sub.subscription.unsubscribe();
   }, []);

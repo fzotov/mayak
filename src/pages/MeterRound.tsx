@@ -2,15 +2,17 @@
 // Показание сохраняется так же, как в «Счётчиках»: строка meter_readings с расходом, суммой и фото.
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { useSb, useAction, sb, errText } from '../lib/query'
+import type { Tables } from '../lib/database.types'
 import { apiFetch } from '../lib/api'
 import { compressImage, blobToBase64 } from '../lib/photo'
-import { TYPES } from './Meters'
+import { TYPES, parseRecognizeMeter, type RecognizedMeter } from './Meters'
 import { Page, Card, Button, Badge, Input, Segmented, Notice, Loading, ErrorBox, Empty, Muted, Sub, Row, money, num, monthRu, C } from '../components/ui'
 import { Icon } from '../components/icons'
 
-interface Meter { id: string; unit_id: string | null; tenant_id: string | null; type: string; serial: string | null; number: string | null; tariff: number | null; heat_tariff: number | null; area?: number | null; location: string | null }
-interface Unit { id: string; number: string; floor: number | null; tenant_id: string | null }
-interface Reading { meter_id: string; period: string; curr_value: number }
+type Meter = Tables<'meters'>
+type Unit = Pick<Tables<'units'>, 'id' | 'number' | 'floor' | 'tenant_id'>
+type Reading = Pick<Tables<'meter_readings'>, 'meter_id' | 'period' | 'curr_value'>
 interface Group { key: string; title: string; floor: number | null; tenant: string; meters: Meter[] }
 interface Active { meter: Meter; blob: Blob | null; preview: string; value: string; recognized: number | null; notice: { tone: 'green' | 'amber' | 'neutral'; text: string } | null }
 
@@ -22,33 +24,30 @@ const big: React.CSSProperties = { width: '100%', padding: '12px 16px', fontSize
 const meterName = (m: Meter) => `${TYPES[m.type]?.label || m.type} № ${m.number || m.serial || '—'}`
 
 export default function MeterRoundPage() {
-  const [meters, setMeters] = useState<Meter[]>([])
-  const [units, setUnits] = useState<Unit[]>([])
-  const [tenants, setTenants] = useState<Record<string, string>>({})
-  const [doneIds, setDoneIds] = useState<Set<string>>(new Set())
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
+  const [savedIds, setSavedIds] = useState<Set<string>>(new Set())
   const [q, setQ] = useState('')
   const [filter, setFilter] = useState<'todo' | 'all'>('all')
   const [groupKey, setGroupKey] = useState<string | null>(null)
 
-  async function load() {
-    setLoading(true); setError('')
-    const [m, u, t, r] = await Promise.all([
-      supabase.from('meters').select('*'),
-      supabase.from('units').select('id, number, floor, tenant_id'),
-      supabase.from('tenants').select('id, full_name'),
-      supabase.from('meter_readings').select('meter_id').eq('period', period()),
-    ])
-    const err = m.error || u.error || t.error || r.error
-    if (err) setError('Не удалось загрузить счётчики: ' + err.message)
-    setMeters((m.data || []) as Meter[])
-    setUnits((u.data || []) as Unit[])
-    setTenants(Object.fromEntries((t.data || []).map((x: any) => [x.id, x.full_name])))
-    setDoneIds(new Set((r.data || []).map((x: any) => x.meter_id)))
-    setLoading(false)
-  }
-  useEffect(() => { load() }, [])
+  const metersQ = useSb(['meters'], () => sb(supabase.from('meters').select('*')))
+  const unitsQ = useSb(['units', 'id,number,floor,tenant_id'], () => sb(supabase.from('units').select('id, number, floor, tenant_id')))
+  const tenantsQ = useSb(['tenants', 'id,full_name'], () => sb(supabase.from('tenants').select('id, full_name')))
+  const doneQ = useSb(['meter_readings', 'period', period()], () => sb(supabase.from('meter_readings').select('meter_id').eq('period', period())))
+  const all = [metersQ, unitsQ, tenantsQ, doneQ]
+  const loading = all.some(x => x.isPending)
+  const loadErr = all.find(x => x.error)?.error
+  const error = loadErr ? 'Не удалось загрузить счётчики: ' + loadErr.message : ''
+  const load = () => { for (const x of all) x.refetch() }
+
+  const meters: Meter[] = useMemo(() => metersQ.data ?? [], [metersQ.data])
+  const units: Unit[] = useMemo(() => unitsQ.data ?? [], [unitsQ.data])
+  const tenants = useMemo<Record<string, string>>(() => Object.fromEntries((tenantsQ.data ?? []).map(x => [x.id, x.full_name])), [tenantsQ.data])
+  // Снятые за месяц: из базы плюс сохранённые только что (до обновления запроса).
+  const doneIds = useMemo(() => {
+    const ids = new Set(savedIds)
+    for (const r of doneQ.data ?? []) if (r.meter_id) ids.add(r.meter_id)
+    return ids
+  }, [doneQ.data, savedIds])
 
   const groups = useMemo<Group[]>(() => {
     const byUnit = new Map<string, Meter[]>()
@@ -77,7 +76,7 @@ export default function MeterRoundPage() {
 
   if (group) return (
     <UnitRound key={group.key} group={group} doneIds={doneIds}
-      onSaved={id => setDoneIds(s => new Set(s).add(id))}
+      onSaved={id => setSavedIds(s => new Set(s).add(id))}
       onBack={() => setGroupKey(null)}
       onNext={() => {
         const i = groups.findIndex(g => g.key === group.key)
@@ -133,10 +132,6 @@ export default function MeterRoundPage() {
 
 // ── Одно помещение ──────────────────────────────────────────────────────────
 function UnitRound({ group, doneIds, onSaved, onBack, onNext }: { group: Group; doneIds: Set<string>; onSaved: (meterId: string) => void; onBack: () => void; onNext: () => void }) {
-  const [last, setLast] = useState<Record<string, Reading>>({})
-  const [current, setCurrent] = useState<Record<string, Reading>>({})
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
   const [active, setActive] = useState<Active | null>(null)
   const [busy, setBusy] = useState<'' | 'recognize' | 'save'>('')
   const [msg, setMsg] = useState<{ tone: 'green' | 'red' | 'amber'; text: string } | null>(null)
@@ -144,19 +139,40 @@ function UnitRound({ group, doneIds, onSaved, onBack, onNext }: { group: Group; 
   const shootFor = useRef<Meter | null>(null)
   const p = period()
 
-  async function loadReadings() {
-    setLoading(true); setError('')
-    const { data, error } = await supabase.from('meter_readings').select('meter_id, period, curr_value')
-      .in('meter_id', group.meters.map(m => m.id)).order('period', { ascending: false }).order('created_at', { ascending: false })
-    if (error) setError('Не удалось загрузить показания: ' + error.message)
+  const meterIds = group.meters.map(m => m.id)
+  const readingsQ = useSb(['meter_readings', 'round', ...meterIds], () => sb(supabase.from('meter_readings').select('meter_id, period, curr_value')
+    .in('meter_id', meterIds).order('period', { ascending: false }).order('created_at', { ascending: false })))
+  const loading = readingsQ.isPending
+  const error = readingsQ.error ? 'Не удалось загрузить показания: ' + readingsQ.error.message : ''
+  const loadReadings = () => { readingsQ.refetch() }
+  // Последнее показание до этого месяца и показание этого месяца по каждому счётчику.
+  const { last, current } = useMemo(() => {
     const prev: Record<string, Reading> = {}, cur: Record<string, Reading> = {}
-    for (const r of (data || []) as Reading[]) {
+    for (const r of readingsQ.data ?? []) {
+      if (!r.meter_id) continue
       if (r.period?.slice(0, 7) === p.slice(0, 7)) { if (!cur[r.meter_id]) cur[r.meter_id] = r }
       else if (!prev[r.meter_id]) prev[r.meter_id] = r
     }
-    setLast(prev); setCurrent(cur); setLoading(false)
-  }
-  useEffect(() => { loadReadings() }, [])
+    return { last: prev, current: cur }
+  }, [readingsQ.data, p])
+
+  const saveReading = useAction(async (v: { m: Meter; blob: Blob | null; prevValue: number; value: number; consumption: number; amount: number; recognized: boolean }) => {
+    let photo_url: string | null = null
+    let photoFailed = false
+    if (v.blob) {
+      const path = `${v.m.id}/${p.slice(0, 7)}-${Date.now()}.jpg`
+      const { error: upErr } = await supabase.storage.from('meter-photos').upload(path, v.blob, { upsert: true, contentType: 'image/jpeg' })
+      if (!upErr) photo_url = supabase.storage.from('meter-photos').getPublicUrl(path).data.publicUrl
+      else photoFailed = true
+    }
+    await sb(supabase.from('meter_readings').insert({
+      meter_id: v.m.id, period: p, prev_value: v.prevValue, curr_value: v.value, consumption: v.consumption, amount: v.amount, notes: '',
+      reading: v.value, previous_reading: v.prevValue, reading_date: new Date().toISOString().slice(0, 10),
+      recognized_by_ai: v.recognized,
+      ...(photo_url ? { photo_url } : {}),
+    }))
+    return { photoFailed }
+  }, { invalidate: ['meter_readings', 'meters'] })
   useEffect(() => () => { if (active?.preview) URL.revokeObjectURL(active.preview) }, [active?.preview])
 
   const done = (m: Meter) => doneIds.has(m.id) || !!current[m.id]
@@ -183,10 +199,9 @@ function UnitRound({ group, doneIds, onSaved, onBack, onNext }: { group: Group; 
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ imageBase64: await blobToBase64(blob), meterNumbers: group.meters.map(m => m.serial || m.number).filter(Boolean), mediaType: blob.type || 'image/jpeg' }),
       })
-      const data = await res.json().catch(() => ({ ok: false }))
-      const found: { serial: string; reading: number | null }[] = data.ok && Array.isArray(data.meters) ? data.meters : []
+      const found: RecognizedMeter[] = parseRecognizeMeter(await res.json().catch(() => null))
       // какой из счётчиков помещения на фото: по серийному номеру, иначе тот, что выбрали
-      let hit: { m: Meter; r: { serial: string; reading: number | null } } | null = null
+      let hit: { m: Meter; r: RecognizedMeter } | null = null
       for (const r of found) {
         const m = group.meters.find(x => sameSerial(x.serial, r.serial) || sameSerial(x.number, r.serial))
         if (m && (!hit || (tapped && m.id === tapped.id))) hit = { m, r }
@@ -219,23 +234,17 @@ function UnitRound({ group, doneIds, onSaved, onBack, onNext }: { group: Group; 
     setBusy('save'); setMsg(null)
     const consumption = Math.max(0, value - prevValue)
     const amount = m.type === 'heat' ? consumption * (m.heat_tariff || 0) * (m.area || 1) : consumption * (m.tariff || 0)
-    let photo_url: string | null = null
-    let photoFailed = false
-    if (active.blob) {
-      const path = `${m.id}/${p.slice(0, 7)}-${Date.now()}.jpg`
-      const { error: upErr } = await supabase.storage.from('meter-photos').upload(path, active.blob, { upsert: true, contentType: 'image/jpeg' })
-      if (!upErr) photo_url = supabase.storage.from('meter-photos').getPublicUrl(path).data.publicUrl
-      else photoFailed = true
+    let photoFailed: boolean
+    try {
+      ({ photoFailed } = await saveReading.mutateAsync({
+        m, blob: active.blob, prevValue, value, consumption, amount, recognized: active.recognized != null && active.recognized === value,
+      }))
+    } catch (e) {
+      setBusy('')
+      setMsg({ tone: 'red', text: 'Показание не сохранено: ' + errText(e) })
+      return
     }
-    const { error } = await supabase.from('meter_readings').insert({
-      meter_id: m.id, period: p, prev_value: prevValue, curr_value: value, consumption, amount, notes: '',
-      reading: value, previous_reading: prevValue, reading_date: new Date().toISOString().slice(0, 10),
-      recognized_by_ai: active.recognized != null && active.recognized === value,
-      ...(photo_url ? { photo_url } : {}),
-    })
     setBusy('')
-    if (error) { setMsg({ tone: 'red', text: 'Показание не сохранено: ' + error.message }); return }
-    setCurrent(c => ({ ...c, [m.id]: { meter_id: m.id, period: p, curr_value: value } }))
     onSaved(m.id)
     setActive(null)
     const left = group.meters.filter(x => x.id !== m.id && !done(x))

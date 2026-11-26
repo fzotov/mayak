@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ChangeEvent } from 'react'
 import { go } from '../lib/nav'
 import { supabase } from '../lib/supabase'
+import { useSb, useAction, sb } from '../lib/query'
+import type { TablesInsert } from '../lib/database.types'
 import { Page, Card, Row, Button, Field, Input, Segmented, Notice, Badge, Search, C } from '../components/ui'
 
 const TYPES = [
@@ -22,30 +24,26 @@ export function TenantNewPage({ onBack, onSaved }: { onBack: () => void; onSaved
     email: '', phone: '', legal_address: '', contact_name: '', contact_phone: '',
     bank_name: 'ПАО Сбербанк России', bank_account: '', bik: '', correspondent_account: '30101810400000000225'
   })
-  const [units, setUnits] = useState<UnitRow[]>([])
+  const unitsQ = useSb(['units', 'picker'], () => sb(supabase.from('units').select('id,number,floor,area,rent_rate,status,tenant_id').order('number')))
+  const units: UnitRow[] = unitsQ.data ?? []
+  const dealQ = useSb(['deals', dealId, 'with-units'], () => sb(supabase.from('deals').select('*, deal_units(unit_id)').eq('id', dealId ?? '').maybeSingle()), { enabled: !!dealId })
   const [picked, setPicked] = useState<string[]>([])
   const [rent, setRent] = useState('')
   const [cleaning, setCleaning] = useState('2500')
   const [lease, setLease] = useState({ start_date: '', end_date: '', deposit: '' })
-  const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  const [deal, setDeal] = useState<any>(null)
+  const dealData = dealQ.data ?? null
+  const deal = dealData && dealData.stage !== 'won' ? dealData : null
+  const dealError = !dealId || dealQ.isPending ? '' : dealQ.error || !dealData ? 'Сделка не найдена' : dealData.stage === 'won' ? 'Сделка уже закрыта как «Заселён»' : ''
+  const unitsError = unitsQ.error ? 'Не удалось загрузить помещения: ' + unitsQ.error.message : ''
 
+  // Контакты и помещения из сделки подставляются один раз, когда она загрузилась; дальше форма своя.
   useEffect(() => {
-    supabase.from('units').select('id,number,floor,area,rent_rate,status,tenant_id').order('number').then(({ data, error }) => {
-      if (error) setError('Не удалось загрузить помещения: ' + error.message)
-      setUnits((data as UnitRow[]) || [])
-    })
-    if (!dealId) return
-    supabase.from('deals').select('*, deal_units(unit_id)').eq('id', dealId).maybeSingle().then(({ data, error }) => {
-      if (error || !data) { setError('Сделка не найдена'); return }
-      if (data.stage === 'won') { setError('Сделка уже закрыта как «Заселён»'); return }
-      setDeal(data)
-      setForm(p => ({ ...p, full_name: data.company || data.name || '', email: data.email || '', phone: data.phone || '',
-        contact_name: data.name || '', contact_phone: data.phone || '' }))
-      setPicked((data.deal_units || []).map((x: any) => x.unit_id))
-    })
-  }, [dealId])
+    if (!deal) return
+    setForm(p => ({ ...p, full_name: deal.company || deal.name || '', email: deal.email || '', phone: deal.phone || '',
+      contact_name: deal.name || '', contact_phone: deal.phone || '' }))
+    setPicked((deal.deal_units || []).map(x => x.unit_id))
+  }, [deal?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const sel = units.filter(u => picked.includes(u.id))
   const area = sel.reduce((a, u) => a + Number(u.area || 0), 0)
@@ -53,46 +51,46 @@ export function TenantNewPage({ onBack, onSaved }: { onBack: () => void; onSaved
   useEffect(() => { if (suggested > 0) setRent(String(Math.round(suggested))) }, [suggested])
   const unit = { number: sel.map(u => u.number).join(', '), floor: String(sel[0]?.floor ?? ''), area: area ? String(Math.round(area * 100) / 100) : '', rent, cleaning }
 
-  const f = (k: string) => (e: any) => setForm(p => ({ ...p, [k]: e.target.value }))
-  const fl = (k: string) => (e: any) => setLease(p => ({ ...p, [k]: e.target.value }))
+  type Ev = ChangeEvent<HTMLInputElement>
+  const f = (k: keyof typeof form) => (e: Ev) => setForm(p => ({ ...p, [k]: e.target.value }))
+  const fl = (k: keyof typeof lease) => (e: Ev) => setLease(p => ({ ...p, [k]: e.target.value }))
   const toggle = (id: string) => setPicked(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id])
 
-  const save = async () => {
+  const create = useAction(async () => {
+    const monthly = parseFloat(rent) || 0
+    const tenant = await sb(supabase.from('tenants').insert({
+      ...form, status: 'ACTIVE', monthly_rent: monthly || null, cleaning_fee: parseFloat(cleaning) || null,
+      unit_number: unit.number || null, area_actual: area || null, rate_per_sqm: area && monthly ? Math.round(monthly / area * 100) / 100 : null,
+      contract_start_date: lease.start_date || null, contract_end_date: lease.end_date || null,
+    }).select('id').single())
+    if (sel.length) {
+      await sb(supabase.from('units').update({ tenant_id: tenant.id, status: 'occupied' }).in('id', picked).is('tenant_id', null))
+      // Договор со строками: по ним биллинг начисляет аренду и уборку каждый месяц. Аренда делится по площади помещений.
+      const l = await sb(supabase.from('leases').insert({ tenant_id: tenant.id, unit_id: sel[0].id, start_date: lease.start_date, end_date: lease.end_date || null,
+        deposit_required: parseFloat(lease.deposit) || 0, status: 'active' }).select('id').single())
+      const lines: TablesInsert<'lease_lines'>[] = [
+        ...sel.map(u => ({ lease_id: l.id, article_code: 'RENT', unit_id: u.id, unit_label: u.number, area: u.area,
+          amount: area ? Math.round(monthly * Number(u.area || 0) / area * 100) / 100 : Math.round(monthly / sel.length * 100) / 100, valid_from: lease.start_date })),
+        { lease_id: l.id, article_code: 'CLEAN', unit_id: sel[0].id, unit_label: unit.number, area: null, amount: parseFloat(cleaning) || 0, valid_from: lease.start_date },
+      ].filter(x => x.amount > 0)
+      if (lines.length) await sb(supabase.from('lease_lines').insert(lines))
+    }
+    if (deal) {
+      const { error: de } = await supabase.from('deals').update({ stage: 'won', tenant_id: tenant.id }).eq('id', deal.id)
+      if (de) throw new Error('Арендатор создан, но сделку закрыть не удалось: ' + de.message)
+    }
+    return tenant.id
+  }, { invalidate: ['tenants', 'units', 'leases', 'lease_lines', 'deals', 'deal_units', 'rpc:tenant_saldo'], onSuccess: id => go('/tenants/' + id) })
+
+  const save = () => {
     if (!form.full_name.trim()) { setError('Введите наименование'); return }
     if (sel.some(busy)) { setError('Среди выбранных есть занятое помещение: ' + sel.filter(busy).map(u => u.number).join(', ')); return }
     if (sel.length && !lease.start_date) { setError('Укажите дату начала договора'); return }
-    setSaving(true); setError('')
-    try {
-      const monthly = parseFloat(rent) || 0
-      const { data: tenant, error: err } = await supabase.from('tenants').insert({
-        ...form, status: 'ACTIVE', monthly_rent: monthly || null, cleaning_fee: parseFloat(cleaning) || null,
-        unit_number: unit.number || null, area_actual: area || null, rate_per_sqm: area && monthly ? Math.round(monthly / area * 100) / 100 : null,
-        contract_start_date: lease.start_date || null, contract_end_date: lease.end_date || null,
-      }).select('id').single()
-      if (err) throw err
-      if (sel.length) {
-        const { error: ue } = await supabase.from('units').update({ tenant_id: tenant.id, status: 'occupied' }).in('id', picked).is('tenant_id', null)
-        if (ue) throw ue
-        // Договор со строками: по ним биллинг начисляет аренду и уборку каждый месяц. Аренда делится по площади помещений.
-        const { data: l, error: le } = await supabase.from('leases').insert({ tenant_id: tenant.id, unit_id: sel[0].id, start_date: lease.start_date, end_date: lease.end_date || null,
-          deposit_required: parseFloat(lease.deposit) || 0, status: 'active' }).select('id').single()
-        if (le) throw le
-        const lines = [
-          ...sel.map(u => ({ lease_id: l.id, article_code: 'RENT', unit_id: u.id, unit_label: u.number, area: u.area,
-            amount: area ? Math.round(monthly * Number(u.area || 0) / area * 100) / 100 : Math.round(monthly / sel.length * 100) / 100, valid_from: lease.start_date })),
-          { lease_id: l.id, article_code: 'CLEAN', unit_id: sel[0].id, unit_label: unit.number, area: null, amount: parseFloat(cleaning) || 0, valid_from: lease.start_date },
-        ].filter(x => x.amount > 0)
-        if (lines.length) { const { error: lle } = await supabase.from('lease_lines').insert(lines); if (lle) throw lle }
-      }
-      if (deal) {
-        const { error: de } = await supabase.from('deals').update({ stage: 'won', tenant_id: tenant.id }).eq('id', deal.id)
-        if (de) throw new Error('Арендатор создан, но сделку закрыть не удалось: ' + de.message)
-      }
-      go('/tenants/' + tenant.id)
-      return
-    } catch (e: any) { setError(e.message) }
-    setSaving(false)
+    setError('')
+    create.mutate(undefined)
   }
+  const saving = create.isPending
+  const shownError = error || create.error || dealError || unitsError
   void onSaved
 
   const printDoc = (type: 'contract' | 'act') => {
@@ -117,7 +115,7 @@ export function TenantNewPage({ onBack, onSaved }: { onBack: () => void; onSaved
     <table><tr><td><b>АРЕНДОДАТЕЛЬ</b><br>ИП Зотова Е.В., ИНН 500705271772<br>р/с 40802810340000024041, БИК 044525225<br>ПАО Сбербанк России</td>
     <td><b>АРЕНДАТОР</b><br>${form.full_name}<br>${form.inn ? 'ИНН ' + form.inn : ''}<br>${form.bank_account ? 'р/с ' + form.bank_account : ''}</td></tr></table>
     <div class="sigs"><div class="sig"><div class="sig-line"></div>Зотова Е.В.</div><div class="sig"><div class="sig-line"></div>_______________</div></div>
-    <script>window.onload=function(){window.print()}<\/script></body></html>`
+    <script>window.onload=function(){window.print()}</script></body></html>`
     const w = window.open('', '_blank')
     if (w) { w.document.write(html); w.document.close() }
   }
@@ -187,7 +185,7 @@ export function TenantNewPage({ onBack, onSaved }: { onBack: () => void; onSaved
           </div>
         </Card>
 
-        {error && <Notice tone="red">{error}</Notice>}
+        {shownError && <Notice tone="red">{shownError}</Notice>}
 
         <Row justify="flex-end" gap={10}>
           <Button onClick={onBack}>Отмена</Button>

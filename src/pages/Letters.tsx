@@ -1,27 +1,19 @@
 // Письма: входящие и исходящие, распознавание загруженного письма и генерация текста через AI, задача по входящему письму.
 import { ask } from '../components/Dialogs'
 import { apiFetch } from '../lib/api'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useRef } from 'react'
 import { supabase } from '../lib/supabase'
+import { sb, useSb, useAction, QueryState } from '../lib/query'
+import type { Tables } from '../lib/database.types'
 import {
-  Page, Card, Row, Button, Badge, Table, Field, Input, Select, Textarea, Modal, Notice, Loading, ErrorBox, Muted, dateRu, C, type Tone,
+  Page, Card, Row, Button, Badge, Table, Field, Input, Select, Textarea, Modal, Notice, Muted, dateRu, C, type Tone,
 } from '../components/ui'
 
-interface Letter {
-  id: string
-  type: 'incoming' | 'outgoing'
-  status: string
-  subject: string
-  body: string
-  sender: string
-  recipient: string
-  tenant_id: string | null
-  date: string
-  file_url: string
-  ai_summary: string
-  ai_action: string
-  created_at: string
-}
+type Letter = Tables<'letters'>
+/** Письмо, по которому создаётся задача (только что сохранённое). */
+interface LetterForTask { id: string; subject: string; ai_action: string; ai_summary: string }
+/** Ответ /api/process-letter: распознанные поля письма. */
+interface ParsedLetter { subject?: string; sender?: string; recipient?: string; date?: string; body?: string; summary?: string; action?: string }
 
 const statusLabel: Record<string, { label: string; tone: Tone }> = {
   draft: { label: 'Черновик', tone: 'neutral' },
@@ -33,28 +25,24 @@ const statusLabel: Record<string, { label: string; tone: Tone }> = {
 const two: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }
 const noop = () => {}
 
-function TaskFromLetterModal({ letter, onClose, onSaved }: { letter: any; onClose: () => void; onSaved: () => void }) {
-  const [staff, setStaff] = useState<any[]>([])
+function TaskFromLetterModal({ letter, onClose, onSaved }: { letter: LetterForTask; onClose: () => void; onSaved: () => void }) {
+  const staffQ = useSb(['staff', 'active-names'], () => sb(supabase.from('staff').select('id, full_name').eq('status', 'active').order('full_name')))
+  const staff = staffQ.data ?? []
   const [title, setTitle] = useState('Ответить на письмо: ' + (letter.subject || ''))
   const [description, setDescription] = useState(letter.ai_action || letter.ai_summary || '')
   const [assigneeId, setAssigneeId] = useState('')
   const [priority, setPriority] = useState('normal')
   const [dueDate, setDueDate] = useState('')
-  const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const createA = useAction(async () => {
+    await sb(supabase.from('tasks').insert({ title, description, assignee_id: assigneeId || null, status: 'todo', priority, due_date: dueDate || null, letter_id: letter.id }))
+  }, { invalidate: ['tasks'], onSuccess: onSaved })
+  const saving = createA.isPending
 
-  useEffect(() => {
-    supabase.from('staff').select('id, full_name').eq('status', 'active').order('full_name').then(({ data }) => setStaff(data || []))
-  }, [])
-
-  async function save() {
+  function save() {
     if (!title.trim()) { setError('Введите заголовок'); return }
     setError('')
-    setSaving(true)
-    const { error } = await supabase.from('tasks').insert({ title, description, assignee_id: assigneeId || null, status: 'todo', priority, due_date: dueDate || null, letter_id: letter.id })
-    setSaving(false)
-    if (error) { setError('Задача не создана: ' + error.message); return }
-    onSaved()
+    createA.mutate(undefined)
   }
 
   return (
@@ -64,13 +52,14 @@ function TaskFromLetterModal({ letter, onClose, onSaved }: { letter: any; onClos
     </>}>
       <Notice tone="green">Письмо зарегистрировано. Создайте задачу для ответа.</Notice>
       {error && <Notice tone="red">{error}</Notice>}
+      {createA.error && <Notice tone="red">Задача не создана: {createA.error}</Notice>}
       <Field label="Задача"><Input value={title} onChange={e => setTitle(e.target.value)} /></Field>
       <Field label="Описание"><Textarea style={{ height: 70, resize: 'none' }} value={description} onChange={e => setDescription(e.target.value)} /></Field>
       <div style={two}>
         <Field label="Исполнитель">
           <Select value={assigneeId} onChange={e => setAssigneeId(e.target.value)}>
             <option value="">Не назначен</option>
-            {staff.map((s: any) => <option key={s.id} value={s.id}>{s.full_name}</option>)}
+            {staff.map(s => <option key={s.id} value={s.id}>{s.full_name}</option>)}
           </Select>
         </Field>
         <Field label="Приоритет">
@@ -105,8 +94,10 @@ function PromptModal({ onClose, onGenerate }: { onClose: () => void; onGenerate:
   )
 }
 
+interface LetterForm { type: string; status: string; subject: string; body: string; sender: string; recipient: string; date: string; ai_summary: string; ai_action: string }
+
 function LetterModal({ letter, onClose, onSaved }: { letter: Letter | null; onClose: () => void; onSaved: () => void }) {
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<LetterForm>({
     type: letter?.type || 'outgoing',
     status: letter?.status || 'draft',
     subject: letter?.subject || '',
@@ -117,15 +108,14 @@ function LetterModal({ letter, onClose, onSaved }: { letter: Letter | null; onCl
     ai_summary: letter?.ai_summary || '',
     ai_action: letter?.ai_action || '',
   })
-  const [saving, setSaving] = useState(false)
   const [generating, setGenerating] = useState(false)
   const [processing, setProcessing] = useState(false)
   const [showPrompt, setShowPrompt] = useState(false)
-  const [savedLetter, setSavedLetter] = useState<any>(null)
+  const [savedLetter, setSavedLetter] = useState<LetterForTask | null>(null)
   const [file, setFile] = useState<File | null>(null)
   const [error, setError] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
-  const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }))
+  const set = (k: keyof LetterForm, v: string) => setForm(f => ({ ...f, [k]: v }))
 
   async function generateLetter(prompt: string) {
     setShowPrompt(false)
@@ -137,7 +127,7 @@ function LetterModal({ letter, onClose, onSaved }: { letter: Letter | null; onCl
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ subject: form.subject, recipient: form.recipient, sender: form.sender, prompt }),
       })
-      const data = await res.json()
+      const data: { text?: string } = await res.json()
       const text = data.text || ''
       if (!text) throw new Error('empty')
       set('body', text)
@@ -162,7 +152,7 @@ function LetterModal({ letter, onClose, onSaved }: { letter: Letter | null; onCl
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ base64, mediaType: file.type }),
       })
-      const parsed = await res.json()
+      const parsed: ParsedLetter = await res.json()
       if (parsed.subject) set('subject', parsed.subject)
       if (parsed.sender) set('sender', parsed.sender)
       if (parsed.recipient) set('recipient', parsed.recipient)
@@ -178,33 +168,35 @@ function LetterModal({ letter, onClose, onSaved }: { letter: Letter | null; onCl
     setProcessing(false)
   }
 
-  async function save() {
+  const saveA = useAction(async (f: LetterForm): Promise<string | null> => {
+    if (letter?.id) {
+      await sb(supabase.from('letters').update(f).eq('id', letter.id))
+      return null
+    }
+    const row = await sb(supabase.from('letters').insert({ ...f }).select('id').single())
+    return row.id
+  }, {
+    invalidate: ['letters'],
+    onSuccess: (newId, f) => {
+      // Если входящее письмо — предлагаем создать задачу
+      if (newId && f.type === 'incoming') setSavedLetter({ id: newId, subject: f.subject, ai_action: f.ai_action, ai_summary: f.ai_summary })
+      else onSaved()
+    },
+  })
+  const removeA = useAction(async (id: string) => {
+    await sb(supabase.from('letters').delete().eq('id', id))
+  }, { invalidate: ['letters'], onSuccess: onSaved })
+  const saving = saveA.isPending
+
+  function save() {
     if (!form.subject) { setError('Введите тему'); return }
     setError('')
-    setSaving(true)
-    if (letter?.id) {
-      const r = await supabase.from('letters').update(form).eq('id', letter.id)
-      if (r.error) { setError('Ошибка: ' + r.error.message); setSaving(false); return }
-      setSaving(false)
-      onSaved()
-    } else {
-      const r = await supabase.from('letters').insert({ ...form }).select('*').single()
-      if (r.error) { setError('Ошибка: ' + r.error.message); setSaving(false); return }
-      setSaving(false)
-      // Если входящее письмо — предлагаем создать задачу
-      if (form.type === 'incoming') {
-        setSavedLetter({ ...form, id: r.data?.id })
-      } else {
-        onSaved()
-      }
-    }
+    saveA.mutate(form)
   }
 
   async function remove() {
     if (!letter?.id || !(await ask('Удалить письмо?', { ok: 'Удалить', danger: true }))) return
-    const { error } = await supabase.from('letters').delete().eq('id', letter.id)
-    if (error) { setError('Ошибка удаления: ' + error.message); return }
-    onSaved()
+    removeA.mutate(letter.id)
   }
 
   if (savedLetter) return <TaskFromLetterModal letter={savedLetter} onClose={onSaved} onSaved={onSaved} />
@@ -231,6 +223,8 @@ function LetterModal({ letter, onClose, onSaved }: { letter: Letter | null; onCl
         </div>
 
         {error && <Notice tone="red">{error}</Notice>}
+        {saveA.error && <Notice tone="red">Ошибка: {saveA.error}</Notice>}
+        {removeA.error && <Notice tone="red">Ошибка удаления: {removeA.error}</Notice>}
 
         <div style={two}>
           <Field label="Тип">
@@ -282,24 +276,13 @@ function LetterModal({ letter, onClose, onSaved }: { letter: Letter | null; onCl
 }
 
 export default function LettersPage() {
-  const [letters, setLetters] = useState<Letter[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
   const [selected, setSelected] = useState<Letter | null>(null)
   const [showModal, setShowModal] = useState(false)
   const [typeFilter, setTypeFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
 
-  useEffect(() => { fetchLetters() }, [])
-
-  async function fetchLetters() {
-    setLoading(true)
-    setError('')
-    const { data, error } = await supabase.from('letters').select('*').order('date', { ascending: false })
-    if (error) setError(error.message)
-    setLetters(data || [])
-    setLoading(false)
-  }
+  const lettersQ = useSb(['letters'], () => sb(supabase.from('letters').select('*').order('date', { ascending: false })))
+  const letters = lettersQ.data ?? []
 
   const filtered = letters.filter(l => {
     if (typeFilter && l.type !== typeFilter) return false
@@ -326,24 +309,22 @@ export default function LettersPage() {
         <Button kind="primary" onClick={() => { setSelected(null); setShowModal(true) }}>Новое письмо</Button>
       </Row>
 
-      {error && <ErrorBox error={error} onRetry={fetchLetters} />}
-
       <Card pad={false}>
-        {loading ? <Loading /> : (
+        <QueryState q={lettersQ}>{() => (
           <Table rows={filtered} rowKey={l => l.id} onRow={l => { setSelected(l); setShowModal(true) }} empty="Писем не найдено" cols={[
             { key: 't', title: 'Тип', sort: l => l.type, render: l => <Badge tone={l.type === 'incoming' ? 'green' : 'blue'}>{l.type === 'incoming' ? 'Входящее' : 'Исходящее'}</Badge> },
             { key: 'd', title: 'Дата', sort: l => l.date || null, render: l => <span style={{ color: C.muted, whiteSpace: 'nowrap' }}>{dateRu(l.date)}</span> },
             { key: 's', title: 'Тема', sort: l => l.subject || null, render: l => <span style={{ fontWeight: 500 }}>{l.subject || '—'}</span> },
             { key: 'w', title: 'От / кому', render: l => <span style={{ color: C.muted }}>{l.type === 'incoming' ? l.sender : l.recipient}</span> },
-            { key: 'st', title: 'Статус', sort: l => l.status, render: l => { const s = statusLabel[l.status] || statusLabel.draft; return <Badge tone={s.tone}>{s.label}</Badge> } },
+            { key: 'st', title: 'Статус', sort: l => l.status, render: l => { const s = statusLabel[l.status ?? ''] || statusLabel.draft; return <Badge tone={s.tone}>{s.label}</Badge> } },
             { key: 'ai', title: 'AI резюме', render: l => (
               <div style={{ color: C.faint, fontSize: 12, maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.ai_summary || '—'}</div>
             ) },
           ]} />
-        )}
+        )}</QueryState>
       </Card>
 
-      {showModal && <LetterModal letter={selected} onClose={() => setShowModal(false)} onSaved={() => { setShowModal(false); fetchLetters() }} />}
+      {showModal && <LetterModal letter={selected} onClose={() => setShowModal(false)} onSaved={() => setShowModal(false)} />}
     </Page>
   )
 }

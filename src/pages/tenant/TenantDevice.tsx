@@ -28,7 +28,7 @@ export function TenantDeviceCard() {
 
   const run = async (f: () => Promise<unknown>, ok: string) => {
     setBusy(true); setMsg(null)
-    try { await f(); setMsg({ ok: true, text: ok }) } catch (e: any) { setMsg({ ok: false, text: e?.message || 'Не получилось, попробуйте ещё раз' }) }
+    try { await f(); setMsg({ ok: true, text: ok }) } catch (e) { setMsg({ ok: false, text: (e instanceof Error && e.message) || 'Не получилось, попробуйте ещё раз' }) }
     setBusy(false); refresh()
   }
 

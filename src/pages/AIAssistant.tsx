@@ -37,7 +37,7 @@ export function AIAssistantPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messages: newMessages.map(m => ({ role: m.role, content: m.content })) })
       })
-      const data = await res.json()
+      const data: { content?: string; error?: string } = await res.json()
       setMessages(prev => [...prev, { role: 'assistant', content: data.content || data.error || 'Не удалось получить ответ' }])
     } catch {
       setMessages(prev => [...prev, { role: 'assistant', content: 'Ошибка. Попробуйте снова.' }])

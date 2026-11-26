@@ -1,11 +1,12 @@
 import { useTenant } from './useTenant'
-import { Card, Title, Row, Badge, Loading, money, date, page } from './ui'
+import { Card, Title, Row, Badge, Loading, Empty, money, date, page } from './ui'
 
 const TYPE: Record<string, string> = { COMPANY: 'Юридическое лицо', IP: 'Индивидуальный предприниматель', INDIVIDUAL: 'Физическое лицо' }
 
 export default function TenantContract({ tenantId }: { tenantId: string }) {
-  const { tenant: t, loading } = useTenant(tenantId)
+  const { tenant: t, loading, error } = useTenant(tenantId)
   if (loading) return <Loading />
+  if (error) return <Empty>Не удалось загрузить договор. Обновите страницу.</Empty>
   if (!t) return null
   const days = t.contract_end_date ? Math.ceil((new Date(t.contract_end_date).getTime() - Date.now()) / 86400000) : null
   return (
@@ -28,7 +29,7 @@ export default function TenantContract({ tenantId }: { tenantId: string }) {
       <Card>
         <Title>Арендатор</Title>
         <Row label="Наименование" value={t.full_name} />
-        <Row label="Тип" value={TYPE[t.type]} />
+        <Row label="Тип" value={t.type ? TYPE[t.type] : null} />
         <Row label="ИНН" value={t.inn} />
         {t.kpp && <Row label="КПП" value={t.kpp} />}
         <Row label="Юридический адрес" value={t.legal_address} />

@@ -1,6 +1,8 @@
 import { apiFetch } from '../lib/api'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useRef, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
+import { sb, useSb, useAction, errText } from '../lib/query'
+import type { Tables } from '../lib/database.types'
 import { Page, Card, Row, Button, Badge, Stat, Stats, Table, Search, Notice, Loading, Empty, Sub, Muted, C, type Tone } from '../components/ui'
 
 const FMT = (n: number) => Number(n).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -19,12 +21,22 @@ interface Counterparty {
   tenantId?: string
 }
 
+/** Контрагент как его отдаёт /api/debts-1c (без вычисляемых полей). */
+type Counterparty1C = Omit<Counterparty, 'netto' | 'tenantId'>
+/** Ответ /api/debts-1c. */
+interface Debts1C { ok: boolean; error?: string; stale?: boolean; meta?: { asOf?: string }; counterparties?: Counterparty1C[] }
+/** Ответ /api/import-1c-ledger и /api/import-bank-csv. */
+interface ImportReply { ok?: boolean; error?: string; imported?: number; matched?: number; unmatched?: number; total?: number }
+
 // ── Ledger entry from DB ───────────────────────────────────────────────────────
-interface LedgerEntry {
-  id: string; tenant_id: string | null; counterparty_1c_id: string | null
-  contract_1c_id: string | null; contract_name: string | null
-  kind: string; doc_type: string | null; doc_number: string | null
-  date: string; charged: number; paid: number; source: string; note: string | null
+type LedgerEntry = Tables<'ledger_entries'>
+
+async function loadDebts1C(): Promise<Debts1C> {
+  let r: Response
+  try { r = await apiFetch('/api/debts-1c') } catch (e) { throw new Error('1С не отвечает: ' + (errText(e) || 'ошибка сети')) }
+  const d: Debts1C = await r.json().catch(() => ({ ok: false, error: `1С не отвечает (ответ ${r.status})` }))
+  if (!d.ok) throw new Error(d.error || '1С не отвечает')
+  return d
 }
 
 const KIND_TONE: Record<string, Tone> = { charge: 'red', payment: 'green', mixed: 'blue', adjustment: 'amber' }
@@ -35,93 +47,80 @@ const KIND_LABEL: Record<string, string> = {
 type Msg = { tone: 'green' | 'red'; text: string }
 
 export default function LedgerPage() {
-  const [cps, setCps] = useState<Counterparty[]>([])
-  const [ops, setOps] = useState<LedgerEntry[]>([])
-  const [loading, setLoading] = useState(true)
-  const [importing1c, setImporting1c] = useState(false)
-  const [importingBank, setImportingBank] = useState(false)
   const [importMsg, setImportMsg] = useState<Msg | null>(null)
   const [selected, setSelected] = useState<Counterparty | null>(null)
   const [search, setSearch] = useState('')
-  const [lastUpdate, setLastUpdate] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
 
-  useEffect(() => { load() }, [])
+  // 1C data = authoritative balances; Supabase tenants = for linking
+  // выгрузка 1С идёт до минуты: без повторов и без перезапроса при возврате на вкладку (как было — только при открытии и по «Обновить»)
+  const debtsQ = useSb(['api:debts-1c'], loadDebts1C, { retry: false, refetchOnWindowFocus: false, staleTime: 5 * 60_000 })
+  const tenantsQ = useSb(['tenants', 'ids-1c'], () => sb(supabase.from('tenants').select('id,inn,id_1c')))
+  // Load operations from DB for the period (history tab)
+  const opsQ = useSb(['ledger_entries', 'recent'], () => sb(supabase.from('ledger_entries').select('*').order('date', { ascending: false }).limit(5000)))
+  const ops: LedgerEntry[] = opsQ.data ?? []
+  const loading = debtsQ.isPending || tenantsQ.isPending || opsQ.isPending
+  const load = () => { debtsQ.refetch(); tenantsQ.refetch(); opsQ.refetch() }
 
-  async function load() {
-    setLoading(true)
-    try {
-      // 1C data = authoritative balances; Supabase tenants = for linking
-      const [r1cRes, { data: tenantRows }] = await Promise.all([
-        apiFetch('/api/debts-1c'),
-        supabase.from('tenants').select('id,inn,id_1c'),
-      ])
-      const r1c = await r1cRes.json().catch(() => ({ ok: false, error: `1С не отвечает (ответ ${r1cRes.status})` }))
-      if (!r1c.ok) { setImportMsg({ tone: 'red', text: r1c.error || '1С не отвечает' }); setLoading(false); return }
-
-      // Build tenant lookup: id_1c → tenantId, inn → tenantId
-      const byId1c: Record<string, string> = {}
-      const byInn: Record<string, string> = {}
-      for (const t of (tenantRows || [])) {
-        if (t.id_1c) byId1c[t.id_1c] = t.id
-        if (t.inn)   byInn[t.inn]   = t.id
-      }
-
-      const enriched: Counterparty[] = r1c.counterparties.map((cp: any) => ({
-        ...cp,
-        netto: cp.debt - cp.advance,          // >0 = должен нам, <0 = переплата
-        tenantId: byId1c[cp.id] || byInn[cp.inn] || undefined,
-      }))
-
-      if (r1c.meta?.asOf) setLastUpdate(new Date(r1c.meta.asOf).toLocaleString('ru-RU') + (r1c.stale ? ' — 1С сейчас не отвечает, показаны сохранённые данные' : ''))
-      setCps(enriched)
-
-      // Load operations from DB for the period (history tab)
-      const { data: opRows, error: opErr } = await supabase
-        .from('ledger_entries')
-        .select('*')
-        .order('date', { ascending: false })
-        .limit(5000)
-      if (opErr) setImportMsg({ tone: 'red', text: 'Не удалось загрузить историю операций: ' + opErr.message })
-      setOps(opRows || [])
-    } catch (e: any) {
-      setImportMsg({ tone: 'red', text: '1С не отвечает: ' + (e?.message || 'ошибка сети') })
-    } finally {
-      setLoading(false)
+  const cps = useMemo<Counterparty[]>(() => {
+    // Build tenant lookup: id_1c → tenantId, inn → tenantId
+    const byId1c: Record<string, string> = {}
+    const byInn: Record<string, string> = {}
+    for (const t of (tenantsQ.data || [])) {
+      if (t.id_1c) byId1c[t.id_1c] = t.id
+      if (t.inn)   byInn[t.inn]   = t.id
     }
+    return (debtsQ.data?.counterparties || []).map(cp => ({
+      ...cp,
+      netto: cp.debt - cp.advance,          // >0 = должен нам, <0 = переплата
+      tenantId: byId1c[cp.id] || byInn[cp.inn] || undefined,
+    }))
+  }, [debtsQ.data, tenantsQ.data])
+
+  const asOf = debtsQ.data?.meta?.asOf
+  const lastUpdate = asOf ? new Date(asOf).toLocaleString('ru-RU') + (debtsQ.data?.stale ? ' — 1С сейчас не отвечает, показаны сохранённые данные' : '') : ''
+  const loadMsg: Msg | null = debtsQ.error ? { tone: 'red', text: debtsQ.error.message }
+    : tenantsQ.error ? { tone: 'red', text: 'Не удалось загрузить арендаторов для сопоставления: ' + tenantsQ.error.message }
+    : opsQ.error ? { tone: 'red', text: 'Не удалось загрузить историю операций: ' + opsQ.error.message } : null
+
+  // импорт пишет операции в ledger_entries, синхронизация 1С — арендаторов и договоры
+  const import1CA = useAction(async () => {
+    // First sync tenants so id_1c is populated
+    await apiFetch('/api/sync-tenants-1c', { method: 'POST' })
+    const r = await apiFetch('/api/import-1c-ledger', { method: 'POST' })
+    const json: ImportReply = await r.json()
+    if (!json.ok) throw new Error(json.error)
+    return json
+  }, {
+    invalidate: ['api:debts-1c', 'ledger_entries', 'tenants', 'contracts'],
+    onSuccess: json => setImportMsg({ tone: 'green', text: `1С: ${json.imported} операций импортировано (${json.matched} сопоставлено, ${json.unmatched} без арендатора)` }),
+  })
+  const importBankA = useAction(async (file: File) => {
+    const text = await file.text()
+    const r = await apiFetch('/api/import-bank-csv', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ csv: text, filename: file.name }),
+    })
+    const json: ImportReply = await r.json()
+    if (!json.ok) throw new Error(json.error)
+    return json
+  }, {
+    invalidate: ['api:debts-1c', 'ledger_entries'],
+    onSuccess: (json, file) => setImportMsg({ tone: 'green', text: `Банк «${file.name}»: ${json.total} платежей, ${json.matched} сопоставлено с арендаторами` }),
+  })
+  const importing1c = import1CA.isPending
+  const importingBank = importBankA.isPending
+  const onImportError = (e: Error) => setImportMsg({ tone: 'red', text: 'Ошибка: ' + e.message })
+
+  function import1C() {
+    setImportMsg(null)
+    import1CA.mutate(undefined, { onError: onImportError })
   }
 
-  async function import1C() {
-    setImporting1c(true); setImportMsg(null)
-    try {
-      // First sync tenants so id_1c is populated
-      await apiFetch('/api/sync-tenants-1c', { method: 'POST' })
-      const r = await apiFetch('/api/import-1c-ledger', { method: 'POST' })
-      const json = await r.json()
-      if (json.ok) {
-        setImportMsg({ tone: 'green', text: `1С: ${json.imported} операций импортировано (${json.matched} сопоставлено, ${json.unmatched} без арендатора)` })
-        await load()
-      } else setImportMsg({ tone: 'red', text: 'Ошибка: ' + json.error })
-    } catch (e: any) { setImportMsg({ tone: 'red', text: 'Ошибка: ' + e.message }) }
-    finally { setImporting1c(false) }
-  }
-
-  async function importBankFile(file: File) {
-    setImportingBank(true); setImportMsg(null)
-    try {
-      const text = await file.text()
-      const r = await apiFetch('/api/import-bank-csv', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ csv: text, filename: file.name }),
-      })
-      const json = await r.json()
-      if (json.ok) {
-        setImportMsg({ tone: 'green', text: `Банк «${file.name}»: ${json.total} платежей, ${json.matched} сопоставлено с арендаторами` })
-        await load()
-      } else setImportMsg({ tone: 'red', text: 'Ошибка: ' + json.error })
-    } catch (e: any) { setImportMsg({ tone: 'red', text: 'Ошибка: ' + e.message }) }
-    finally { setImportingBank(false) }
+  function importBankFile(file: File) {
+    setImportMsg(null)
+    importBankA.mutate(file, { onError: onImportError })
   }
 
   if (loading) return <Loading text="Загрузка из 1С…" />
@@ -229,6 +228,7 @@ export default function LedgerPage() {
         </div>
       </Row>
 
+      {loadMsg && <Notice tone={loadMsg.tone}>{loadMsg.text}</Notice>}
       {importMsg && <Notice tone={importMsg.tone}>{importMsg.text}</Notice>}
 
       {/* KPI — balances from 1C counterparty level (authoritative) */}

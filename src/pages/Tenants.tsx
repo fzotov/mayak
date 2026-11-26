@@ -1,39 +1,28 @@
 // Список арендаторов: поиск, фильтр по группе и типу, сальдо по учёту Маяка. Строка ведёт в карточку.
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { useSb, sb, sbRpc } from '../lib/query'
 import { go } from '../lib/nav'
 import { Page, Card, Button, Badge, Table, Search, Select, Segmented, Loading, ErrorBox, Row, Sub, money, dateRu, C, type Tone } from '../components/ui'
 
-interface TenantRow {
-  id: string; full_name: string; type: string; tenant_group: string | null; unit_number: string | null; area_actual: number | null
-  monthly_total: number | null; monthly_rent: number | null; contract_number: string | null; contract_start_date: string | null; activity_type: string | null; inn: string | null
-}
+const COLS = 'id, full_name, type, tenant_group, unit_number, area_actual, monthly_total, monthly_rent, contract_number, contract_start_date, activity_type, inn'
 const TYPE: Record<string, string> = { COMPANY: 'Юрлицо', IP: 'ИП', INDIVIDUAL: 'Физлицо', SELF_EMPLOYED: 'Самозанятый' }
 const GROUP: Record<string, [string, Tone]> = { room: ['Помещение', 'neutral'], stand: ['Стойка', 'amber'], advertising: ['Реклама', 'violet'], agent: ['Агент', 'green'] }
 type G = '' | 'room' | 'stand' | 'advertising' | 'agent'
 
 export default function TenantsPage() {
-  const [rows, setRows] = useState<TenantRow[] | null>(null)
-  const [balances, setBalances] = useState<Record<string, number>>({})
-  const [error, setError] = useState('')
+  const tenantsQ = useSb(['tenants', 'list'], () => sb(supabase.from('tenants').select(COLS).order('full_name')))
+  // сальдо по учёту Маяка: долг минус аванс
+  const saldoQ = useSb(['rpc:tenant_saldo'], () => sbRpc('tenant_saldo'))
+  const rows = useMemo(() => tenantsQ.data ?? (tenantsQ.error ? [] : null), [tenantsQ.data, tenantsQ.error])
+  const balances = useMemo(() => {
+    const b: Record<string, number> = {}
+    for (const r of saldoQ.data || []) b[r.tenant_id] = Number(r.balance)
+    return b
+  }, [saldoQ.data])
   const [q, setQ] = useState('')
   const [group, setGroup] = useState<G>('')
   const [type, setType] = useState('')
-
-  async function load() {
-    setError('')
-    const { data, error } = await supabase.from('tenants')
-      .select('id, full_name, type, tenant_group, unit_number, area_actual, monthly_total, monthly_rent, contract_number, contract_start_date, activity_type, inn')
-      .order('full_name')
-    if (error) { setError(error.message); setRows([]); return }
-    setRows((data || []) as TenantRow[])
-    // сальдо по учёту Маяка: долг минус аванс
-    const { data: sal } = await supabase.rpc('tenant_saldo')
-    const b: Record<string, number> = {}
-    for (const r of (sal || []) as { tenant_id: string; balance: number }[]) b[r.tenant_id] = Number(r.balance)
-    setBalances(b)
-  }
-  useEffect(() => { load() }, [])
 
   const count = (g: G) => (rows || []).filter(t => !g || (t.tenant_group || 'room') === g).length
   const shown = useMemo(() => (rows || []).filter(t => {
@@ -56,12 +45,12 @@ export default function TenantsPage() {
           <option value="">Все типы</option>{Object.entries(TYPE).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </Select>
       </Row>
-      {error && <ErrorBox error={error} onRetry={load} />}
+      {tenantsQ.error && <ErrorBox error={tenantsQ.error.message} onRetry={() => tenantsQ.refetch()} />}
       <Card pad={false}>
         {rows === null ? <Loading /> : (
           <Table rows={shown} rowKey={t => t.id} onRow={t => go('/tenants/' + t.id)} empty="Арендаторы не найдены" cols={[
             { key: 'n', title: 'Арендатор', sort: t => t.full_name, render: t => <><div style={{ fontWeight: 500 }}>{t.full_name}</div>{t.activity_type && <Sub>{t.activity_type}</Sub>}</> },
-            { key: 't', title: 'Тип', render: t => TYPE[t.type] || t.type },
+            { key: 't', title: 'Тип', render: t => (t.type && TYPE[t.type]) || t.type },
             { key: 'g', title: 'Группа', render: t => { const g = GROUP[t.tenant_group || 'room']; return <Badge tone={g?.[1]}>{g?.[0] || t.tenant_group}</Badge> } },
             { key: 'u', title: 'Офис', sort: t => t.unit_number, render: t => t.unit_number || '—' },
             { key: 'a', title: 'Площадь', align: 'right', sort: t => Number(t.area_actual || 0), render: t => t.area_actual ? `${t.area_actual} м²` : '—' },

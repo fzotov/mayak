@@ -1,6 +1,7 @@
 // Общие элементы кабинета арендатора: одна тёмная тема, крупные зоны нажатия для телефона.
-import { useEffect, useState, type CSSProperties, type ReactNode } from 'react'
+import { type CSSProperties, type ReactNode } from 'react'
 import { openStoredFile, storedFileUrl } from '../../lib/api'
+import { useSb } from '../../lib/query'
 
 export const T = {
   bg: 'var(--bg)', surface: 'var(--surface)', raised: 'var(--surface-2)', border: 'var(--border)', text: 'var(--text)', sub: 'var(--text-2)', muted: 'var(--text-3)',
@@ -69,14 +70,10 @@ export const page: CSSProperties = { display: 'flex', flexDirection: 'column', g
 
 /** Миниатюры фото из закрытого хранилища: временные ссылки, нажатие открывает фото целиком. */
 export function StoredPhotos({ urls, caption }: { urls?: string[] | null; caption: string }) {
-  const [signed, setSigned] = useState<string[]>([])
   const key = (urls || []).join('|')
-  useEffect(() => {
-    let alive = true
-    if (!urls?.length) { setSigned([]); return }
-    Promise.all(urls.map(u => storedFileUrl(u).catch(() => ''))).then(s => { if (alive) setSigned(s) })
-    return () => { alive = false }
-  }, [key])
+  // временные ссылки живут час — держим их в кеше не дольше получаса
+  const q = useSb(['storage:signed', key], () => Promise.all((urls || []).map(u => storedFileUrl(u).catch(() => ''))), { enabled: !!urls?.length, staleTime: 30 * 60_000 })
+  const signed = q.data ?? []
   if (!urls?.length) return null
   return (
     <div style={{ marginTop: 10 }}>

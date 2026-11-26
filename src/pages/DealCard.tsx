@@ -2,6 +2,8 @@
 // Новый клиент заселяется через мастер арендатора (/tenants/new?deal=…), продление — через договор и индексацию ставки.
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { sb, useSb, useAction, useInvalidate } from '../lib/query'
+import type { TablesUpdate } from '../lib/database.types'
 import { go } from '../lib/nav'
 import {
   Page, Card, Row, Button, Badge, Field, Select, Textarea, Modal, Notice, Loading, ErrorBox, Empty, Link, PhoneLink, Muted, Sub,
@@ -14,35 +16,35 @@ import {
 
 type Move = { to: Stage } | null
 
+/** Все таблицы, которые меняет запись по сделке (события пишет и база — триггерами этапов). */
+const DEAL_TABLES = ['deals', 'deal_units', 'deal_events']
+
 export default function DealCardPage({ dealId }: { dealId: string }) {
   const narrow = useNarrow()
   const { units, people, me } = useCrmRefs()
-  const [deal, setDeal] = useState<Deal | null | undefined>(undefined)
-  const [events, setEvents] = useState<DealEvent[]>([])
-  const [error, setError] = useState('')
+  const invalidate = useInvalidate()
+  const dealQ = useSb(['deals', 'card', dealId], async (): Promise<Deal | null> => {
+    const row = await sb(supabase.from('deals').select(DEAL_SELECT).eq('id', dealId).maybeSingle())
+    // kind и stage в базе ограничены проверками — строка сужается до типа сделки
+    return (row as Deal | null) ?? null
+  })
+  const eventsQ = useSb(['deal_events', 'deal', dealId], (): Promise<DealEvent[]> =>
+    sb(supabase.from('deal_events').select('id, kind, text, stage_from, stage_to, created_by_name, created_at').eq('deal_id', dealId).order('created_at', { ascending: false })))
+  const deal = dealQ.isPending ? undefined : dealQ.data ?? null
+  const events = eventsQ.data ?? []
+  const error = dealQ.error?.message || eventsQ.error?.message || ''
+  const load = () => { dealQ.refetch(); eventsQ.refetch() }
   const [msg, setMsg] = useState<{ tone: 'green' | 'red'; text: string } | null>(null)
   const [move, setMove] = useState<Move>(null)
   const [editing, setEditing] = useState(false)
-
-  async function load() {
-    setError('')
-    const [d, e] = await Promise.all([
-      supabase.from('deals').select(DEAL_SELECT).eq('id', dealId).maybeSingle(),
-      supabase.from('deal_events').select('id, kind, text, stage_from, stage_to, created_by_name, created_at').eq('deal_id', dealId).order('created_at', { ascending: false }),
-    ])
-    if (d.error) { setError(d.error.message); setDeal(null); return }
-    setDeal((d.data as Deal) ?? null)
-    if (e.error) setError(e.error.message)
-    setEvents((e.data || []) as DealEvent[])
-  }
-  useEffect(() => { load() }, [dealId])
 
   if (deal === undefined) return <Loading />
   if (deal === null) return <Page>{error ? <ErrorBox error={error} onRetry={load} /> : <Card><Empty>Сделка не найдена. <Link to="/deals">Ко всем сделкам</Link></Empty></Card>}</Page>
 
   const open = isOpen(deal.stage)
-  const dealUnits = (deal.deal_units || []).map(x => units.find(u => u.id === x.unit_id)).filter(Boolean) as typeof units
-  const done = (text: string) => { setMsg({ tone: 'green', text }); load() }
+  const dealUnits = (deal.deal_units || []).flatMap(x => units.filter(u => u.id === x.unit_id))
+  // записи через useAction уже обновили сделку и историю; здесь — только сообщение
+  const done = (text: string) => { setMsg({ tone: 'green', text }) }
   const ownerName = people.find(p => p.user_id === deal.owner_id)?.full_name
 
   const lease = deal.lease
@@ -130,7 +132,7 @@ export default function DealCardPage({ dealId }: { dealId: string }) {
               <div>
                 {events.map(e => (
                   <div key={e.id} style={{ display: 'flex', gap: 10, padding: '10px 16px', borderBottom: `1px solid ${C.line}` }}>
-                    <div style={{ width: 8, height: 8, borderRadius: 4, marginTop: 6, flexShrink: 0, background: e.kind === 'stage' ? `var(--${toneVar(STAGE_TONE[e.stage_to as Stage])})` : e.kind === 'system' ? C.lineStrong : C.accent }} />
+                    <div style={{ width: 8, height: 8, borderRadius: 4, marginTop: 6, flexShrink: 0, background: e.kind === 'stage' ? `var(--${toneVar(e.stage_to && e.stage_to in STAGE_TONE ? STAGE_TONE[e.stage_to as Stage] : undefined)})` : e.kind === 'system' ? C.lineStrong : C.accent }} />
                     <div style={{ minWidth: 0, flex: 1 }}>
                       <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
                         <span style={{ fontSize: 13, fontWeight: 600 }}>{e.kind === 'stage' ? 'Этап' : eventLabel(e.kind)}</span>
@@ -149,7 +151,7 @@ export default function DealCardPage({ dealId }: { dealId: string }) {
       </div>
 
       {move && <MoveModal deal={deal} to={move.to} onClose={() => setMove(null)} onDone={t => { setMove(null); done(t) }} />}
-      {editing && <DealFormModal deal={deal} units={units} people={people} me={me} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); done('Сделка сохранена') }} />}
+      {editing && <DealFormModal deal={deal} units={units} people={people} me={me} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); invalidate(...DEAL_TABLES); done('Сделка сохранена') }} />}
     </Page>
   )
 }
@@ -200,18 +202,18 @@ function MoveModal({ deal, to, onClose, onDone }: { deal: Deal; to: Stage; onClo
   const [at, setAt] = useState(isOpen(deal.stage) && deal.next_step_at && deal.next_step_at >= localDate() ? deal.next_step_at : localDate())
   const [reason, setReason] = useState('')
   const [tenantId, setTenantId] = useState('')
-  const [tenants, setTenants] = useState<{ id: string; full_name: string }[] | null>(null)
   const [err, setErr] = useState('')
-  const [busy, setBusy] = useState(false)
   const toOpen = isOpen(to)
   const settleNew = to === 'won' && deal.kind === 'new'
+  const tenantsQ = useSb(['tenants', 'deal-move-names'], () => sb(supabase.from('tenants').select('id, full_name').order('full_name')), { enabled: settleNew })
+  const tenants = tenantsQ.data ?? null
+  const act = useAction((patch: TablesUpdate<'deals'>) => sb(supabase.from('deals').update(patch).eq('id', deal.id)), {
+    invalidate: DEAL_TABLES, onSuccess: () => onDone(`Этап: ${stageLabel(to, deal.kind)}`),
+  })
+  const busy = act.isPending
 
-  useEffect(() => {
-    if (settleNew) supabase.from('tenants').select('id, full_name').order('full_name').then(({ data }) => setTenants((data || []) as any))
-  }, [settleNew])
-
-  async function save() {
-    const patch: Record<string, unknown> = { stage: to }
+  function save() {
+    const patch: TablesUpdate<'deals'> = { stage: to }
     if (toOpen) {
       if (!step.trim() || !at) { setErr('Укажите следующий шаг и дату.'); return }
       Object.assign(patch, { next_step: step.trim(), next_step_at: at, lost_reason: null })
@@ -222,11 +224,8 @@ function MoveModal({ deal, to, onClose, onDone }: { deal: Deal; to: Stage; onClo
       if (!tenantId) { setErr('Выберите арендатора или заселите через мастер.'); return }
       patch.tenant_id = tenantId
     }
-    setErr(''); setBusy(true)
-    const { error } = await supabase.from('deals').update(patch).eq('id', deal.id)
-    setBusy(false)
-    if (error) { setErr(dbError(error)); return }
-    onDone(`Этап: ${stageLabel(to, deal.kind)}`)
+    setErr('')
+    act.mutate(patch)
   }
 
   const title = to === 'lost' ? (deal.kind === 'renewal' ? 'Арендатор съезжает' : 'Отказ') : to === 'won' ? stageLabel('won', deal.kind) : `Этап «${stageLabel(to, deal.kind)}»`
@@ -235,7 +234,8 @@ function MoveModal({ deal, to, onClose, onDone }: { deal: Deal; to: Stage; onClo
       <Button onClick={onClose}>Отмена</Button>
       {!(settleNew && !tenantId) && <Button kind={to === 'lost' ? 'danger' : 'primary'} disabled={busy} onClick={save}>{busy ? 'Сохраняю…' : 'Сохранить'}</Button>}
     </>}>
-      {err && <Notice tone="red">{err}</Notice>}
+      {(err || act.error) && <Notice tone="red">{err || dbError({ message: act.error })}</Notice>}
+      {tenantsQ.error && <Notice tone="red">Список арендаторов не загрузился: {tenantsQ.error.message}</Notice>}
       {toOpen && <>
         {!isOpen(deal.stage) && <Notice tone="amber">Сделка снова станет открытой.</Notice>}
         <NextStepFields step={step} at={at} onStep={setStep} onAt={setAt} />
@@ -271,19 +271,18 @@ function NextStepCard({ deal, people, me, onSaved }: { deal: Deal; people: { use
   const [at, setAt] = useState(deal.next_step_at || '')
   const [owner, setOwner] = useState(deal.owner_id || '')
   const [err, setErr] = useState('')
-  const [busy, setBusy] = useState(false)
+  const act = useAction((patch: TablesUpdate<'deals'>) => sb(supabase.from('deals').update(patch).eq('id', deal.id)), { invalidate: DEAL_TABLES, onSuccess: () => onSaved() })
+  const busy = act.isPending
+  const shownErr = err || (act.error ? dbError({ message: act.error }) : '')
   useEffect(() => { setStep(deal.next_step || ''); setAt(deal.next_step_at || ''); setOwner(deal.owner_id || '') }, [deal.next_step, deal.next_step_at, deal.owner_id])
   const open = isOpen(deal.stage)
   const changed = step !== (deal.next_step || '') || at !== (deal.next_step_at || '') || owner !== (deal.owner_id || '')
   const tone = dueTone(deal)
 
-  async function save() {
+  function save() {
     if (open && (!step.trim() || !at)) { setErr('У открытой сделки должен быть следующий шаг с датой.'); return }
-    setErr(''); setBusy(true)
-    const { error } = await supabase.from('deals').update({ next_step: step.trim() || null, next_step_at: at || null, owner_id: owner || null }).eq('id', deal.id)
-    setBusy(false)
-    if (error) { setErr(dbError(error)); return }
-    onSaved()
+    setErr('')
+    act.mutate({ next_step: step.trim() || null, next_step_at: at || null, owner_id: owner || null })
   }
 
   if (!open) return (
@@ -295,14 +294,14 @@ function NextStepCard({ deal, people, me, onSaved }: { deal: Deal; people: { use
         </Select>
         {changed && <Button kind="primary" disabled={busy} onClick={save}>Сохранить</Button>}
       </Row>
-      {err && <div style={{ marginTop: 8 }}><Notice tone="red">{err}</Notice></div>}
+      {shownErr && <div style={{ marginTop: 8 }}><Notice tone="red">{shownErr}</Notice></div>}
     </Card>
   )
 
   return (
     <Card title={<span>Следующий шаг {tone === 'red' ? <Badge tone="red">просрочен</Badge> : tone === 'amber' ? <Badge tone="amber">сегодня</Badge> : !hasNextStep(deal) ? <Badge tone="red">не задан</Badge> : null}</span>}>
       <div style={{ display: 'grid', gap: 10 }}>
-        {err && <Notice tone="red">{err}</Notice>}
+        {shownErr && <Notice tone="red">{shownErr}</Notice>}
         <NextStepFields step={step} at={at} onStep={setStep} onAt={setAt} />
         <Field label="Ответственный">
           <Select value={owner} onChange={e => setOwner(e.target.value)}>
@@ -324,27 +323,33 @@ function TouchForm({ deal, onSaved }: { deal: Deal; onSaved: (text: string) => v
   const [step, setStep] = useState('')
   const [at, setAt] = useState('')
   const [err, setErr] = useState('')
-  const [busy, setBusy] = useState(false)
   const open = isOpen(deal.stage)
+  const act = useAction(async (a: { text: string; next: { step: string; at: string } | null }) => {
+    await sb(supabase.from('deal_events').insert({ deal_id: deal.id, tenant_id: deal.tenant_id, kind, text: a.text }))
+    if (a.next) {
+      const { error } = await supabase.from('deals').update({ next_step: a.next.step, next_step_at: a.next.at }).eq('id', deal.id)
+      if (error) throw new Error('Касание записано, но шаг не сохранился: ' + dbError(error))
+    }
+  }, {
+    invalidate: DEAL_TABLES,
+    onSuccess: (_r, a) => {
+      setText(''); setStep(''); setAt(''); setNextOpen(false)
+      onSaved(a.next ? 'Касание записано, следующий шаг обновлён' : 'Касание записано')
+    },
+  })
+  const busy = act.isPending
 
-  async function save() {
+  function save() {
     if (!text.trim()) { setErr('Опишите, что было: о чём договорились, что ответил клиент.'); return }
     if (nextOpen && (!step.trim() || !at)) { setErr('Новый следующий шаг: текст и дата.'); return }
-    setErr(''); setBusy(true)
-    const { error } = await supabase.from('deal_events').insert({ deal_id: deal.id, tenant_id: deal.tenant_id, kind, text: text.trim() })
-    if (error) { setBusy(false); setErr(error.message); return }
-    if (nextOpen) {
-      const { error: e2 } = await supabase.from('deals').update({ next_step: step.trim(), next_step_at: at }).eq('id', deal.id)
-      if (e2) { setBusy(false); setErr('Касание записано, но шаг не сохранился: ' + dbError(e2)); return }
-    }
-    setBusy(false); setText(''); setStep(''); setAt(''); setNextOpen(false)
-    onSaved(nextOpen ? 'Касание записано, следующий шаг обновлён' : 'Касание записано')
+    setErr('')
+    act.mutate({ text: text.trim(), next: nextOpen ? { step: step.trim(), at } : null })
   }
 
   return (
     <Card title="Добавить касание">
       <div style={{ display: 'grid', gap: 10 }}>
-        {err && <Notice tone="red">{err}</Notice>}
+        {(err || act.error) && <Notice tone="red">{err || act.error}</Notice>}
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           {TOUCH_KINDS.map(([k, l]) => <Button key={k} small kind={kind === k ? 'primary' : 'secondary'} onClick={() => setKind(k)}>{l}</Button>)}
         </div>

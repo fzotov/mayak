@@ -1,26 +1,12 @@
 // Рекламная стела: короба с двух сторон (сверху вниз), кто занимает, сколько платит, до какого числа договор.
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { useSb, useAction, sb } from '../lib/query'
+import type { Tables } from '../lib/database.types'
 import { Page, Card, Grid, Button, Stat, Stats, Field, Input, Segmented, Modal, Notice, Loading, ErrorBox, Empty, Muted, num, dateRu, C } from '../components/ui'
 
-interface Slot {
-  id: string
-  slot_number: number
-  side: 'parking' | 'roundabout'
-  code_1c: string | null
-  tenant_name: string | null
-  tenant_id: string | null
-  monthly_fee: number | null
-  is_our_ad: boolean
-  is_free: boolean
-  contract_end_date: string | null
-}
-
-interface Tenant {
-  id: string
-  full_name: string
-  type: string
-}
+type Slot = Tables<'advertising_slots'>
+type Tenant = Pick<Tables<'tenants'>, 'id' | 'full_name' | 'type'>
 
 type Kind = 'tenant' | 'free' | 'our'
 
@@ -28,30 +14,29 @@ const SIDE_LABEL: Record<string, string> = { parking: 'Со стороны па�
 const kindOf = (s: Slot): Kind => s.is_our_ad ? 'our' : s.is_free ? 'free' : 'tenant'
 
 export default function AdvertisingStele() {
-  const [slots, setSlots] = useState<Slot[]>([])
-  const [tenants, setTenants] = useState<Tenant[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
   const [editing, setEditing] = useState<Slot | null>(null)
-  const [saving, setSaving] = useState(false)
-  const [saveError, setSaveError] = useState('')
   const [search, setSearch] = useState('')
   const [showDropdown, setShowDropdown] = useState(false)
 
-  function load() {
-    setLoading(true)
-    setError('')
-    Promise.all([
-      supabase.from('advertising_slots').select('*').order('slot_number', { ascending: false }),
-      supabase.from('tenants').select('id, full_name, type').order('full_name'),
-    ]).then(([{ data: s, error: e1 }, { data: t, error: e2 }]) => {
-      if (e1 || e2) setError((e1 || e2)!.message)
-      setSlots(s || [])
-      setTenants(t || [])
-      setLoading(false)
-    })
-  }
-  useEffect(() => { load() }, [])
+  const slotsQ = useSb(['advertising_slots'], () => sb(supabase.from('advertising_slots').select('*').order('slot_number', { ascending: false })))
+  const tenantsQ = useSb(['tenants', 'id,full_name,type'], () => sb(supabase.from('tenants').select('id, full_name, type').order('full_name')))
+  const slots: Slot[] = slotsQ.data ?? []
+  const tenants: Tenant[] = tenantsQ.data ?? []
+  const loading = slotsQ.isPending || tenantsQ.isPending
+  const error = slotsQ.error || tenantsQ.error
+  const load = () => { slotsQ.refetch(); tenantsQ.refetch() }
+
+  const saveAction = useAction(async (e: Slot) => {
+    await sb(supabase.from('advertising_slots').update({
+      tenant_name: e.tenant_name,
+      tenant_id: e.tenant_id || null,
+      monthly_fee: e.monthly_fee || null,
+      is_free: e.is_free,
+      is_our_ad: e.is_our_ad,
+      contract_end_date: e.contract_end_date || null,
+    }).eq('id', e.id))
+  }, { invalidate: ['advertising_slots'], onSuccess: () => setEditing(null) })
+  const saving = saveAction.isPending
 
   const parking = slots.filter(s => s.side === 'parking').sort((a, b) => b.slot_number - a.slot_number)
   const roundabout = slots.filter(s => s.side === 'roundabout').sort((a, b) => b.slot_number - a.slot_number)
@@ -62,25 +47,12 @@ export default function AdvertisingStele() {
   const totalRevenue = slots.filter(s => !s.is_free && !s.is_our_ad && s.monthly_fee)
     .reduce((sum, s) => sum + (s.monthly_fee || 0), 0)
 
-  async function save() {
+  function save() {
     if (!editing) return
-    setSaving(true)
-    setSaveError('')
-    const { error } = await supabase.from('advertising_slots').update({
-      tenant_name: editing.tenant_name,
-      tenant_id: editing.tenant_id || null,
-      monthly_fee: editing.monthly_fee || null,
-      is_free: editing.is_free,
-      is_our_ad: editing.is_our_ad,
-      contract_end_date: editing.contract_end_date || null,
-    }).eq('id', editing.id)
-    setSaving(false)
-    if (error) { setSaveError('Ошибка сохранения: ' + error.message); return }
-    setSlots(s => s.map(x => x.id === editing.id ? editing : x))
-    setEditing(null)
+    saveAction.mutate(editing)
   }
 
-  function close() { setEditing(null); setShowDropdown(false); setSaveError('') }
+  function close() { setEditing(null); setShowDropdown(false); saveAction.reset() }
 
   function selectTenant(t: Tenant) {
     setEditing(e => e ? { ...e, tenant_id: t.id, tenant_name: t.full_name } : e)
@@ -93,7 +65,7 @@ export default function AdvertisingStele() {
     setSearch(ten ? ten.full_name : s.tenant_name || '')
     setEditing({ ...s })
     setShowDropdown(false)
-    setSaveError('')
+    saveAction.reset()
   }
 
   const filtered = tenants.filter(t =>
@@ -149,7 +121,7 @@ export default function AdvertisingStele() {
         <Stat label="Выручка стелы/мес" value={`${num(totalRevenue, 2)} ₽`} tone="green" />
       </Stats>
 
-      {error && <ErrorBox error={error} onRetry={load} />}
+      {error && <ErrorBox error={error.message} onRetry={load} />}
 
       {loading ? <Loading /> : (
         <Grid min={300} gap={16}>
@@ -228,7 +200,7 @@ export default function AdvertisingStele() {
             </>
           )}
 
-          {saveError && <Notice tone="red">{saveError}</Notice>}
+          {saveAction.error && <Notice tone="red">Ошибка сохранения: {saveAction.error}</Notice>}
         </Modal>
       )}
     </Page>

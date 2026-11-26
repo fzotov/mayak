@@ -1,28 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { C, Page, Card, Row, Button, Badge, Stat, Stats, Field, Input, Select, Textarea, Segmented, Modal, Notice, Loading, Empty, ErrorBox, Muted, type Tone } from '../components/ui'
+import { sb, useSb, useAction, errText } from '../lib/query'
+import type { Tables, TablesInsert } from '../lib/database.types'
+import { C, Page, Card, Button, Badge, Stat, Stats, Field, Input, Select, Textarea, Segmented, Modal, Notice, Loading, Empty, ErrorBox, Muted, type Tone } from '../components/ui'
 
-interface PaymentEntry {
-  id: string
-  name: string
-  amount: number
-  due_date: string
-  type: string
-  status: string
-  incoming_invoice_id: string | null
-  regular_payment_id: string | null
-  building_id: string | null
-}
-
-interface RegularPayment {
-  id: string
-  name: string
-  amount: number
-  day_of_month: number
-  category: string | null
-  description: string | null
-  active: boolean
-}
+type PaymentEntry = Tables<'payment_calendar'>
+type RegularPayment = Tables<'regular_payments'>
 
 const STATUS_CONFIG: Record<string, { label: string; tone: Tone }> = {
   PENDING: { label: 'Ожидает', tone: 'blue' },
@@ -73,39 +56,31 @@ function lastDayOf(ym: string) {
 const groupHead: React.CSSProperties = { fontSize: 12, fontWeight: 600, color: C.muted, textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 8 }
 
 export default function PaymentCalendarPage() {
-  const [entries, setEntries] = useState<PaymentEntry[]>([])
-  const [regulars, setRegulars] = useState<RegularPayment[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [actionErr, setActionErr] = useState('')
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list')
   const [showRegularForm, setShowRegularForm] = useState(false)
   const [regForm, setRegForm] = useState({ name: '', amount: '', day_of_month: '1', category: 'Прочее', description: '' })
-  const [saving, setSaving] = useState(false)
-  const [formErr, setFormErr] = useState('')
   const [currentMonth] = useState(() => {
     const now = new Date()
     return new Date(now.getFullYear(), now.getMonth(), 1)
   })
 
   const monthEnd = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0)
+  const monthStr = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}`
 
   async function generateMonthlyEntries(regs: RegularPayment[]) {
     const y = currentMonth.getFullYear()
     const m = currentMonth.getMonth() + 1
-    const monthStr = `${y}-${String(m).padStart(2, '0')}`
 
-    const { data: existing, error } = await supabase
+    const existing = await sb(supabase
       .from('payment_calendar')
       .select('regular_payment_id')
       .gte('due_date', `${monthStr}-01`)
       .lte('due_date', lastDayOf(monthStr))
-      .eq('type', 'REGULAR')
-    if (error) throw new Error('Не удалось проверить платежи месяца: ' + error.message)
+      .eq('type', 'REGULAR')).catch(e => { throw new Error('Не удалось проверить платежи месяца: ' + errText(e)) })
 
-    const existingIds = new Set((existing || []).map((e: any) => e.regular_payment_id))
+    const existingIds = new Set(existing.map(e => e.regular_payment_id))
 
-    const toInsert = regs
+    const toInsert: TablesInsert<'payment_calendar'>[] = regs
       .filter(r => r.active && !existingIds.has(r.id))
       .map(r => {
         const day = Math.min(r.day_of_month, new Date(y, m, 0).getDate())
@@ -120,72 +95,66 @@ export default function PaymentCalendarPage() {
       })
 
     if (toInsert.length > 0) {
-      const { error: insErr } = await supabase.from('payment_calendar').insert(toInsert)
-      if (insErr) throw new Error('Не удалось добавить регулярные платежи месяца: ' + insErr.message)
+      await sb(supabase.from('payment_calendar').insert(toInsert)).catch(e => { throw new Error('Не удалось добавить регулярные платежи месяца: ' + errText(e)) })
     }
   }
 
-  async function load() {
-    setLoading(true); setError('')
-    try {
-      const { data: regs, error: regErr } = await supabase.from('regular_payments').select('*').order('day_of_month')
-      if (regErr) throw new Error('Не удалось загрузить регулярные платежи: ' + regErr.message)
-      const regList = (regs as RegularPayment[]) || []
-      setRegulars(regList)
+  // Загрузка месяца сама добавляет недостающие регулярные платежи (как и раньше), поэтому без перезапроса при каждом возврате на вкладку.
+  const monthQ = useSb(['payment_calendar', monthStr], async () => {
+    const regList = await sb(supabase.from('regular_payments').select('*').order('day_of_month'))
+      .catch(e => { throw new Error('Не удалось загрузить регулярные платежи: ' + errText(e)) })
 
-      await generateMonthlyEntries(regList)
+    await generateMonthlyEntries(regList)
 
-      const y = currentMonth.getFullYear()
-      const m = currentMonth.getMonth() + 1
-      const monthStr = `${y}-${String(m).padStart(2, '0')}`
+    const data = await sb(supabase
+      .from('payment_calendar')
+      .select('*')
+      .gte('due_date', `${monthStr}-01`)
+      .lte('due_date', lastDayOf(monthStr))
+      .order('due_date')).catch(e => { throw new Error('Не удалось загрузить календарь платежей: ' + errText(e)) })
 
-      const { data, error: calErr } = await supabase
-        .from('payment_calendar')
-        .select('*')
-        .gte('due_date', `${monthStr}-01`)
-        .lte('due_date', lastDayOf(monthStr))
-        .order('due_date')
-      if (calErr) throw new Error('Не удалось загрузить календарь платежей: ' + calErr.message)
-
-      // Просрочен — срок раньше сегодняшнего дня (платёж со сроком сегодня ещё не просрочен)
-      const now = new Date()
-      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-      const updated = ((data as PaymentEntry[]) || []).map(e => {
-        if (e.status === 'PENDING' && localDate(e.due_date) < todayStart) return { ...e, status: 'OVERDUE' }
-        return e
-      })
-      setEntries(updated)
-    } catch (e: any) {
-      setError(e?.message || 'Не удалось загрузить данные')
-    }
-    setLoading(false)
-  }
-
-  useEffect(() => { load() }, [])
-
-  async function markPaid(id: string) {
-    setActionErr('')
-    const { error } = await supabase.from('payment_calendar').update({ status: 'PAID' }).eq('id', id)
-    if (error) { setActionErr('Не удалось отметить оплату: ' + error.message); return }
-    setEntries(prev => prev.map(e => e.id === id ? { ...e, status: 'PAID' } : e))
-  }
-
-  async function saveRegular() {
-    if (!regForm.name || !regForm.amount) return
-    setSaving(true); setFormErr('')
-    const { error } = await supabase.from('regular_payments').insert({
-      name: regForm.name,
-      amount: parseFloat(regForm.amount.replace(',', '.')) || 0,
-      day_of_month: parseInt(regForm.day_of_month) || 1,
-      category: regForm.category,
-      description: regForm.description || null,
-      active: true,
+    // Просрочен — срок раньше сегодняшнего дня (платёж со сроком сегодня ещё не просрочен)
+    const now = new Date()
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    const entries = data.map(e => {
+      if (e.status === 'PENDING' && localDate(e.due_date) < todayStart) return { ...e, status: 'OVERDUE' }
+      return e
     })
-    setSaving(false)
-    if (error) { setFormErr('Не удалось сохранить: ' + error.message); return }
-    setShowRegularForm(false)
-    setRegForm({ name: '', amount: '', day_of_month: '1', category: 'Прочее', description: '' })
-    load()
+    return { regulars: regList, entries }
+  }, { refetchOnWindowFocus: false, retry: false })
+  const entries: PaymentEntry[] = monthQ.data?.entries ?? []
+  const regulars: RegularPayment[] = monthQ.data?.regulars ?? []
+  const loading = monthQ.isPending
+  const error = monthQ.error ? monthQ.error.message || 'Не удалось загрузить данные' : ''
+  const load = () => { monthQ.refetch() }
+
+  const paidA = useAction(async (id: string) => {
+    await sb(supabase.from('payment_calendar').update({ status: 'PAID' }).eq('id', id))
+  }, { invalidate: ['payment_calendar'] })
+  const actionErr = paidA.error ? 'Не удалось отметить оплату: ' + paidA.error : ''
+  function markPaid(id: string) { paidA.mutate(id) }
+
+  const regularA = useAction(async (f: typeof regForm) => {
+    await sb(supabase.from('regular_payments').insert({
+      name: f.name,
+      amount: parseFloat(f.amount.replace(',', '.')) || 0,
+      day_of_month: parseInt(f.day_of_month) || 1,
+      category: f.category,
+      description: f.description || null,
+      active: true,
+    }))
+  }, {
+    invalidate: ['regular_payments', 'payment_calendar'],
+    onSuccess: () => {
+      setShowRegularForm(false)
+      setRegForm({ name: '', amount: '', day_of_month: '1', category: 'Прочее', description: '' })
+    },
+  })
+  const saving = regularA.isPending
+  const formErr = regularA.error ? 'Не удалось сохранить: ' + regularA.error : ''
+  function saveRegular() {
+    if (!regForm.name || !regForm.amount) return
+    regularA.mutate(regForm)
   }
 
   const totalPlanned = entries.reduce((s, e) => s + e.amount, 0)
@@ -217,7 +186,7 @@ export default function PaymentCalendarPage() {
   return (
     <Page actions={<>
       <Segmented<'list' | 'calendar'> options={[['list', 'Список'], ['calendar', 'Календарь']]} value={viewMode} onChange={setViewMode} />
-      <Button onClick={() => { setFormErr(''); setShowRegularForm(true) }}>Регулярный платёж</Button>
+      <Button onClick={() => { regularA.reset(); setShowRegularForm(true) }}>Регулярный платёж</Button>
     </>}>
       <Muted><span style={{ textTransform: 'capitalize' }}>{monthLabel}</span> · регулярные платежи и счета за месяц{regulars.length > 0 ? ` · регулярных: ${regulars.length}` : ''}</Muted>
 

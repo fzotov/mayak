@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
+import { sb, useSb } from '../../lib/query'
 import { openStoredFile, storedFileUrl } from '../../lib/api'
 import { T, Card, Title, Loading, Empty, date, page } from './ui'
 
@@ -15,26 +15,21 @@ const DOC_LABEL: Record<string, string> = {
 
 /** Документы арендатора, загруженные администрацией. Ссылки временные, открываются в новой вкладке. */
 export default function TenantDocuments({ tenantId }: { tenantId: string }) {
-  const [docs, setDocs] = useState<any[] | null>(null)
-  const [error, setError] = useState(false)
-  const [links, setLinks] = useState<Record<string, string>>({})
+  const q = useSb(['tenant_documents', tenantId, 'cabinet'], () => sb(supabase.from('tenant_documents').select('id,doc_type,file_name,file_url,notes,uploaded_at').eq('tenant_id', tenantId)
+    .order('uploaded_at', { ascending: false })))
+  const list = q.data
+  // ссылки заранее: на iPhone окно, открытое после ожидания, браузер может заблокировать.
+  // Ссылки живут час — держим их в кеше не дольше получаса.
+  const linksQ = useSb(['tenant_documents', tenantId, 'links', (list || []).map(d => d.id).join('|')], async () => {
+    const docs = list || []
+    const urls = await Promise.all(docs.map(d => (d.file_url ? storedFileUrl(d.file_url).catch(() => '') : Promise.resolve(''))))
+    return Object.fromEntries(docs.map((d, i) => [d.id, urls[i]])) as Record<string, string>
+  }, { enabled: !!list, staleTime: 30 * 60_000 })
+  const links = linksQ.data ?? {}
+  const error = !!q.error
+  const docs = list ?? []
 
-  useEffect(() => {
-    let alive = true
-    supabase.from('tenant_documents').select('id,doc_type,file_name,file_url,notes,uploaded_at').eq('tenant_id', tenantId)
-      .order('uploaded_at', { ascending: false }).then(({ data, error }) => {
-        if (!alive) return
-        if (error) { setError(true); setDocs([]); return }
-        const list = data || []
-        setDocs(list)
-        // ссылки заранее: на iPhone окно, открытое после ожидания, браузер может заблокировать
-        Promise.all(list.map(d => (d.file_url ? storedFileUrl(d.file_url).catch(() => '') : Promise.resolve(''))))
-          .then(urls => { if (alive) setLinks(Object.fromEntries(list.map((d, i) => [d.id, urls[i]]))) })
-      })
-    return () => { alive = false }
-  }, [tenantId])
-
-  if (!docs) return <Loading />
+  if (q.isPending) return <Loading />
   return (
     <div style={page}>
       <Card>
@@ -66,7 +61,7 @@ export default function TenantDocuments({ tenantId }: { tenantId: string }) {
             if (!d.file_url) return <div key={d.id} style={{ ...row, opacity: 0.6 }}>{body}</div>
             return href
               ? <a key={d.id} href={href} target="_blank" rel="noopener" style={row}>{body}</a>
-              : <button key={d.id} type="button" onClick={() => openStoredFile(d.file_url)} style={{ ...row, background: 'none', borderLeft: 0, borderRight: 0, borderBottom: 0, cursor: 'pointer' }}>{body}</button>
+              : <button key={d.id} type="button" onClick={() => d.file_url && openStoredFile(d.file_url)} style={{ ...row, background: 'none', borderLeft: 0, borderRight: 0, borderBottom: 0, cursor: 'pointer' }}>{body}</button>
           })}
       </Card>
     </div>

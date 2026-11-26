@@ -1,15 +1,17 @@
 // Расчёты с арендаторами по учётному ядру: оборотная ведомость, депозиты, статьи, самопроверка
 // и карточка расчётов арендатора с операциями (оплата, начисление, сторно, депозит, возврат, акт сверки).
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router'
 import { go } from '../lib/nav'
 import { supabase } from '../lib/supabase'
+import { sb, useSb, useAction } from '../lib/query'
+import type { Tables, TablesInsert } from '../lib/database.types'
 import {
-  rpc, loadArticles, summarize, DOC_TYPE, PAY_STATUS, INVOICE_KIND,
+  rpc, loadArticles, summarize, viewRows, LEDGER_KEYS, DOC_TYPE, PAY_STATUS, INVOICE_KIND,
   type Article, type ChargeState, type DepositRow, type DocRow, type Lease, type TurnoverRow, type InvoiceState,
 } from '../lib/accounting'
 import {
-  Page, Card, Button, Badge, Stat, Stats, Table, Field, Modal, Notice, Tabs, Loading, inputStyle, money, dateRu, monthRu, today, monthStart, C, type Col,
+  Page, Card, Button, Badge, Stat, Stats, Table, Field, Modal, Notice, Tabs, Loading, ErrorBox, inputStyle, money, dateRu, monthRu, today, monthStart, C, type Col,
 } from '../components/ui'
 
 const goTo = (page: string, id?: string) => go('/' + (page === 'tenant-card' ? 'tenants' : page) + (id ? '/' + id : ''))
@@ -50,15 +52,10 @@ interface TenantTotals { tenant_id: string; tenant_name: string; opening: number
 function Turnover() {
   const [from, setFrom] = useState(monthStart())
   const [to, setTo] = useState(today())
-  const [rows, setRows] = useState<TurnoverRow[] | null>(null)
-  const [error, setError] = useState('')
   const [byArticle, setByArticle] = useState(false)
   const [q, setQ] = useState('')
-
-  useEffect(() => {
-    setRows(null); setError('')
-    rpc<TurnoverRow[]>('ledger_turnover', { p_from: from, p_to: to, p_tenant: null }).then(setRows).catch(e => setError(e.message))
-  }, [from, to])
+  const turnQ = useSb(['rpc:ledger_turnover', from, to, null], () => rpc<TurnoverRow[]>('ledger_turnover', { p_from: from, p_to: to, p_tenant: null }))
+  const rows = turnQ.data ?? null
 
   const tenants = useMemo<TenantTotals[]>(() => {
     const m = new Map<string, TurnoverRow[]>()
@@ -107,7 +104,7 @@ function Turnover() {
           <input type="checkbox" checked={byArticle} onChange={e => setByArticle(e.target.checked)} /> по статьям
         </label>
       </div>
-      {error && <Notice tone="red">{error}</Notice>}
+      {turnQ.error && <ErrorBox error={turnQ.error.message} onRetry={() => turnQ.refetch()} />}
       <Stats>
         <Stat label="Долг арендаторов" value={money(total.debt)} tone={total.debt > 0 ? 'red' : undefined} />
         <Stat label="Авансы" value={money(total.advance)} tone="green" />
@@ -116,7 +113,7 @@ function Turnover() {
         <Stat label="Погашено за период" value={money(total.paid)} />
       </Stats>
       <Card pad={false}>
-        {rows === null ? <Loading /> : (
+        {turnQ.isPending ? <Loading /> : (
           <Table cols={cols} rows={tenants} rowKey={t => t.tenant_id} onRow={t => goTo('settlements', t.tenant_id)}
             empty="Движений нет. Начисления появятся после проведения биллинга за месяц."
             foot={tenants.length > 0 && (
@@ -134,9 +131,8 @@ function Turnover() {
 }
 
 function Deposits() {
-  const [rows, setRows] = useState<DepositRow[] | null>(null)
-  useEffect(() => { supabase.from('v_deposits').select('*').order('tenant_name').then(({ data }) => setRows((data || []) as DepositRow[])) }, [])
-  const list = (rows || []).filter(r => Number(r.deposit_required) > 0 || Number(r.requested) !== 0 || Number(r.held) !== 0)
+  const depQ = useSb(['v_deposits'], async () => viewRows<DepositRow>(await sb(supabase.from('v_deposits').select('*').order('tenant_name'))))
+  const list = (depQ.data || []).filter(r => Number(r.deposit_required) > 0 || Number(r.requested) !== 0 || Number(r.held) !== 0)
   const sum = (k: keyof DepositRow) => list.reduce((s, r) => s + Number(r[k] || 0), 0)
   return (
     <>
@@ -145,8 +141,9 @@ function Deposits() {
         <Stat label="На хранении" value={money(sum('held'))} />
         <Stat label="Недовнесено" value={money(list.reduce((s, r) => s + Math.max(0, Number(r.shortfall)), 0))} tone="amber" />
       </Stats>
+      {depQ.error && <ErrorBox error={depQ.error.message} onRetry={() => depQ.refetch()} />}
       <Card pad={false}>
-        {rows === null ? <Loading /> : (
+        {depQ.isPending ? <Loading /> : (
           <Table rows={list} rowKey={r => r.lease_id} onRow={r => goTo('settlements', r.tenant_id)} empty="Депозитов пока нет: требуемая сумма задаётся в договоре, внесение — требованием в расчётах арендатора" cols={[
             { key: 't', title: 'Арендатор', render: r => r.tenant_name },
             { key: 'n', title: 'Договор', render: r => r.number || '—' },
@@ -161,37 +158,41 @@ function Deposits() {
   )
 }
 
-function Articles() {
-  const [list, setList] = useState<Article[] | null>(null)
-  const [edit, setEdit] = useState<(Partial<Article> & { isNew?: boolean }) | null>(null)
-  const [error, setError] = useState('')
-  const load = () => loadArticles().then(setList).catch(e => setError(e.message))
-  useEffect(() => { load() }, [])
+/** Статья в форме правки: ключевые слова — одной строкой через запятую. */
+type ArticleDraft = Omit<Partial<Article>, 'keywords'> & { keywords?: string; isNew?: boolean }
 
-  async function save() {
+function Articles() {
+  const listQ = useSb(['accounting_articles'], loadArticles)
+  const list = listQ.data ?? null
+  const [edit, setEdit] = useState<ArticleDraft | null>(null)
+  const [error, setError] = useState('')
+  const saveA = useAction((row: TablesInsert<'accounting_articles'>) => sb(supabase.from('accounting_articles').upsert(row)), {
+    invalidate: ['accounting_articles'], onSuccess: () => setEdit(null),
+  })
+
+  function save() {
     if (!edit) return
     setError('')
-    const row = {
+    const row: TablesInsert<'accounting_articles'> = {
       code: (edit.code || '').trim().toUpperCase(), name: (edit.name || '').trim(), grp: (edit.grp || '').trim() || 'Прочее',
       register: edit.register || 'receivable', priority: Number(edit.priority || 100),
-      keywords: typeof edit.keywords === 'string' ? String(edit.keywords).split(',').map(s => s.trim()).filter(Boolean) : edit.keywords || [],
+      keywords: (edit.keywords || '').split(',').map(s => s.trim()).filter(Boolean),
       vat_rate: edit.vat_rate === null || edit.vat_rate === undefined || String(edit.vat_rate) === '' ? null : Number(edit.vat_rate),
       onec_account: edit.onec_account || null, onec_item: edit.onec_item || null, active: edit.active !== false,
     }
     if (!/^[A-Z0-9_]{2,20}$/.test(row.code) || !row.name) { setError('Нужны код (латиница, цифры, _) и название'); return }
     if (edit.isNew && (list || []).some(a => a.code === row.code)) { setError('Статья с таким кодом уже есть'); return }
-    const { error } = await supabase.from('accounting_articles').upsert(row)
-    if (error) { setError(error.message); return }
-    setEdit(null); load()
+    saveA.mutate(row)
   }
 
   return (
     <>
       <Notice>Статья — то, за что начисляем и что гасим оплатой. Очередь погашения: сначала более ранний срок оплаты, при равном сроке — меньший номер очереди. Ключевые слова помогают узнать статью в назначении платежа.</Notice>
-      {error && <Notice tone="red">{error}</Notice>}
+      {listQ.error && <ErrorBox error={listQ.error.message} onRetry={() => listQ.refetch()} />}
+      {(error || saveA.error) && <Notice tone="red">{error || saveA.error}</Notice>}
       <Card pad={false} title="Статьи учёта" actions={<Button kind="primary" small onClick={() => setEdit({ register: 'receivable', priority: 80, active: true, grp: 'Услуги', isNew: true })}>Новая статья</Button>}>
-        {list === null ? <Loading /> : (
-          <Table rows={list} rowKey={a => a.code} onRow={a => setEdit({ ...a, keywords: a.keywords.join(', ') as any })} cols={[
+        {listQ.isPending ? <Loading /> : (
+          <Table rows={list || []} rowKey={a => a.code} onRow={a => setEdit({ ...a, keywords: a.keywords.join(', ') })} cols={[
             { key: 'q', title: 'Очередь', align: 'right', width: 70, render: a => a.priority },
             { key: 'n', title: 'Статья', render: a => <span style={{ color: a.active ? undefined : C.faint }}>{a.name}</span> },
             { key: 'g', title: 'Группа', render: a => a.grp },
@@ -203,7 +204,7 @@ function Articles() {
       </Card>
       {edit && (
         <Modal title={edit.isNew ? 'Новая статья' : 'Статья'} onClose={() => setEdit(null)}
-          footer={<><Button onClick={() => setEdit(null)}>Отмена</Button><Button kind="primary" onClick={save}>Сохранить</Button></>}>
+          footer={<><Button onClick={() => setEdit(null)}>Отмена</Button><Button kind="primary" disabled={saveA.isPending} onClick={save}>Сохранить</Button></>}>
           <Field label="Название"><input style={inputStyle} value={edit.name || ''} onChange={e => setEdit({ ...edit, name: e.target.value })} /></Field>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <Field label="Код"><input style={inputStyle} value={edit.code || ''} disabled={!edit.isNew} onChange={e => setEdit({ ...edit, code: e.target.value })} /></Field>
@@ -213,7 +214,7 @@ function Articles() {
             <Field label="Счёт в 1С"><input style={inputStyle} value={edit.onec_account || ''} onChange={e => setEdit({ ...edit, onec_account: e.target.value })} /></Field>
             <Field label="Номенклатура в 1С"><input style={inputStyle} value={edit.onec_item || ''} onChange={e => setEdit({ ...edit, onec_item: e.target.value })} /></Field>
           </div>
-          <Field label="Ключевые слова" hint="через запятую, части слов из назначения платежа"><input style={inputStyle} value={(edit.keywords as any) || ''} onChange={e => setEdit({ ...edit, keywords: e.target.value as any })} /></Field>
+          <Field label="Ключевые слова" hint="через запятую, части слов из назначения платежа"><input style={inputStyle} value={edit.keywords || ''} onChange={e => setEdit({ ...edit, keywords: e.target.value })} /></Field>
           <label style={{ display: 'flex', gap: 8, fontSize: 13 }}><input type="checkbox" checked={edit.active !== false} onChange={e => setEdit({ ...edit, active: e.target.checked })} /> Статья используется</label>
         </Modal>
       )}
@@ -222,15 +223,14 @@ function Articles() {
 }
 
 function SelfCheck() {
-  const [rows, setRows] = useState<any[] | null>(null)
-  const [error, setError] = useState('')
-  const run = () => { setRows(null); setError(''); rpc<any[]>('verify_ledger').then(setRows).catch(e => setError(e.message)) }
-  useEffect(run, [])
+  const checkQ = useSb(['rpc:verify_ledger'], () => rpc('verify_ledger'))
+  const rows = checkQ.isFetching ? null : checkQ.data ?? null
+  const run = () => { checkQ.refetch() }
   return (
     <>
       <Notice>Самопроверка пересчитывает все остатки из документов (начислений, оплат, разнесений) и сравнивает с регистром движений. Расхождений быть не должно.</Notice>
-      {error && <Notice tone="red">{error}</Notice>}
-      {rows === null ? <Loading /> : rows.length === 0
+      {checkQ.error && !checkQ.isFetching && <Notice tone="red">{checkQ.error.message}</Notice>}
+      {rows === null ? (checkQ.error && !checkQ.isFetching ? null : <Loading />) : rows.length === 0
         ? <Notice tone="green">Расхождений нет: остатки по регистру совпадают с документами.</Notice>
         : <Card pad={false} title={`Расхождения: ${rows.length}`}>
             <Table rows={rows} rowKey={r => r.problem + r.tenant_id + r.register + r.key} cols={[
@@ -249,48 +249,41 @@ function SelfCheck() {
 type Dialog = null | 'payment' | 'charge' | 'refund' | 'deposit_require' | 'deposit_offset' | { storno: ChargeState } | { storno_payment: DocRow }
 
 function TenantSettlement({ tenantId }: { tenantId: string }) {
-  const [tenant, setTenant] = useState<any>(null)
   const [from, setFrom] = useState(() => new Date().getFullYear() + '-01-01')
   const [to, setTo] = useState(today())
-  const [turn, setTurn] = useState<TurnoverRow[]>([])
-  const [open, setOpen] = useState<ChargeState[]>([])
-  const [docs, setDocs] = useState<DocRow[]>([])
-  const [leases, setLeases] = useState<Lease[]>([])
-  const [deposits, setDeposits] = useState<DepositRow[]>([])
-  const [invoices, setInvoices] = useState<InvoiceState[]>([])
-  const [articles, setArticles] = useState<Article[]>([])
   const [articleFilter, setArticleFilter] = useState('')
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
   const [dialog, setDialog] = useState<Dialog>(null)
 
-  async function load() {
-    setLoading(true); setError('')
-    try {
-      const [t, tr, oc, dc, ls, dp, inv, arts] = await Promise.all([
-        supabase.from('tenants').select('id, full_name, inn').eq('id', tenantId).single(),
-        rpc<TurnoverRow[]>('ledger_turnover', { p_from: from, p_to: to, p_tenant: tenantId }),
-        supabase.from('v_charge_state').select('*').eq('tenant_id', tenantId).gt('open_amount', 0).order('due_date'),
-        supabase.from('v_tenant_documents').select('*').eq('tenant_id', tenantId).order('date', { ascending: false }).order('created_at', { ascending: false }).limit(500),
-        supabase.from('leases').select('*').eq('tenant_id', tenantId).order('start_date', { ascending: false }),
-        supabase.from('v_deposits').select('*').eq('tenant_id', tenantId),
-        supabase.from('v_invoice_state').select('*').eq('tenant_id', tenantId).order('date', { ascending: false }).limit(24),
-        loadArticles(),
-      ])
-      setTenant(t.data); setTurn(tr); setOpen((oc.data || []) as ChargeState[]); setDocs((dc.data || []) as DocRow[])
-      setLeases((ls.data || []) as Lease[]); setDeposits((dp.data || []) as DepositRow[]); setInvoices((inv.data || []) as InvoiceState[]); setArticles(arts)
-    } catch (e: any) { setError(e.message) }
-    setLoading(false)
-  }
-  useEffect(() => { load() }, [tenantId, from, to])
+  const tenantQ = useSb(['tenants', tenantId, 'settlement'], () => sb(supabase.from('tenants').select('id, full_name, inn').eq('id', tenantId).single()))
+  const turnQ = useSb(['rpc:ledger_turnover', from, to, tenantId], () => rpc<TurnoverRow[]>('ledger_turnover', { p_from: from, p_to: to, p_tenant: tenantId }))
+  const openQ = useSb(['v_charge_state', tenantId, 'open'], async () => viewRows<ChargeState>(await sb(
+    supabase.from('v_charge_state').select('*').eq('tenant_id', tenantId).gt('open_amount', 0).order('due_date'))))
+  const docsQ = useSb(['v_tenant_documents', tenantId], async () => viewRows<DocRow>(await sb(
+    supabase.from('v_tenant_documents').select('*').eq('tenant_id', tenantId).order('date', { ascending: false }).order('created_at', { ascending: false }).limit(500))))
+  const leasesQ = useSb(['leases', tenantId, 'settlement'], async () => viewRows<Lease>(await sb(
+    supabase.from('leases').select('*').eq('tenant_id', tenantId).order('start_date', { ascending: false }))))
+  const depQ = useSb(['v_deposits', tenantId], async () => viewRows<DepositRow>(await sb(supabase.from('v_deposits').select('*').eq('tenant_id', tenantId))))
+  const invQ = useSb(['v_invoice_state', tenantId, 'last24'], async () => viewRows<InvoiceState>(await sb(
+    supabase.from('v_invoice_state').select('*').eq('tenant_id', tenantId).order('date', { ascending: false }).limit(24))))
+  const artQ = useSb(['accounting_articles'], loadArticles)
+
+  const tenant = tenantQ.data ?? null
+  const turn = turnQ.data || []
+  const open = openQ.data || []
+  const docs = docsQ.data || []
+  const leases = leasesQ.data || []
+  const deposits = depQ.data || []
+  const invoices = invQ.data || []
+  const articles = artQ.data || []
+  const error = [tenantQ, turnQ, openQ, docsQ, leasesQ, depQ, invQ, artQ].find(q => q.error)?.error?.message || ''
 
   const s = summarize(turn)
   const depositHeld = deposits.reduce((x, d) => x + Number(d.held), 0)
   const depositRequired = deposits.reduce((x, d) => x + Number(d.deposit_required), 0)
   const docsShown = articleFilter ? docs.filter(d => d.article_code === articleFilter) : docs
-  const done = () => { setDialog(null); load() }
+  const done = () => setDialog(null)
 
-  if (loading && !tenant) return <Loading />
+  if (tenantQ.isPending) return <Loading />
   return (
     <Page title={tenant ? `Расчёты: ${tenant.full_name}` : 'Расчёты'} actions={<>
       <Button onClick={() => goTo('settlements')}>Все арендаторы</Button>
@@ -391,27 +384,22 @@ function TenantSettlement({ tenantId }: { tenantId: string }) {
       {dialog && typeof dialog === 'object' && 'storno' in dialog && (
         <ReasonDialog title={`Сторно: ${dialog.storno.article_name}, ${money(dialog.storno.effective_amount)}`}
           note="Начисление не удаляется: создаётся обратная запись, оплаты по нему вернутся в аванс и закроют другие долги."
-          onClose={() => setDialog(null)} onSubmit={reason => rpc('storno_charge', { p_charge: dialog.storno.id, p_reason: reason }).then(done)} />
+          onClose={() => setDialog(null)} onDone={done} onSubmit={reason => rpc('storno_charge', { p_charge: dialog.storno.id, p_reason: reason })} />
       )}
       {dialog && typeof dialog === 'object' && 'storno_payment' in dialog && (
         <ReasonDialog title={`Сторно оплаты от ${dateRu(dialog.storno_payment.date)} на ${money(dialog.storno_payment.paid)}`}
           note="Используйте, если оплата внесена ошибочно или дважды. Начисления, которые она закрывала, снова станут долгом."
-          onClose={() => setDialog(null)} onSubmit={reason => rpc('storno_payment', { p_payment: dialog.storno_payment.doc_id, p_reason: reason }).then(done)} />
+          onClose={() => setDialog(null)} onDone={done} onSubmit={reason => rpc('storno_payment', { p_payment: dialog.storno_payment.doc_id, p_reason: reason })} />
       )}
     </Page>
   )
 }
 
 // ── Диалоги ──────────────────────────────────────────────────────────────────
+/** Проводка из диалога: после успеха обновляются все расчётные запросы и диалог закрывается. */
 function useSubmit(onDone: () => void) {
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-  const run = async (fn: () => Promise<unknown>) => {
-    setBusy(true); setError('')
-    try { await fn(); onDone() } catch (e: any) { setError(e.message) }
-    setBusy(false)
-  }
-  return { busy, error, run }
+  const a = useAction((fn: () => Promise<unknown>) => fn(), { invalidate: LEDGER_KEYS, onSuccess: () => onDone() })
+  return { busy: a.isPending, error: a.error, run: (fn: () => Promise<unknown>) => a.mutate(fn) }
 }
 const num = (s: string) => Number(String(s).replace(/\s/g, '').replace(',', '.'))
 
@@ -534,13 +522,12 @@ function RefundDialog({ tenantId, leases, advance, deposits, onClose, onDone }: 
   )
 }
 
-function ReasonDialog({ title, note, onClose, onSubmit }: { title: string; note: string; onClose: () => void; onSubmit: (reason: string) => Promise<unknown> }) {
+function ReasonDialog({ title, note, onClose, onSubmit, onDone }: { title: string; note: string; onClose: () => void; onSubmit: (reason: string) => Promise<unknown>; onDone: () => void }) {
   const [reason, setReason] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
+  const { busy, error, run } = useSubmit(onDone)
   return (
     <Modal title={title} onClose={onClose} footer={<><Button onClick={onClose}>Отмена</Button>
-      <Button kind="danger" disabled={busy} onClick={async () => { setBusy(true); setError(''); try { await onSubmit(reason) } catch (e: any) { setError(e.message) } setBusy(false) }}>Сторнировать</Button></>}>
+      <Button kind="danger" disabled={busy} onClick={() => run(() => onSubmit(reason))}>Сторнировать</Button></>}>
       <Notice>{note}</Notice>
       <Field label="Причина"><input style={inputStyle} value={reason} onChange={e => setReason(e.target.value)} autoFocus /></Field>
       {error && <Notice tone="red">{error}</Notice>}
@@ -551,7 +538,10 @@ function ReasonDialog({ title, note, onClose, onSubmit }: { title: string; note:
 // ── Акт сверки ───────────────────────────────────────────────────────────────
 // Строится по движениям регистров «Расчёты» и «Авансы»: каждая строка — документ,
 // изменивший баланс арендатора (долг минус аванс). Внутренние разнесения баланс не меняют и в акт не попадают.
-export async function printAct(tenant: any, from: string, to: string, article: string, articles: Article[]) {
+/** Арендатор для акта: id, название и ИНН (из карточки, сальдо или переноса из 1С). */
+export interface ActTenant { id: string; full_name: string; inn?: string | null }
+
+export async function printAct(tenant: ActTenant | null | undefined, from: string, to: string, article: string, articles: Article[]) {
   if (!tenant) return
   const w = window.open('', '_blank')
   if (!w) return
@@ -560,10 +550,11 @@ export async function printAct(tenant: any, from: string, to: string, article: s
     supabase.from('ledger_postings').select('*').eq('tenant_id', tenant.id).in('register', article ? ['receivable'] : ['receivable', 'advance']).lte('date', to).order('date').order('id'),
     supabase.from('landlords').select('*').order('is_default', { ascending: false }).limit(1).maybeSingle(),
   ])
-  const rows = (posts || []).filter((p: any) => !article || p.article_code === article)
-  const sign = (p: any) => (p.register === 'advance' ? -1 : 1) * (Number(p.debit) - Number(p.credit))
-  const opening = rows.filter((p: any) => p.date < from).reduce((s: number, p: any) => s + sign(p), 0)
-  const inPeriod = rows.filter((p: any) => p.date >= from)
+  type Posting = Tables<'ledger_postings'>
+  const rows = (posts || []).filter(p => !article || p.article_code === article)
+  const sign = (p: Posting) => (p.register === 'advance' ? -1 : 1) * (Number(p.debit) - Number(p.credit))
+  const opening = rows.filter(p => p.date < from).reduce((s, p) => s + sign(p), 0)
+  const inPeriod = rows.filter(p => p.date >= from)
   const byDoc = new Map<string, { date: string; type: string; id: string; net: number }>()
   for (const p of inPeriod) {
     const k = p.doc_type + p.doc_id
@@ -574,17 +565,18 @@ export async function printAct(tenant: any, from: string, to: string, article: s
   const chargeIds = lines.filter(l => l.type === 'charge').map(l => l.id)
   const payIds = lines.filter(l => l.type.startsWith('payment')).map(l => l.id)
   const allocIds = lines.filter(l => l.type.startsWith('allocation')).map(l => l.id)
+  const none = Promise.resolve({ data: null })
   const [ch, pays, allocs] = await Promise.all([
-    chargeIds.length ? supabase.from('charges').select('id, description, article_code, storno_of').in('id', chargeIds) : Promise.resolve({ data: [] as any[] }),
-    payIds.length ? supabase.from('payments').select('id, purpose, source, storno_of').in('id', payIds) : Promise.resolve({ data: [] as any[] }),
-    allocIds.length ? supabase.from('allocations').select('id, source_lease_id, target_payment_id, target_charge_id').in('id', allocIds) : Promise.resolve({ data: [] as any[] }),
+    chargeIds.length ? supabase.from('charges').select('id, description, article_code, storno_of').in('id', chargeIds) : none,
+    payIds.length ? supabase.from('payments').select('id, purpose, source, storno_of').in('id', payIds) : none,
+    allocIds.length ? supabase.from('allocations').select('id, source_lease_id, target_payment_id, target_charge_id').in('id', allocIds) : none,
   ])
   const art = (c: string) => articles.find(a => a.code === c)?.name || c
   const describe = (l: { type: string; id: string }) => {
-    if (l.type === 'charge') { const c = (ch.data || []).find((x: any) => x.id === l.id); return c ? (c.storno_of ? 'Сторно: ' : '') + (c.description || art(c.article_code)) : 'Начисление' }
-    if (l.type === 'payment') { const p = (pays.data || []).find((x: any) => x.id === l.id); return p?.source === 'opening' ? 'Входящий остаток (переплата)' : 'Оплата' + (p?.purpose ? ': ' + p.purpose : '') }
+    if (l.type === 'charge') { const c = (ch.data || []).find(x => x.id === l.id); return c ? (c.storno_of ? 'Сторно: ' : '') + (c.description || art(c.article_code)) : 'Начисление' }
+    if (l.type === 'payment') { const p = (pays.data || []).find(x => x.id === l.id); return p?.source === 'opening' ? 'Входящий остаток (переплата)' : 'Оплата' + (p?.purpose ? ': ' + p.purpose : '') }
     if (l.type === 'payment_storno') return 'Сторно ошибочной оплаты'
-    const a = (allocs.data || []).find((x: any) => x.id === l.id)
+    const a = (allocs.data || []).find(x => x.id === l.id)
     if (l.type === 'allocation_cancel') return 'Отмена разнесения'
     if (a?.source_lease_id) return 'Зачёт обеспечительного платежа'
     if (a?.target_payment_id) return 'Возврат переплаты'
@@ -597,7 +589,7 @@ export async function printAct(tenant: any, from: string, to: string, article: s
   }).join('')
   const debit = lines.filter(l => l.net > 0).reduce((s, l) => s + l.net, 0)
   const credit = lines.filter(l => l.net < 0).reduce((s, l) => s - l.net, 0)
-  const ll = landlord as any
+  const ll = landlord
   const closingText = bal > 0.004 ? `Задолженность ${esc(tenant.full_name)} перед ${esc(ll?.name || 'арендодателем')} на ${dateRu(to)}: ${fmt(bal)} руб.`
     : bal < -0.004 ? `Переплата ${esc(tenant.full_name)} на ${dateRu(to)}: ${fmt(-bal)} руб.` : `На ${dateRu(to)} задолженности нет.`
   w.document.open()
@@ -623,4 +615,4 @@ export async function printAct(tenant: any, from: string, to: string, article: s
   w.document.close()
 }
 const fmt = (n: number) => n.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-const esc = (s: string) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!))
+const esc = (s: string | null | undefined) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!))

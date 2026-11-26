@@ -1,6 +1,8 @@
 // План этажей: подложка-чертёж и кликабельные кабинеты; свободные подсвечены, справа — карточка выбранного кабинета.
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
+import { useSb, sb } from '../lib/query'
+import type { Tables } from '../lib/database.types'
 import { Page, Card, Row, Button, Badge, Segmented, ErrorBox, Muted, money, dateRu, useNarrow, C } from '../components/ui'
 
 // Exact SVG paths derived from pixel-accurate room fills in the source floor-plan images.
@@ -85,17 +87,8 @@ const ROOMS_F3: RoomData[] = [
   { id:'314',  number:'314',  area_m2:21.5,  status:'occupied', svg_path:'M 1575 1066 L 1575 1221 L 1590 1221 L 1591 1219 L 1786 1221 L 1786 1198 L 1784 1197 L 1784 1092 L 1786 1091 L 1786 1066 L 1645 1066 L 1643 1076 L 1633 1091 L 1621 1100 L 1612 1104 L 1596 1103 L 1596 1066 Z' },
 ]
 
-type TenantInfo = {
-  id: string
-  full_name: string
-  unit_number: string
-  monthly_rent: number | null
-  monthly_total: number | null
-  contract_number: string | null
-  contract_start_date: string | null
-  tenant_group: string
-  inn: string | null
-}
+const TENANT_COLS = 'id,full_name,unit_number,monthly_rent,monthly_total,contract_number,contract_start_date,tenant_group,inn'
+type TenantInfo = Pick<Tables<'tenants'>, 'id' | 'full_name' | 'unit_number' | 'monthly_rent' | 'monthly_total' | 'contract_number' | 'contract_start_date' | 'tenant_group' | 'inn'>
 
 type PathStyle = { fill: string; fillOpacity: number; stroke: string; strokeOpacity: number; strokeWidth: number }
 
@@ -103,42 +96,31 @@ export function FloorPlanPage({ onOpenTenant }: { onOpenTenant?: (id: string) =>
   const [floor, setFloor] = useState(2)
   const [hoverId, setHoverId] = useState<string | null>(null)
   const [selId, setSelId]   = useState<string | null>(null)
-  const [byUnit, setByUnit] = useState<Record<string, TenantInfo>>({})
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
   const [debug] = useState(false)
   const narrow = useNarrow()
   const [zoom, setZoom] = useState(() => (window.innerWidth < 768 ? 2.2 : 1))
 
-  const load = useCallback(() => {
-    setLoading(true)
-    setError('')
-    supabase
-      .from('tenants')
-      .select('id,full_name,unit_number,monthly_rent,monthly_total,contract_number,contract_start_date,tenant_group,inn')
-      .not('unit_number', 'is', null)
-      .then(({ data, error }) => {
-        setLoading(false)
-        if (error) setError(error.message)
-        if (!data) return
-        const map: Record<string, TenantInfo> = {}
-        // Normalize Cyrillic А→A, Б→B so lookups match Latin keys in room data
-        const norm = (s: string) => s.replace(/А/g, 'A').replace(/а/g, 'A').replace(/Б/g, 'B').replace(/б/g, 'B')
-        for (const t of data) {
-          const raw = t.unit_number as string
-          for (const part of raw.split(/[,\s]+/)) {
-            const p = part.trim()
-            if (!p || /^ещё$/i.test(p) || /^и$/i.test(p)) continue
-            for (const sub of p.includes('.') ? p.split('.') : [p]) {
-              const c = sub.trim()
-              if (c) map[norm(c).toUpperCase()] = t as TenantInfo
-            }
-          }
+  const tenantsQ = useSb(['tenants', 'floor-plan'], () => sb(supabase.from('tenants').select(TENANT_COLS).not('unit_number', 'is', null)))
+  const loading = tenantsQ.isPending
+  const error = tenantsQ.error?.message ?? ''
+  const load = () => { tenantsQ.refetch() }
+  const byUnit = useMemo(() => {
+    const map: Record<string, TenantInfo> = {}
+    // Normalize Cyrillic А→A, Б→B so lookups match Latin keys in room data
+    const norm = (s: string) => s.replace(/А/g, 'A').replace(/а/g, 'A').replace(/Б/g, 'B').replace(/б/g, 'B')
+    for (const t of tenantsQ.data ?? []) {
+      const raw = t.unit_number ?? ''
+      for (const part of raw.split(/[,\s]+/)) {
+        const p = part.trim()
+        if (!p || /^ещё$/i.test(p) || /^и$/i.test(p)) continue
+        for (const sub of p.includes('.') ? p.split('.') : [p]) {
+          const c = sub.trim()
+          if (c) map[norm(c).toUpperCase()] = t
         }
-        setByUnit(map)
-      })
-  }, [])
-  useEffect(() => { load() }, [load])
+      }
+    }
+    return map
+  }, [tenantsQ.data])
 
   const getTenant = useCallback((room: RoomData): TenantInfo | null => {
     const norm = (s: string) => s.replace(/А/g, 'A').replace(/а/g, 'A').replace(/Б/g, 'B').replace(/б/g, 'B')

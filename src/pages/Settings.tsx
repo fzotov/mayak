@@ -1,13 +1,19 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { apiFetch } from '../lib/api'
+import { sb, useSb, useInvalidate, QueryState } from '../lib/query'
+import type { Tables } from '../lib/database.types'
 import DeviceCard from '../components/DeviceCard'
-import { C, Modal, Button, Field, Input, Select, Notice, Muted, Row, Loading, Empty, ErrorBox } from '../components/ui'
+import { C, Modal, Button, Field, Input, Select, Notice, Muted, Row } from '../components/ui'
 
 const ROLES: Record<string, string> = { owner: 'Владелец', manager: 'Управляющий' }
 const h: React.CSSProperties = { fontSize: 13, fontWeight: 600, color: C.text, margin: '0 0 12px' }
 
-interface Props { user: any; profile: { full_name: string; role: string }; onClose: () => void; onLogout: () => void }
+type Person = Pick<Tables<'profiles'>, 'user_id' | 'email' | 'full_name' | 'role'>
+/** Ответ /api/staff-invite. */
+interface ApiReply { ok?: boolean; error?: string }
+
+interface Props { user: { id: string; email?: string | null }; profile: { full_name: string; role: string }; onClose: () => void; onLogout: () => void }
 type Msg = { ok: boolean; text: string } | null
 
 /** Профиль: этот телефон (установка, push), смена пароля, выход; для владельца — кто имеет доступ в систему. */
@@ -16,24 +22,15 @@ export function SettingsModal({ user, profile, onClose, onLogout }: Props) {
   const [newPw, setNewPw] = useState('')
   const [confirmPw, setConfirmPw] = useState('')
   const [pwMsg, setPwMsg] = useState<Msg>(null)
-  const [people, setPeople] = useState<any[]>([])
-  const [peopleLoading, setPeopleLoading] = useState(false)
-  const [peopleErr, setPeopleErr] = useState('')
   const [inv, setInv] = useState({ fullName: '', email: '', role: 'manager' })
   const [invMsg, setInvMsg] = useState<Msg>(null)
   const [busy, setBusy] = useState(false)
-  const [revoking, setRevoking] = useState<any | null>(null)
+  const [revoking, setRevoking] = useState<Person | null>(null)
   const [revokeBusy, setRevokeBusy] = useState(false)
   const [revokeErr, setRevokeErr] = useState('')
 
-  const loadPeople = () => {
-    setPeopleLoading(true); setPeopleErr('')
-    return supabase.from('profiles').select('user_id, email, full_name, role').order('created_at').then(({ data, error }) => {
-      if (error) setPeopleErr('Не удалось загрузить список: ' + error.message)
-      setPeople(data || []); setPeopleLoading(false)
-    })
-  }
-  useEffect(() => { if (isOwner) loadPeople() }, [isOwner])
+  const invalidate = useInvalidate()
+  const peopleQ = useSb(['profiles', 'access'], () => sb(supabase.from('profiles').select('user_id, email, full_name, role').order('created_at')), { enabled: isOwner })
 
   const changePassword = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -48,9 +45,9 @@ export function SettingsModal({ user, profile, onClose, onLogout }: Props) {
     e.preventDefault()
     setBusy(true); setInvMsg(null)
     const r = await apiFetch('/api/staff-invite', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(inv) })
-    const d = await r.json().catch(() => ({ ok: false, error: 'Сервер не ответил' }))
+    const d: ApiReply = await r.json().catch(() => ({ ok: false, error: 'Сервер не ответил' }))
     setBusy(false)
-    if (d.ok) { setInvMsg({ ok: true, text: `Приглашение отправлено на ${inv.email}` }); setInv({ fullName: '', email: '', role: 'manager' }) }
+    if (d.ok) { setInvMsg({ ok: true, text: `Приглашение отправлено на ${inv.email}` }); setInv({ fullName: '', email: '', role: 'manager' }); invalidate('profiles') }
     else setInvMsg({ ok: false, text: d.error || 'Не удалось отправить приглашение' })
   }
 
@@ -59,9 +56,9 @@ export function SettingsModal({ user, profile, onClose, onLogout }: Props) {
     if (!p) return
     setRevokeBusy(true); setRevokeErr('')
     const r = await apiFetch('/api/staff-invite', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: p.user_id }) })
-    const d = await r.json().catch(() => ({ ok: false }))
+    const d: ApiReply = await r.json().catch(() => ({ ok: false }))
     setRevokeBusy(false)
-    if (d.ok) { setRevoking(null); loadPeople() } else setRevokeErr(d.error || 'Не удалось отозвать доступ')
+    if (d.ok) { setRevoking(null); invalidate('profiles') } else setRevokeErr(d.error || 'Не удалось отозвать доступ')
   }
 
   const note = (m: Msg) => m && <Notice tone={m.ok ? 'green' : 'red'}>{m.text}</Notice>
@@ -90,9 +87,8 @@ export function SettingsModal({ user, profile, onClose, onLogout }: Props) {
         {isOwner && (
           <div style={{ display: 'grid', gap: 12, paddingTop: 12, borderTop: `1px solid ${C.line}` }}>
             <p style={h}>Доступ в систему</p>
-            {peopleErr && <ErrorBox error={peopleErr} onRetry={loadPeople} />}
             <div style={{ border: `1px solid ${C.line}`, borderRadius: C.radiusSm }}>
-              {peopleLoading && people.length === 0 ? <Loading /> : people.length === 0 ? <Empty>Нет сотрудников</Empty> : people.map((p, i) => (
+              <QueryState q={peopleQ} empty="Нет сотрудников">{people => people.map((p, i) => (
                 <div key={p.user_id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderTop: i ? `1px solid ${C.line}` : 'none' }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.full_name || p.email}</div>
@@ -100,7 +96,7 @@ export function SettingsModal({ user, profile, onClose, onLogout }: Props) {
                   </div>
                   {p.user_id !== user.id && <Button small kind="danger" onClick={() => { setRevokeErr(''); setRevoking(p) }}>Отозвать</Button>}
                 </div>
-              ))}
+              ))}</QueryState>
             </div>
             <form onSubmit={invite} style={{ display: 'grid', gap: 12 }}>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>

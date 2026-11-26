@@ -1,6 +1,8 @@
 // CRM (этап 7): общие справочники, загрузка и формы для «Сделок», карточки сделки и отчёта.
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { useSb, useAction } from '../lib/query'
+import type { TablesInsert, TablesUpdate } from '../lib/database.types'
 import { Badge, Button, Field, Input, Select, Textarea, Modal, Notice, C, num, type Tone } from './ui'
 
 // ── Справочники ─────────────────────────────────────────────────────────────
@@ -57,11 +59,11 @@ export const DEAL_SELECT = '*, deal_units(unit_id), tenant:tenants!deals_tenant_
 export async function loadUnits(): Promise<UnitLite[]> {
   const { data, error } = await supabase.from('units').select('id, number, floor, area, status, tenant_id').order('floor').order('number')
   if (error) throw new Error(error.message)
-  return (data || []) as UnitLite[]
+  return (data || []).map(u => ({ ...u, status: u.status ?? '' }))
 }
 export async function loadPeople(): Promise<Person[]> {
   const { data } = await supabase.from('profiles').select('user_id, full_name').order('full_name')
-  return ((data || []) as Person[]).filter(p => p.user_id)
+  return (data || []).filter(p => p.user_id)
 }
 export async function myId(): Promise<string | null> {
   const { data } = await supabase.auth.getSession()
@@ -145,46 +147,49 @@ export function DealFormModal({ deal, units, people, me, onClose, onSaved }: {
   })
   const [unitIds, setUnitIds] = useState<string[]>(deal?.deal_units?.map(x => x.unit_id) || [])
   const [err, setErr] = useState('')
-  const [busy, setBusy] = useState(false)
   const set = (k: keyof typeof f, v: string) => setF(x => ({ ...x, [k]: v }))
   const isNew = !deal
   const area = useMemo(() => unitIds.reduce((s, id) => s + Number(units.find(u => u.id === id)?.area || 0), 0), [unitIds, units])
 
-  async function save() {
-    if (!f.name.trim() && !f.company.trim() && !f.phone.trim()) { setErr('Укажите контакт: имя, компанию или телефон.'); return }
-    if (isNew && (!f.next_step.trim() || !f.next_step_at)) { setErr('Следующий шаг и дата обязательны.'); return }
-    const n = (s: string) => { const v = Number(s.replace(',', '.').replace(/\s/g, '')); return s.trim() && Number.isFinite(v) ? v : null }
-    if (f.area_wanted.trim() && n(f.area_wanted) === null) { setErr('Площадь — число, м².'); return }
-    if (f.budget.trim() && n(f.budget) === null) { setErr('Бюджет — число, ₽ в месяц.'); return }
-    setErr(''); setBusy(true)
-    const row: Record<string, unknown> = {
-      name: f.name.trim() || null, company: f.company.trim() || null, phone: f.phone.trim() || null, email: f.email.trim() || null,
-      source: f.source, source_detail: f.source_detail.trim() || null,
-      area_wanted: n(f.area_wanted) ?? (isNew && area ? area : null), budget: n(f.budget), notes: f.notes.trim() || null,
-    }
-    let id = deal?.id
-    if (isNew) {
-      Object.assign(row, { kind: 'new', stage: 'new', next_step: f.next_step.trim(), next_step_at: f.next_step_at, owner_id: f.owner_id || null })
-      const { data, error } = await supabase.from('deals').insert(row).select('id').single()
-      if (error) { setErr(dbError(error)); setBusy(false); return }
-      id = data.id as string
+  const saveA = useAction(async (row: TablesUpdate<'deals'>): Promise<string> => {
+    let id: string
+    if (!deal) {
+      const ins: TablesInsert<'deals'> = { ...row, kind: 'new', stage: 'new', next_step: f.next_step.trim(), next_step_at: f.next_step_at, owner_id: f.owner_id || null }
+      const { data, error } = await supabase.from('deals').insert(ins).select('id').single()
+      if (error) throw new Error(dbError(error))
+      id = data.id
     } else {
       const { error } = await supabase.from('deals').update(row).eq('id', deal.id)
-      if (error) { setErr(dbError(error)); setBusy(false); return }
+      if (error) throw new Error(dbError(error))
+      id = deal.id
     }
     // помещения: добавить новые, убрать снятые
     const before = deal?.deal_units?.map(x => x.unit_id) || []
     const add = unitIds.filter(x => !before.includes(x)), del = before.filter(x => !unitIds.includes(x))
     if (add.length) {
       const { error } = await supabase.from('deal_units').insert(add.map(unit_id => ({ deal_id: id, unit_id })))
-      if (error) { setErr('Сделка сохранена, но помещения не привязались: ' + error.message); setBusy(false); return }
+      if (error) throw new Error('Сделка сохранена, но помещения не привязались: ' + error.message)
     }
     if (del.length) {
-      const { error } = await supabase.from('deal_units').delete().eq('deal_id', id!).in('unit_id', del)
-      if (error) { setErr('Сделка сохранена, но помещения не сняты: ' + error.message); setBusy(false); return }
+      const { error } = await supabase.from('deal_units').delete().eq('deal_id', id).in('unit_id', del)
+      if (error) throw new Error('Сделка сохранена, но помещения не сняты: ' + error.message)
     }
-    setBusy(false)
-    onSaved(id!)
+    return id
+  }, { invalidate: ['deals', 'deal_units', 'deal_events'], onSuccess: id => onSaved(id) })
+  const busy = saveA.isPending
+
+  function save() {
+    if (!f.name.trim() && !f.company.trim() && !f.phone.trim()) { setErr('Укажите контакт: имя, компанию или телефон.'); return }
+    if (isNew && (!f.next_step.trim() || !f.next_step_at)) { setErr('Следующий шаг и дата обязательны.'); return }
+    const n = (s: string) => { const v = Number(s.replace(',', '.').replace(/\s/g, '')); return s.trim() && Number.isFinite(v) ? v : null }
+    if (f.area_wanted.trim() && n(f.area_wanted) === null) { setErr('Площадь — число, м².'); return }
+    if (f.budget.trim() && n(f.budget) === null) { setErr('Бюджет — число, ₽ в месяц.'); return }
+    setErr('')
+    saveA.mutate({
+      name: f.name.trim() || null, company: f.company.trim() || null, phone: f.phone.trim() || null, email: f.email.trim() || null,
+      source: f.source, source_detail: f.source_detail.trim() || null,
+      area_wanted: n(f.area_wanted) ?? (isNew && area ? area : null), budget: n(f.budget), notes: f.notes.trim() || null,
+    })
   }
 
   return (
@@ -192,7 +197,7 @@ export function DealFormModal({ deal, units, people, me, onClose, onSaved }: {
       <Button onClick={onClose}>Отмена</Button>
       <Button kind="primary" disabled={busy} onClick={save}>{busy ? 'Сохраняю…' : isNew ? 'Создать сделку' : 'Сохранить'}</Button>
     </>}>
-      {err && <Notice tone="red">{err}</Notice>}
+      {(err || saveA.error) && <Notice tone="red">{err || saveA.error}</Notice>}
       <div style={grid2}>
         <Field label="Контактное лицо"><Input value={f.name} onChange={e => set('name', e.target.value)} autoFocus={isNew} /></Field>
         <Field label="Компания"><Input value={f.company} onChange={e => set('company', e.target.value)} /></Field>
@@ -244,17 +249,13 @@ export function NextStepFields({ step, at, onStep, onAt }: { step: string; at: s
 }
 
 /** Загрузка справочников один раз на экран. */
+const NO_UNITS: UnitLite[] = []
+const NO_PEOPLE: Person[] = []
 export function useCrmRefs() {
-  const [units, setUnits] = useState<UnitLite[]>([])
-  const [people, setPeople] = useState<Person[]>([])
-  const [me, setMe] = useState<string | null>(null)
-  const [error, setError] = useState('')
-  const reload = async () => {
-    try {
-      const [u, p, m] = await Promise.all([loadUnits(), loadPeople(), myId()])
-      setUnits(u); setPeople(p); setMe(m)
-    } catch (e: any) { setError(e.message) }
-  }
-  useEffect(() => { reload() }, [])
-  return { units, people, me, error, reload }
+  const unitsQ = useSb(['units', 'lite'], loadUnits)
+  const peopleQ = useSb(['profiles', 'people'], loadPeople)
+  const meQ = useSb(['auth:me'], myId, { staleTime: Infinity })
+  const error = unitsQ.error?.message || peopleQ.error?.message || meQ.error?.message || ''
+  const reload = async () => { await Promise.all([unitsQ.refetch(), peopleQ.refetch(), meQ.refetch()]) }
+  return { units: unitsQ.data || NO_UNITS, people: peopleQ.data || NO_PEOPLE, me: meQ.data ?? null, error, reload }
 }

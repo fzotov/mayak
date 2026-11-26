@@ -1,19 +1,17 @@
-import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
+import { sb, useSb } from '../../lib/query'
+import type { Tables } from '../../lib/database.types'
 import { useTenant } from './useTenant'
 import { T, Card, Title, Row, Badge, Button, Loading, Empty, money, date, page } from './ui'
 
 export default function TenantDashboard({ tenantId, onNavigate }: { tenantId: string; onNavigate: (p: string) => void }) {
   const { tenant, balance, loading } = useTenant(tenantId)
-  const [ops, setOps] = useState<any[]>([])
-  const [repairs, setRepairs] = useState<any[]>([])
-
-  useEffect(() => {
-    supabase.from('ledger_entries').select('id,date,doc_type,doc_number,charged,paid').eq('tenant_id', tenantId).not('id', 'like', 'doc_%')
-      .order('date', { ascending: false }).limit(5).then(({ data }) => setOps(data || []))
-    supabase.from('repairs').select('id,number,category,status').eq('tenant_id', tenantId).in('status', ['new', 'accepted', 'in_progress'])
-      .order('created_at', { ascending: false }).then(({ data }) => setRepairs(data || []))
-  }, [tenantId])
+  const opsQ = useSb(['ledger_entries', tenantId, 'last5'], () => sb(supabase.from('ledger_entries').select('id,date,doc_type,doc_number,charged,paid').eq('tenant_id', tenantId).not('id', 'like', 'doc_%')
+    .order('date', { ascending: false }).limit(5)))
+  const repairsQ = useSb(['repairs', tenantId, 'open'], () => sb(supabase.from('repairs').select('id,number,category,status').eq('tenant_id', tenantId).in('status', ['new', 'accepted', 'in_progress'])
+    .order('created_at', { ascending: false })))
+  const ops = opsQ.data ?? []
+  const repairs = repairsQ.data ?? []
 
   if (loading) return <Loading />
   const net = balance ? Math.round((balance.debt - balance.advance) * 100) / 100 : null
@@ -48,7 +46,8 @@ export default function TenantDashboard({ tenantId, onNavigate }: { tenantId: st
 
       <Card>
         <Title right={<button onClick={() => onNavigate('invoices')} style={{ minHeight: 44, padding: '0 4px', margin: '-12px 0', background: 'none', border: 'none', color: T.sub, fontSize: 13, cursor: 'pointer', fontFamily: T.font }}>Все</button>}>Последние операции</Title>
-        {ops.length === 0 ? <Empty>Операций пока нет</Empty> : ops.map(o => <OpRow key={o.id} o={o} />)}
+        {opsQ.isPending ? <Loading /> : opsQ.error ? <Empty>Не удалось загрузить операции. Обновите страницу.</Empty>
+          : ops.length === 0 ? <Empty>Операций пока нет</Empty> : ops.map(o => <OpRow key={o.id} o={o} />)}
       </Card>
 
       {repairs.length > 0 && (
@@ -66,7 +65,9 @@ export default function TenantDashboard({ tenantId, onNavigate }: { tenantId: st
   )
 }
 
-export function OpRow({ o }: { o: any }) {
+export type OpRowData = Pick<Tables<'ledger_entries'>, 'id' | 'date' | 'doc_type' | 'doc_number' | 'charged' | 'paid'>
+
+export function OpRow({ o }: { o: OpRowData }) {
   const charged = Number(o.charged || 0), paid = Number(o.paid || 0)
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '11px 0', borderTop: `1px solid ${T.border}` }}>

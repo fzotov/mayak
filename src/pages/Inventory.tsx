@@ -1,47 +1,59 @@
 // Склад и инвентарь: товары, приход и расход накладными, выдача сотрудникам, история движений.
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { useSb, useAction, sb, sbRpc, errText } from '../lib/query'
+import type { Tables, TablesInsert } from '../lib/database.types'
 import { Page, Card, Button, Badge, Table, Field, Input, Select, Textarea, Tabs, Modal, Notice, Loading, Empty, ErrorBox, Stat, Stats, Row, Muted, Sub, money, num, C, type Tone } from '../components/ui'
 import { ask } from '../components/Dialogs'
 
-interface Item {
-  id: string
-  name: string
-  category: string
-  description: string
-  quantity: number
-  quantity_available: number
-  location: string
-  cost: number
-  serial_number: string
-  inventory_number: string
-  responsible_id: string | null
-  supplier: string
-  received_at: string
-  notes: string
-  responsible?: { full_name: string }
+/** Товар из выборки '*, responsible:staff(full_name)'. */
+type Item = Tables<'inventory'> & { responsible: { full_name: string } | null }
+
+/** Движение из выборки '*, staff(full_name)' (в истории — ещё и item:inventory(name, inventory_number)). */
+type Movement = Tables<'inventory_movements'> & {
+  staff: { full_name: string } | null
+  item?: { name: string; inventory_number: string | null } | null
 }
 
-interface Movement {
-  id: string
-  item_id: string
-  action: string
-  quantity: number
-  note: string
-  created_at: string
-  staff_id?: string | null
-  staff?: { full_name: string }
-  item?: { name: string; inventory_number: string }
-}
-
-interface Staff { id: string; full_name: string }
+type Staff = Pick<Tables<'staff'>, 'id' | 'full_name'>
 
 interface InvoiceLine { item_id: string; quantity: number; price: number }
 
-const emptyItem: Omit<Item, 'id' | 'responsible'> = {
+/** Поля карточки товара: строки вместо null для полей ввода, числа — числами. */
+interface ItemForm {
+  name: string; category: string; description: string; quantity: number; quantity_available: number
+  location: string; cost: number; serial_number: string; inventory_number: string
+  responsible_id: string | null; supplier: string; received_at: string; notes: string
+}
+
+const emptyItem: ItemForm = {
   name: '', category: '', description: '', quantity: 1, quantity_available: 1,
   location: '', cost: 0, serial_number: '', inventory_number: '',
   responsible_id: null, supplier: '', received_at: '', notes: ''
+}
+
+const toForm = (i: Item): ItemForm => ({
+  name: i.name, category: i.category ?? '', description: i.description ?? '',
+  quantity: i.quantity ?? 0, quantity_available: i.quantity_available ?? 0,
+  location: i.location ?? '', cost: i.cost ?? 0, serial_number: i.serial_number ?? '', inventory_number: i.inventory_number ?? '',
+  responsible_id: i.responsible_id, supplier: i.supplier ?? '', received_at: i.received_at ?? '', notes: i.notes ?? '',
+})
+
+const DEFAULT_CATEGORIES = ['Мебель', 'Техника', 'Инструменты', 'Канцелярия', 'Хозяйство', 'Другое']
+const avail = (i: Item) => i.quantity_available ?? 0
+
+/** Движение по складу и изменение остатка (функция inventory_adjust). */
+async function moveStock(mv: TablesInsert<'inventory_movements'> & { item_id: string; quantity: number }, available: number, total: number, adjustError: string) {
+  await sb(supabase.from('inventory_movements').insert(mv))
+  try { await sbRpc('inventory_adjust', { p_item: mv.item_id, p_available: available, p_total: total }) }
+  catch (e) { throw failed(adjustError, e) }
+}
+
+/** Ошибка с пояснением; исходная остаётся в cause. */
+const failed = (prefix: string, e: unknown) => Object.assign(new Error(prefix + errText(e)), { cause: e })
+
+function useCategories() {
+  return useSb(['inventory_categories'], () => sb(supabase.from('inventory_categories').select('name').order('name')))
 }
 
 const ACTION: Record<string, { label: string; tone: Tone; color: string }> = {
@@ -60,112 +72,91 @@ const removeBtn = (disabled: boolean): React.CSSProperties => ({ border: 0, back
 type ItemTab = 'info' | 'movements'
 
 function ItemModal({ item, staff, onClose, onSaved }: { item: Item | null; staff: Staff[]; onClose: () => void; onSaved: () => void }) {
-  const [form, setForm] = useState<Omit<Item, 'id' | 'responsible'>>(() => {
-    if (!item) return { ...emptyItem }
-    // id и вложенный responsible (из join) — не колонки для записи
-    const { id: _id, responsible: _r, ...rest } = item
-    return rest
-  })
-  const [saving, setSaving] = useState(false)
+  const [form, setForm] = useState<ItemForm>(() => item ? toForm(item) : { ...emptyItem })
   const [err, setErr] = useState('')
   const [tab, setTab] = useState<ItemTab>('info')
-  const [movements, setMovements] = useState<Movement[] | null>(null)
-  const [categories, setCategories] = useState<string[]>([])
   const [newCat, setNewCat] = useState('')
   const [issueQty, setIssueQty] = useState(1)
   const [issueStaff, setIssueStaff] = useState('')
   const [issueNote, setIssueNote] = useState('')
 
-  useEffect(() => {
-    supabase.from('inventory_categories').select('name').order('name').then(({ data }) => {
-      const cats = (data || []).map((c: any) => c.name)
-      setCategories(cats.length > 0 ? cats : ['Мебель', 'Техника', 'Инструменты', 'Канцелярия', 'Хозяйство', 'Другое'])
-    })
-  }, [])
+  const catsQ = useCategories()
+  const loadedCats = (catsQ.data ?? []).map(c => c.name)
+  const categories = catsQ.data && loadedCats.length === 0 ? DEFAULT_CATEGORIES : loadedCats
 
-  useEffect(() => {
-    if (item?.id && tab === 'movements') fetchMovements()
-  }, [tab])
+  const movementsQ = useSb(['inventory_movements', item?.id],
+    () => sb(supabase.from('inventory_movements').select('*, staff(full_name)').eq('item_id', item?.id ?? '').order('created_at', { ascending: false })),
+    { enabled: !!item && tab === 'movements' })
+  const movements: Movement[] | undefined = movementsQ.data
 
-  async function fetchMovements() {
-    const { data, error } = await supabase.from('inventory_movements')
-      .select('*, staff(full_name)')
-      .eq('item_id', item!.id)
-      .order('created_at', { ascending: false })
-    if (error) setErr('Ошибка: ' + error.message)
-    setMovements(data || [])
-  }
+  const set = <K extends keyof ItemForm>(k: K, v: ItemForm[K]) => setForm(f => ({ ...f, [k]: v }))
 
-  const set = (k: string, v: string | number | null) => setForm(f => ({ ...f, [k]: v }))
+  const addCatAction = useAction(async (name: string) => {
+    try { await sb(supabase.from('inventory_categories').insert({ name })) }
+    catch (e) { throw failed('Категория не добавлена: ', e) }
+  }, { invalidate: ['inventory_categories'], onSuccess: (_r, name) => { set('category', name); setNewCat('') } })
+  const delCatAction = useAction(async (name: string) => {
+    try { await sb(supabase.from('inventory_categories').delete().eq('name', name)) }
+    catch (e) { throw failed('Категория не удалена: ', e) }
+  }, { invalidate: ['inventory_categories'], onSuccess: () => set('category', '') })
 
-  async function addCategory() {
+  function addCategory() {
     if (!newCat.trim()) return
-    const { error } = await supabase.from('inventory_categories').insert({ name: newCat.trim() })
-    if (error) { setErr('Категория не добавлена: ' + error.message); return }
-    const { data } = await supabase.from('inventory_categories').select('name').order('name')
-    setCategories((data || []).map((c: any) => c.name))
-    set('category', newCat.trim())
-    setNewCat('')
+    addCatAction.mutate(newCat.trim())
   }
 
   async function deleteCategory() {
     if (!(await ask('Удалить категорию «' + form.category + '»?', { ok: 'Удалить', danger: true }))) return
-    const { error } = await supabase.from('inventory_categories').delete().eq('name', form.category)
-    if (error) { setErr('Категория не удалена: ' + error.message); return }
-    const { data } = await supabase.from('inventory_categories').select('name').order('name')
-    setCategories((data || []).map((c: any) => c.name))
-    set('category', '')
+    delCatAction.mutate(form.category)
   }
 
-  async function save() {
+  const saveAction = useAction(async (f: ItemForm) => {
+    const cleanForm: TablesInsert<'inventory'> = { ...f, received_at: f.received_at || null }
+    if (item) await sb(supabase.from('inventory').update(cleanForm).eq('id', item.id))
+    else await sb(supabase.from('inventory').insert(cleanForm))
+  }, { invalidate: ['inventory'], onSuccess: onSaved })
+  const removeAction = useAction(async (id: string) => {
+    try { await sb(supabase.from('inventory').delete().eq('id', id)) }
+    catch (e) { throw failed('Ошибка удаления: ', e) }
+  }, { invalidate: ['inventory', 'inventory_movements'], onSuccess: onSaved })
+  const saving = saveAction.isPending
+
+  function save() {
     if (!form.name.trim()) { setErr('Введите название'); return }
     setErr('')
-    setSaving(true)
-    const cleanForm = { ...form, received_at: form.received_at || null }
-    if (item?.id) {
-      const { error } = await supabase.from('inventory').update(cleanForm).eq('id', item.id)
-      if (error) { setErr('Ошибка: ' + error.message); setSaving(false); return }
-    } else {
-      const { error } = await supabase.from('inventory').insert(cleanForm)
-      if (error) { setErr('Ошибка: ' + error.message); setSaving(false); return }
-    }
-    setSaving(false)
-    onSaved()
+    saveAction.mutate(form)
   }
 
   async function remove() {
-    if (!item?.id || !(await ask('Удалить товар?', { ok: 'Удалить', danger: true }))) return
-    const { error } = await supabase.from('inventory').delete().eq('id', item.id)
-    if (error) { setErr('Ошибка удаления: ' + error.message); return }
-    onSaved()
+    if (!item || !(await ask('Удалить товар?', { ok: 'Удалить', danger: true }))) return
+    removeAction.mutate(item.id)
   }
 
-  async function issueItem() {
-    if (!item?.id || !issueStaff) { setErr('Выберите сотрудника'); return }
-    if (issueQty > (item.quantity_available || 0)) { setErr('Недостаточно доступного количества'); return }
+  // Выдача и возврат: движение + остаток. После успеха окно закрывается, список обновляется.
+  const moveAction = useAction(
+    (v: { kind: 'issued' | 'returned'; itemId: string; qty: number; staffId: string | null; note: string }) => moveStock(
+      { item_id: v.itemId, staff_id: v.staffId, action: v.kind, quantity: v.qty, note: v.note },
+      v.kind === 'issued' ? -v.qty : v.qty, 0, 'Движение записано, но остаток не обновлён: ',
+    ),
+    { invalidate: ['inventory_movements', 'inventory'], onSuccess: (_r, v) => { if (v.kind === 'issued') { setIssueStaff(''); setIssueNote(''); setIssueQty(1) } onSaved() } },
+  )
+
+  function issueItem() {
+    if (!item || !issueStaff) { setErr('Выберите сотрудника'); return }
+    if (issueQty > avail(item)) { setErr('Недостаточно доступного количества'); return }
     setErr('')
-    const { error: mvErr } = await supabase.from('inventory_movements').insert({
-      item_id: item.id, staff_id: issueStaff, action: 'issued', quantity: issueQty, note: issueNote
-    })
-    if (mvErr) { setErr('Ошибка: ' + mvErr.message); return }
-    const { error: upErr } = await supabase.rpc('inventory_adjust', { p_item: item.id, p_available: -issueQty, p_total: 0 })
-    if (upErr) { setErr('Движение записано, но остаток не обновлён: ' + upErr.message); return }
-    setIssueStaff(''); setIssueNote(''); setIssueQty(1)
-    fetchMovements()
-    onSaved()
+    moveAction.mutate({ kind: 'issued', itemId: item.id, qty: issueQty, staffId: issueStaff, note: issueNote })
   }
 
-  async function returnItem(qty: number) {
-    if (!item?.id) return
-    const { error: mvErr } = await supabase.from('inventory_movements').insert({
-      item_id: item.id, action: 'returned', quantity: qty, note: 'Возврат'
-    })
-    if (mvErr) { setErr('Ошибка: ' + mvErr.message); return }
-    const { error: upErr } = await supabase.rpc('inventory_adjust', { p_item: item.id, p_available: qty, p_total: 0 })
-    if (upErr) { setErr('Движение записано, но остаток не обновлён: ' + upErr.message); return }
-    fetchMovements()
-    onSaved()
+  function returnItem(qty: number) {
+    if (!item) return
+    moveAction.mutate({ kind: 'returned', itemId: item.id, qty, staffId: null, note: 'Возврат' })
   }
+
+  const actionErr = saveAction.error ? 'Ошибка: ' + saveAction.error
+    : moveAction.error ? (moveAction.error.startsWith('Движение записано') ? moveAction.error : 'Ошибка: ' + moveAction.error)
+    : removeAction.error || addCatAction.error || delCatAction.error
+    || (movementsQ.error ? 'Ошибка: ' + movementsQ.error.message : '')
 
   return (
     <Modal title={item ? item.name : 'Новый товар'} onClose={onClose} width={560} footer={<>
@@ -235,15 +226,15 @@ function ItemModal({ item, staff, onClose, onSaved }: { item: Item | null; staff
           <div><Button kind="primary" onClick={issueItem}>Выдать</Button></div>
         </div>
         <div style={{ fontSize: 13, fontWeight: 600 }}>История</div>
-        {movements === null ? <Loading /> : movements.length === 0 ? <Empty>Движений нет</Empty> : (
+        {movements === undefined ? (movementsQ.error ? null : <Loading />) : movements.length === 0 ? <Empty>Движений нет</Empty> : (
           <div style={{ display: 'grid', gap: 6 }}>
             {movements.map(m => (
               <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: C.card, border: `1px solid ${C.line}`, borderLeft: `3px solid ${ACTION[m.action]?.color || C.line}`, borderRadius: C.radiusSm }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 500 }}>{ACTION[m.action]?.label || m.action}: {m.quantity} шт.</div>
-                  <Sub>{(m.staff as any)?.full_name || '—'} · {new Date(m.created_at).toLocaleDateString('ru')}{m.note && ` · ${m.note}`}</Sub>
+                  <Sub>{m.staff?.full_name || '—'} · {m.created_at ? new Date(m.created_at).toLocaleDateString('ru') : '—'}{m.note && ` · ${m.note}`}</Sub>
                 </div>
-                {m.action === 'issued' && <Button small onClick={() => returnItem(m.quantity)}>Вернуть</Button>}
+                {m.action === 'issued' && <Button small onClick={() => returnItem(m.quantity ?? 0)}>Вернуть</Button>}
               </div>
             ))}
           </div>
@@ -251,6 +242,7 @@ function ItemModal({ item, staff, onClose, onSaved }: { item: Item | null; staff
       </>}
 
       {err && <Notice tone="red">{err}</Notice>}
+      {actionErr && <Notice tone="red">{actionErr}</Notice>}
     </Modal>
   )
 }
@@ -264,8 +256,24 @@ function ReceiveModal({ items, onClose, onSaved }: { items: Item[]; onClose: () 
   const [docNumber, setDocNumber] = useState('')
   const [notes, setNotes] = useState('')
   const [lines, setLines] = useState<InvoiceLine[]>([{ item_id: '', quantity: 1, price: 0 }])
-  const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
+  const action = useAction(async (valid: InvoiceLine[]) => {
+    for (const line of valid) {
+      if (!items.some(i => i.id === line.item_id)) continue
+      try {
+        await sb(supabase.from('inventory_movements').insert({
+          item_id: line.item_id,
+          action: 'received',
+          quantity: line.quantity,
+          note: [supplier, docNumber, notes].filter(Boolean).join(' / ') || null,
+          created_at: date + 'T00:00:00',
+        }))
+      } catch (e) { throw failed('Ошибка записи движения: ', e) }
+      try { await sbRpc('inventory_adjust', { p_item: line.item_id, p_available: line.quantity, p_total: line.quantity }) }
+      catch (e) { throw failed('Ошибка обновления количества: ', e) }
+    }
+  }, { invalidate: ['inventory_movements', 'inventory'], onSuccess: onSaved })
+  const saving = action.isPending
 
   const total = lines.reduce((s, l) => s + l.quantity * l.price, 0)
 
@@ -276,29 +284,11 @@ function ReceiveModal({ items, onClose, onSaved }: { items: Item[]; onClose: () 
   function addLine() { setLines(prev => [...prev, { item_id: '', quantity: 1, price: 0 }]) }
   function removeLine(idx: number) { setLines(prev => prev.filter((_, i) => i !== idx)) }
 
-  async function save() {
+  function save() {
     const valid = lines.filter(l => l.item_id && l.quantity > 0)
     if (!valid.length) { setErr('Добавьте хотя бы одну позицию'); return }
     setErr('')
-    setSaving(true)
-
-    for (const line of valid) {
-      const item = items.find(i => i.id === line.item_id)
-      if (!item) continue
-      const { error: mvErr } = await supabase.from('inventory_movements').insert({
-        item_id: line.item_id,
-        action: 'received',
-        quantity: line.quantity,
-        note: [supplier, docNumber, notes].filter(Boolean).join(' / ') || null,
-        created_at: date + 'T00:00:00',
-      })
-      if (mvErr) { setErr('Ошибка записи движения: ' + mvErr.message); setSaving(false); return }
-      const { error: upErr } = await supabase.rpc('inventory_adjust', { p_item: line.item_id, p_available: line.quantity, p_total: line.quantity })
-      if (upErr) { setErr('Ошибка обновления количества: ' + upErr.message); setSaving(false); return }
-    }
-
-    setSaving(false)
-    onSaved()
+    action.mutate(valid)
   }
 
   const grid = '1fr 80px 100px 28px'
@@ -346,6 +336,7 @@ function ReceiveModal({ items, onClose, onSaved }: { items: Item[]; onClose: () 
 
       <Field label="Заметки"><Textarea style={{ minHeight: 60 }} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Дополнительная информация…" /></Field>
       {err && <Notice tone="red">{err}</Notice>}
+      {action.error && <Notice tone="red">{action.error}</Notice>}
     </Modal>
   )
 }
@@ -358,8 +349,25 @@ function IssueModal({ items, staff, onClose, onSaved }: { items: Item[]; staff: 
   const [staffId, setStaffId] = useState('')
   const [notes, setNotes] = useState('')
   const [lines, setLines] = useState<{ item_id: string; quantity: number }[]>([{ item_id: '', quantity: 1 }])
-  const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
+  const action = useAction(async (valid: { item_id: string; quantity: number }[]) => {
+    for (const line of valid) {
+      if (!items.some(i => i.id === line.item_id)) continue
+      try {
+        await sb(supabase.from('inventory_movements').insert({
+          item_id: line.item_id,
+          staff_id: staffId,
+          action: 'issued',
+          quantity: line.quantity,
+          note: notes || null,
+          created_at: date + 'T00:00:00',
+        }))
+      } catch (e) { throw failed('Ошибка записи: ', e) }
+      try { await sbRpc('inventory_adjust', { p_item: line.item_id, p_available: -line.quantity, p_total: 0 }) }
+      catch (e) { throw failed('Ошибка обновления: ', e) }
+    }
+  }, { invalidate: ['inventory_movements', 'inventory'], onSuccess: onSaved })
+  const saving = action.isPending
 
   function setLine(idx: number, key: 'item_id' | 'quantity', val: string | number) {
     setLines(prev => prev.map((l, i) => i === idx ? { ...l, [key]: val } : l))
@@ -367,7 +375,7 @@ function IssueModal({ items, staff, onClose, onSaved }: { items: Item[]; staff: 
   function addLine() { setLines(prev => [...prev, { item_id: '', quantity: 1 }]) }
   function removeLine(idx: number) { setLines(prev => prev.filter((_, i) => i !== idx)) }
 
-  async function save() {
+  function save() {
     if (!staffId) { setErr('Выберите сотрудника'); return }
     const valid = lines.filter(l => l.item_id && l.quantity > 0)
     if (!valid.length) { setErr('Добавьте хотя бы одну позицию'); return }
@@ -376,27 +384,10 @@ function IssueModal({ items, staff, onClose, onSaved }: { items: Item[]; staff: 
     for (const line of valid) need.set(line.item_id, (need.get(line.item_id) || 0) + line.quantity)
     for (const [id, q] of need) {
       const item = items.find(i => i.id === id)
-      if (item && q > item.quantity_available) { setErr(`Недостаточно «${item.name}»: доступно ${item.quantity_available} шт.`); return }
+      if (item && q > avail(item)) { setErr(`Недостаточно «${item.name}»: доступно ${avail(item)} шт.`); return }
     }
     setErr('')
-    setSaving(true)
-    for (const line of valid) {
-      const item = items.find(i => i.id === line.item_id)
-      if (!item) continue
-      const { error: mvErr } = await supabase.from('inventory_movements').insert({
-        item_id: line.item_id,
-        staff_id: staffId,
-        action: 'issued',
-        quantity: line.quantity,
-        note: notes || null,
-        created_at: date + 'T00:00:00',
-      })
-      if (mvErr) { setErr('Ошибка записи: ' + mvErr.message); setSaving(false); return }
-      const { error: upErr } = await supabase.rpc('inventory_adjust', { p_item: line.item_id, p_available: -line.quantity, p_total: 0 })
-      if (upErr) { setErr('Ошибка обновления: ' + upErr.message); setSaving(false); return }
-    }
-    setSaving(false)
-    onSaved()
+    action.mutate(valid)
   }
 
   const grid = '1fr 90px 28px'
@@ -427,16 +418,16 @@ function IssueModal({ items, staff, onClose, onSaved }: { items: Item[]; staff: 
         </div>
         {lines.map((line, idx) => {
           const item = items.find(i => i.id === line.item_id)
-          const over = !!item && line.quantity > item.quantity_available
+          const over = !!item && line.quantity > avail(item)
           return (
             <div key={idx} style={{ display: 'grid', gridTemplateColumns: grid, gap: 6, alignItems: 'center' }}>
               <Select value={line.item_id} onChange={e => setLine(idx, 'item_id', e.target.value)}>
                 <option value="">Выбрать</option>
-                {items.filter(i => i.quantity_available > 0).map(i => (
+                {items.filter(i => avail(i) > 0).map(i => (
                   <option key={i.id} value={i.id}>{i.name} (доступно: {i.quantity_available})</option>
                 ))}
               </Select>
-              <Input style={{ borderColor: over ? C.red : C.line }} type="number" min={1} max={item?.quantity_available} value={line.quantity} onChange={e => setLine(idx, 'quantity', Number(e.target.value))} />
+              <Input style={{ borderColor: over ? C.red : C.line }} type="number" min={1} max={item ? avail(item) : undefined} value={line.quantity} onChange={e => setLine(idx, 'quantity', Number(e.target.value))} />
               <button type="button" aria-label="Убрать позицию" title="Убрать позицию" onClick={() => removeLine(idx)} disabled={lines.length === 1} style={removeBtn(lines.length === 1)}>×</button>
             </div>
           )
@@ -445,6 +436,7 @@ function IssueModal({ items, staff, onClose, onSaved }: { items: Item[]; staff: 
 
       <Field label="Заметки"><Textarea style={{ minHeight: 60 }} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Назначение, проект…" /></Field>
       {err && <Notice tone="red">{err}</Notice>}
+      {action.error && <Notice tone="red">{action.error}</Notice>}
     </Modal>
   )
 }
@@ -452,25 +444,17 @@ function IssueModal({ items, staff, onClose, onSaved }: { items: Item[]; staff: 
 // ─── HistoryTab ──────────────────────────────────────────────────────────────
 
 function HistoryTab({ staff }: { staff: Staff[] }) {
-  const [movements, setMovements] = useState<Movement[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
   const [actionFilter, setActionFilter] = useState('')
   const [staffFilter, setStaffFilter] = useState('')
 
-  useEffect(() => { load() }, [])
-
-  async function load() {
-    setLoading(true)
-    setError('')
-    const { data, error } = await supabase.from('inventory_movements')
-      .select('*, staff(full_name), item:inventory(name, inventory_number)')
-      .order('created_at', { ascending: false })
-      .limit(300)
-    if (error) setError(error.message)
-    setMovements(data || [])
-    setLoading(false)
-  }
+  const q = useSb(['inventory_movements', 'history'], () => sb(supabase.from('inventory_movements')
+    .select('*, staff(full_name), item:inventory(name, inventory_number)')
+    .order('created_at', { ascending: false })
+    .limit(300)))
+  const movements: Movement[] = q.data ?? []
+  const loading = q.isPending
+  const error = q.error?.message ?? ''
+  const load = () => { q.refetch() }
 
   const filtered = movements.filter(m => {
     if (actionFilter && m.action !== actionFilter) return false
@@ -480,7 +464,7 @@ function HistoryTab({ staff }: { staff: Staff[] }) {
 
   const grouped: { date: string; items: Movement[] }[] = []
   for (const m of filtered) {
-    const date = new Date(m.created_at).toLocaleDateString('ru', { day: 'numeric', month: 'long', year: 'numeric' })
+    const date = m.created_at ? new Date(m.created_at).toLocaleDateString('ru', { day: 'numeric', month: 'long', year: 'numeric' }) : '—'
     const last = grouped[grouped.length - 1]
     if (last?.date === date) last.items.push(m)
     else grouped.push({ date, items: [m] })
@@ -514,8 +498,8 @@ function HistoryTab({ staff }: { staff: Staff[] }) {
               <div style={{ display: 'grid', gap: 6 }}>
                 {group.items.map(m => {
                   const a = ACTION[m.action]
-                  const it = m.item as any
-                  const who = (m.staff as any)?.full_name
+                  const it = m.item
+                  const who = m.staff?.full_name
                   return (
                     <div key={m.id} style={{ background: C.card, border: `1px solid ${C.line}`, borderLeft: `3px solid ${a?.color || C.line}`, borderRadius: C.radiusSm, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
                       <Badge tone={a?.tone || 'neutral'}>{a?.label || m.action}</Badge>
@@ -527,7 +511,7 @@ function HistoryTab({ staff }: { staff: Staff[] }) {
                         {(who || m.note) && <Sub>{who}{m.note ? `${who ? ' · ' : ''}${m.note}` : ''}</Sub>}
                       </div>
                       <div style={{ fontSize: 14, fontWeight: 600, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{m.quantity} шт.</div>
-                      <Muted small>{new Date(m.created_at).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' })}</Muted>
+                      <Muted small>{m.created_at ? new Date(m.created_at).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' }) : ''}</Muted>
                     </div>
                   )
                 })}
@@ -554,11 +538,6 @@ function Chip({ active, onClick, children }: { active: boolean; onClick: () => v
 }
 
 export default function InventoryPage() {
-  const [items, setItems] = useState<Item[]>([])
-  const [staff, setStaff] = useState<Staff[]>([])
-  const [categories, setCategories] = useState<string[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
   const [selected, setSelected] = useState<Item | null>(null)
   const [showModal, setShowModal] = useState(false)
   const [showReceive, setShowReceive] = useState(false)
@@ -567,23 +546,15 @@ export default function InventoryPage() {
   const [catFilter, setCatFilter] = useState('')
   const [pageTab, setPageTab] = useState<PageTab>('items')
 
-  useEffect(() => { fetchAll() }, [])
-
-  async function fetchAll() {
-    setLoading(true)
-    setError('')
-    const [{ data: inv, error: e1 }, { data: st, error: e2 }, { data: cats, error: e3 }] = await Promise.all([
-      supabase.from('inventory').select('*, responsible:staff(full_name)').order('name'),
-      supabase.from('staff').select('id, full_name').eq('status', 'active').order('full_name'),
-      supabase.from('inventory_categories').select('name').order('name')
-    ])
-    const e = e1 || e2 || e3
-    if (e) setError(e.message)
-    setItems(inv || [])
-    setStaff(st || [])
-    setCategories((cats || []).map((c: any) => c.name))
-    setLoading(false)
-  }
+  const itemsQ = useSb(['inventory'], () => sb(supabase.from('inventory').select('*, responsible:staff(full_name)').order('name')))
+  const staffQ = useSb(['staff', 'id,full_name', 'active'], () => sb(supabase.from('staff').select('id, full_name').eq('status', 'active').order('full_name')))
+  const catsQ = useCategories()
+  const items: Item[] = itemsQ.data ?? []
+  const staff: Staff[] = staffQ.data ?? []
+  const categories = (catsQ.data ?? []).map(c => c.name)
+  const loading = itemsQ.isPending
+  const error = (itemsQ.error || staffQ.error || catsQ.error)?.message ?? ''
+  const fetchAll = () => { itemsQ.refetch(); staffQ.refetch(); catsQ.refetch() }
 
   const filtered = items.filter(i => {
     const matchSearch = !search || i.name.toLowerCase().includes(search.toLowerCase()) || i.inventory_number?.toLowerCase().includes(search.toLowerCase())
@@ -593,8 +564,8 @@ export default function InventoryPage() {
 
   // KPI
   const totalCost = items.reduce((s, i) => s + (i.cost || 0) * (i.quantity || 0), 0)
-  const issuedNow = items.filter(i => (i.quantity - i.quantity_available) > 0).length
-  const lowStock = items.filter(i => i.quantity_available <= 2).length
+  const issuedNow = items.filter(i => ((i.quantity ?? 0) - avail(i)) > 0).length
+  const lowStock = items.filter(i => avail(i) <= 2).length
 
   // Category counts
   const catCounts = Object.fromEntries(categories.map(c => [c, items.filter(i => i.category === c).length]))
@@ -645,18 +616,18 @@ export default function InventoryPage() {
               { key: 'l', title: 'Местонахождение', sort: i => i.location || '', render: i => <Muted>{i.location || '—'}</Muted> },
               { key: 'q', title: 'Кол-во', align: 'right', sort: i => i.quantity, render: i => num(i.quantity) },
               { key: 'a', title: 'Доступно', align: 'right', sort: i => i.quantity_available, render: i => (
-                <span style={{ fontWeight: 600, color: i.quantity_available === 0 ? C.red : i.quantity_available <= 2 ? C.amber : C.green }}>{num(i.quantity_available)}</span>
+                <span style={{ fontWeight: 600, color: avail(i) === 0 ? C.red : avail(i) <= 2 ? C.amber : C.green }}>{num(i.quantity_available)}</span>
               ) },
               { key: 'cost', title: 'Стоимость', align: 'right', sort: i => i.cost || 0, render: i => money(i.cost, { zero: '—' }) },
-              { key: 'r', title: 'Ответственный', sort: i => (i.responsible as any)?.full_name || '', render: i => <Muted>{(i.responsible as any)?.full_name || '—'}</Muted> },
+              { key: 'r', title: 'Ответственный', sort: i => i.responsible?.full_name || '', render: i => <Muted>{i.responsible?.full_name || '—'}</Muted> },
             ]} />
           )}
         </Card>
       </>}
 
-      {showModal && <ItemModal item={selected} staff={staff} onClose={() => setShowModal(false)} onSaved={() => { setShowModal(false); fetchAll() }} />}
-      {showReceive && <ReceiveModal items={items} onClose={() => setShowReceive(false)} onSaved={() => { setShowReceive(false); fetchAll() }} />}
-      {showIssue && <IssueModal items={items} staff={staff} onClose={() => setShowIssue(false)} onSaved={() => { setShowIssue(false); fetchAll() }} />}
+      {showModal && <ItemModal item={selected} staff={staff} onClose={() => setShowModal(false)} onSaved={() => setShowModal(false)} />}
+      {showReceive && <ReceiveModal items={items} onClose={() => setShowReceive(false)} onSaved={() => setShowReceive(false)} />}
+      {showIssue && <IssueModal items={items} staff={staff} onClose={() => setShowIssue(false)} onSaved={() => setShowIssue(false)} />}
     </Page>
   )
 }

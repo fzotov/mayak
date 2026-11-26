@@ -24,7 +24,7 @@ export default function SetPasswordPage({ mode = 'activate' }: { mode?: 'activat
     if (!token) { setState('expired'); return }
     fetch('/api/set-password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, check: true }) })
       .then(r => r.json())
-      .then(d => { if (d.ok) { setEmail(d.email); setKind(d.kind); setState('valid') } else setState('expired') })
+      .then((d: { ok?: boolean; email?: string; kind?: string }) => { if (d.ok) { setEmail(d.email ?? ''); setKind(d.kind ?? ''); setState('valid') } else setState('expired') })
       .catch(() => setState('expired'))
   }, [token])
 
@@ -36,8 +36,9 @@ export default function SetPasswordPage({ mode = 'activate' }: { mode?: 'activat
     setSaving(true)
     try {
       const r = await fetch('/api/set-password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, password: pw }) })
-      const d = await r.json()
+      const d: { ok?: boolean; error?: string; email?: string; area?: string } = await r.json()
       if (!d.ok) { setErr(d.error || 'Не удалось сохранить пароль'); setSaving(false); return }
+      if (!d.email) { setState('done'); return }
       const { error } = await supabase.auth.signInWithPassword({ email: d.email, password: pw })
       if (error) { setState('done'); return }
       window.location.replace(d.area === 'staff' ? '/' : '/tenant/dashboard')

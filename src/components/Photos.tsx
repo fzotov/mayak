@@ -1,11 +1,11 @@
 // Миниатюры фото из закрытого хранилища: временные ссылки, касание открывает фото целиком.
-import { useEffect, useState } from 'react'
 import { storedFileUrl, openStoredFile } from '../lib/api'
+import { useSb } from '../lib/query'
 import { C } from './ui'
 
 function Thumb({ url, size }: { url: string; size: number }) {
-  const [src, setSrc] = useState('')
-  useEffect(() => { let live = true; storedFileUrl(url).then(s => { if (live) setSrc(s) }).catch(() => {}); return () => { live = false } }, [url])
+  // временная ссылка живёт час — держим её в кеше 50 минут, ошибку не показываем (миниатюра просто пустая)
+  const src = useSb(['storage:signed', url], () => storedFileUrl(url), { staleTime: 50 * 60_000, gcTime: 50 * 60_000, retry: 0 }).data || ''
   return (
     <button type="button" onClick={() => openStoredFile(url)} aria-label="Открыть фото"
       style={{ width: size, height: size, padding: 0, border: `1px solid ${C.line}`, borderRadius: C.radiusSm, overflow: 'hidden', background: C.hover, cursor: 'pointer', flexShrink: 0 }}>

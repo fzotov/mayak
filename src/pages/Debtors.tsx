@@ -1,7 +1,9 @@
 // Должники: сальдо с разворотом по статьям, просрочка, последнее поступление.
 // Действия: напоминание (письмо и уведомление в кабинет), акт сверки, претензия.
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { sb, useSb, errText } from '../lib/query'
+import type { Tables } from '../lib/database.types'
 import { apiFetch } from '../lib/api'
 import { go } from '../lib/nav'
 import { rpc, loadArticles, type Article } from '../lib/accounting'
@@ -16,25 +18,30 @@ export interface SaldoRow {
 type F = 'overdue' | 'all' | 'advance'
 
 export default function DebtorsPage() {
-  const [rows, setRows] = useState<SaldoRow[] | null>(null)
-  const [articles, setArticles] = useState<Article[]>([])
-  const [error, setError] = useState('')
   const [q, setQ] = useState('')
   const [f, setF] = useState<F>('overdue')
   const [open, setOpen] = useState<string | null>(null)
   const [msg, setMsg] = useState<{ tone: 'green' | 'red'; text: string } | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
-  const [phones, setPhones] = useState<Record<string, string>>({})
   const narrow = useNarrow()
 
-  async function load() {
-    setError('')
-    try { setRows(await rpc<SaldoRow[]>('tenant_saldo')); setArticles(await loadArticles()) } catch (e: any) { setError(e.message); setRows([]) }
-    // телефон для звонка: контактное лицо, иначе общий номер арендатора
-    const { data } = await supabase.from('tenants').select('id, phone, contact_phone')
-    setPhones(Object.fromEntries((data || []).map((t: any) => [t.id, telHref(t.contact_phone) ? t.contact_phone : t.phone]).filter(([, p]) => telHref(p))))
-  }
-  useEffect(() => { load() }, [])
+  const saldoQ = useSb(['rpc:tenant_saldo'], () => rpc<SaldoRow[]>('tenant_saldo'))
+  const artQ = useSb<Article[]>(['accounting_articles'], loadArticles)
+  // телефон для звонка: контактное лицо, иначе общий номер арендатора
+  const phonesQ = useSb(['tenants', 'phones'], async () => {
+    const data = await sb(supabase.from('tenants').select('id, phone, contact_phone'))
+    const out: Record<string, string> = {}
+    for (const t of data) {
+      const p = telHref(t.contact_phone) ? t.contact_phone : t.phone
+      if (p && telHref(p)) out[t.id] = p
+    }
+    return out
+  })
+  const rows = useMemo(() => saldoQ.isPending ? null : saldoQ.data || [], [saldoQ.isPending, saldoQ.data])
+  const articles = artQ.data || []
+  const phones = phonesQ.data || {}
+  const error = saldoQ.error?.message || artQ.error?.message || ''
+  const load = () => { saldoQ.refetch(); artQ.refetch(); phonesQ.refetch() }
 
   const shown = useMemo(() => (rows || []).filter(r =>
     (f === 'overdue' ? Number(r.overdue) > 0 : f === 'advance' ? Number(r.balance) < 0 : Number(r.balance) > 0) &&
@@ -48,7 +55,7 @@ export default function DebtorsPage() {
       const j = await res.json()
       if (!res.ok || !j.ok) throw new Error(j.error || 'Напоминание не отправлено')
       setMsg({ tone: 'green', text: `Напоминание отправлено: ${r.tenant_name}, ${j.to}. Уведомление появилось в кабинете.` })
-    } catch (e: any) { setMsg({ tone: 'red', text: e.message }) }
+    } catch (e) { setMsg({ tone: 'red', text: errText(e) }) }
     setBusy(null)
   }
 
@@ -56,7 +63,7 @@ export default function DebtorsPage() {
     const { data: ll } = await supabase.from('landlords').select('*').order('is_default', { ascending: false }).limit(1).maybeSingle()
     const { data: t } = await supabase.from('tenants').select('full_name, inn, legal_address, director_name, director_position').eq('id', r.tenant_id).single()
     const { data: leases } = await supabase.from('leases').select('number, start_date').eq('tenant_id', r.tenant_id).eq('status', 'active').limit(1)
-    printClaim(r, t, ll, leases?.[0])
+    printClaim(r, t, ll, leases?.[0] ?? null)
   }
 
   return (
@@ -157,7 +164,10 @@ const esc = (s: unknown) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&am
 const rub = (n: number) => Number(n).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 /** Претензия о погашении задолженности: печатная форма по данным расчётов. */
-function printClaim(r: SaldoRow, t: any, ll: any, lease: any) {
+function printClaim(r: SaldoRow,
+  t: Pick<Tables<'tenants'>, 'director_name' | 'director_position' | 'legal_address'> | null,
+  ll: Pick<Tables<'landlords'>, 'name' | 'inn' | 'legal_address' | 'account' | 'bank_name' | 'bik' | 'corr_account'> | null,
+  lease: Pick<Tables<'leases'>, 'number' | 'start_date'> | null) {
   const w = window.open('', '_blank')
   if (!w) return
   const d = new Date().toLocaleDateString('ru-RU')
